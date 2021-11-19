@@ -1,5 +1,6 @@
 build/
 projects/
+src/version.h
 
 # Prerequisites
 *.d
