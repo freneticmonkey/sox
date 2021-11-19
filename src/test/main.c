@@ -6,7 +6,7 @@
 #include "test/vm_test.h"
 
 int main(int argc, const char* argv[]) {
-    printf("Starting lox unit tests...\n");
+    printf("Starting sox unit tests...\n");
 
     MunitSuite suites[] = {
         l_vm_test_setup(),
@@ -22,7 +22,7 @@ int main(int argc, const char* argv[]) {
         * Note that, while it doesn't really matter for the top-level
         * suite, NULL signal the end of an array of tests; you should use
         * an empty string ("") instead. */
-        (char *)"lox/",
+        (char *)"sox/",
 
         /* The first parameter is the array of test suites. */
         NULL,

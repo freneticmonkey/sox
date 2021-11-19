@@ -25,7 +25,7 @@ static void _repl() {
 }
 
 int main(int argc, const char* argv[]) {
-    printf("Starting lox %s ...\ncommit: %s\nbranch: %s\n", 
+    printf("Starting sox %s ...\ncommit: %s\nbranch: %s\n", 
         VERSION,
         COMMIT,
         BRANCH
@@ -40,12 +40,12 @@ int main(int argc, const char* argv[]) {
         if (status != 0)
             exit(status);
     } else {
-        fprintf(stderr, "Usage: lox [path]\n");
+        fprintf(stderr, "Usage: sox [path]\n");
         exit(64);
     }
 
     l_free_vm();
     
-    printf("Exiting lox ...\n");
+    printf("Exiting sox ...\n");
     return 0;
 }

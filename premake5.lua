@@ -174,7 +174,7 @@ project "test"
        
     }
 
-    -- ignore the lox main
+    -- ignore the sox main
     removefiles {
         "src/main.c"
      }
