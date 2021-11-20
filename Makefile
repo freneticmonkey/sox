@@ -45,6 +45,7 @@ run-test:
 	./build/test
 
 gen: details
+	@echo "Setting Versions: Commit: ${COMMIT} Branch: ${BRANCH}"
 # Updating the commit info in version.h
 # Generating build projects
 ifeq (${THIS_OS},windows)
@@ -111,7 +112,7 @@ build-debug: gen binary-debug post-build
 # by default build a debug binary
 build: build-debug
 
-test: build-test
+test: build-test post-build
 ifeq (${THIS_OS},windows)
 	.\build\test.exe
 endif
