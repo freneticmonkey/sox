@@ -1,5 +1,5 @@
 # sox
-variation of the implementation of the lox interpreter as described on http://craftinginterpreters.com
+variation of the implementation of the sox interpreter as described on http://craftinginterpreters.com
 
 ## Build Status
 
@@ -22,7 +22,7 @@ variation of the implementation of the lox interpreter as described on http://cr
 [ ] Run each script in the scripts folder without errors
 
 ## Future Language features
-[ ] Defer
+[x] Defer
 [ ] Switch statements
 [ ] bracketless expressions
 [ ] ternary operator

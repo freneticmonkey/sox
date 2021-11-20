@@ -1,0 +1,72 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Sox",
+            "type": "shell",
+            "problemMatcher": [],
+            "command" : "make build",
+            "group" : {
+                "kind": "build",
+                "isDefault": true
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+        },
+        {
+            "label": "Clean All",
+            "type": "shell",
+            "problemMatcher": [],
+            "command" : "make clean",
+            "group" : {
+                "kind": "build",
+                "isDefault": true
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+        },
+        {
+            "label": "Rebuild All",
+            "type": "shell",
+            "problemMatcher": [],
+            "command" : "make build",
+            "group" : {
+                "kind": "build",
+                "isDefault": true
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn" : "Clean All"
+        },
+        {
+            "label": "Build Tests",
+            "type": "shell",
+            "problemMatcher": [],
+            "command": "make build-test",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+        },
+        {
+            "type": "shell",
+            "label": "gcc build active file",
+            "command": "/usr/bin/gcc",
+            "args": ["-g", "${file}", "-o", "${fileDirname}/${fileBasenameNoExtension}"],
+            "options": {
+              "cwd": "/usr/bin"
+            },
+            "problemMatcher": ["$gcc"],
+            "group": {
+              "kind": "build",
+              "isDefault": true
+            }
+          }
+    ],
+}
