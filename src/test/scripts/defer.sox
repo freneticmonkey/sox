@@ -1,0 +1,20 @@
+fun hello(name) {
+
+    defer () {
+        print "sleep tight";
+    }
+    
+    defer () {
+        var text = "goodbye: " + name;
+        print text;
+    }
+
+    print "hello: " + name;
+
+    
+    usleep(100);
+}
+
+var start = clock();
+hello("world");
+print clock() - start;

@@ -12,6 +12,8 @@
 #include "lib/debug.h"
 #endif
 
+#define GEN_VAR_MAX 1024 * 1024
+
 typedef struct {
     token_t current;
     token_t previous;
@@ -54,6 +56,7 @@ typedef struct {
 
 typedef enum {
     TYPE_FUNCTION,
+    TYPE_DEFER,
     TYPE_INITIALIZER,
     TYPE_METHOD,
     TYPE_SCRIPT
@@ -61,14 +64,17 @@ typedef enum {
 
 typedef struct compiler_t compiler_t;
 typedef struct compiler_t {
-    compiler_t* enclosing;
+    compiler_t*     enclosing;
     obj_function_t* function;
     FunctionType    type;
 
-    local_t   locals[UINT8_COUNT];
-    int       local_count;
-    upvalue_t upvalues[UINT8_COUNT];
-    int       scope_depth;    
+    local_t         locals[UINT8_COUNT];
+    int             local_count;
+    upvalue_t       upvalues[UINT8_COUNT];
+    int             scope_depth;
+
+    uint8_t         deferred_functions[UINT8_COUNT];
+    int             defer_count;
 } compiler_t;
 
 typedef struct class_compiler_t class_compiler_t;
@@ -77,6 +83,8 @@ typedef struct class_compiler_t {
     bool              has_superclass;
 } class_compiler_t;
 
+char _generated_variables_block[GEN_VAR_MAX];
+int  _gen_var_offset = 0;
 _parser_t   _parser;
 compiler_t* _current = NULL;
 class_compiler_t* _current_class;
@@ -212,6 +220,12 @@ static void _patch_jump(int offset) {
 
 static void l_init_compiler(compiler_t* compiler, FunctionType type) {
 
+    // if this is the first time a compiler object has been setup, then
+    // initialise global state
+    if ( compiler->enclosing == NULL ) {
+        memset(&_generated_variables_block, 0, GEN_VAR_MAX);
+    }    
+
     // set the enclosing compiler if one exists
     compiler->enclosing = ( _current != NULL ) ? _current : NULL;
 
@@ -220,6 +234,7 @@ static void l_init_compiler(compiler_t* compiler, FunctionType type) {
 
     compiler->local_count = 0;
     compiler->scope_depth = 0;
+    compiler->defer_count = 0;
 
     compiler->function = l_new_function();
 
@@ -241,10 +256,21 @@ static void l_init_compiler(compiler_t* compiler, FunctionType type) {
         local->name.start = "";
         local->name.length = 0;
     }
-
 }
 
 static obj_function_t* _end_compiler() {
+
+    // Call any deferred functions before returning
+    if ( _current->defer_count > 0 ) {
+        for (int i = 0; i < _current->defer_count ; i++ ) {
+            // obj_function_t defer_func = _current->deferred_functions[i];
+            // if ( defer_func->type != TYPE_DEFER )
+            //     _error("Can't read local variable in its own initializer.");
+            
+            _emit_bytes(OP_GET_LOCAL, _current->deferred_functions[i]);
+            _emit_bytes(OP_CALL, 0);
+        }
+    }
     _emit_return();
     obj_function_t* function = _current->function;
 #ifdef DEBUG_PRINT_CODE
@@ -356,6 +382,42 @@ static void _add_local(token_t name) {
     local->name = name;
     local->depth = -1;
     local->is_captured = false;
+}
+
+static uint8_t _generate_variable(TokenType type, const char *hint) {
+    if (_current->scope_depth == 0) 
+        return 0;
+
+    // generate a unique name for this variable
+
+    if ( (strlen(hint) + _gen_var_offset) >= GEN_VAR_MAX )
+        _error("Too many generated values in script (defer).");
+
+    char* temp_name =  &_generated_variables_block[_gen_var_offset];
+    sprintf(temp_name, "%s_%d\0", hint, _current->local_count);
+    int length = strlen(temp_name);
+    _gen_var_offset += length;
+    
+    token_t name = {
+        .type = type,
+        .start = temp_name,
+        .length = length,
+        .line = 0,
+    };
+
+    for (int i = _current->local_count - 1; i >= 0; i--) {
+        local_t* local = &_current->locals[i];
+        if (local->depth != -1 && local->depth < _current->scope_depth) {
+            break; 
+        }
+
+        if (_identifiers_equal(&name, &local->name)) {
+            _error("Already a variable with this name in this scope.");
+        }
+    }
+    _add_local(name);
+
+    return _identifier_constant(&name);
 }
 
 static void _declare_variable() {
@@ -625,6 +687,7 @@ parse_rule_t rules[] = {
     [TOKEN_TRUE]          = {_literal, NULL,     PREC_NONE},
     [TOKEN_VAR]           = {NULL,     NULL,     PREC_NONE},
     [TOKEN_WHILE]         = {NULL,     NULL,     PREC_NONE},
+    [TOKEN_DEFER]         = {NULL,     NULL,     PREC_NONE},
     [TOKEN_ERROR]         = {NULL,     NULL,     PREC_NONE},
     [TOKEN_EOF]           = {NULL,     NULL,     PREC_NONE},
 };
@@ -673,8 +736,11 @@ static void _function(FunctionType type) {
     l_init_compiler(&compiler, type);
     _begin_scope();
 
-    _consume(TOKEN_LEFT_PAREN, "Expect '(' after function name.");
-
+    if ( type == TYPE_DEFER ) {
+        _consume(TOKEN_LEFT_PAREN, "Expect '(' after function declaration.");
+    } else {
+        _consume(TOKEN_LEFT_PAREN, "Expect '(' after function name.");
+    }
 
     if ( !_check(TOKEN_RIGHT_PAREN) ) {
         do {
@@ -744,7 +810,6 @@ static void _class_declaration() {
         classCompiler.has_superclass = true;
     }
 
-
     _named_variable(className, false);
 
     _consume(TOKEN_LEFT_BRACE, "Expect '{' before class body.");
@@ -761,6 +826,16 @@ static void _class_declaration() {
     }
 
     _current_class = _current_class->enclosing;
+}
+
+static void _defer_declaration() {
+
+    uint8_t global = _generate_variable(TYPE_DEFER, "defer");
+    _mark_initialized();
+    _function(TYPE_DEFER);
+    _define_variable(global);
+
+    _current->deferred_functions[_current->defer_count++] = _current->local_count - 1;
 }
 
 static void _fun_declaration() {
@@ -935,6 +1010,8 @@ static void _declaration() {
 
     if ( _match(TOKEN_CLASS) ) {
         _class_declaration();
+    } else if (_match(TOKEN_DEFER)) {
+        _defer_declaration();
     } else if ( _match(TOKEN_FUN) ) {
         _fun_declaration();
     } else if ( _match(TOKEN_VAR) ) {

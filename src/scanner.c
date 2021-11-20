@@ -125,6 +125,7 @@ static TokenType _identifier_type() {
     switch (_scanner.start[0]) {
         case 'a': return _check_keyword(1, 2, "nd", TOKEN_AND);
         case 'c': return _check_keyword(1, 4, "lass", TOKEN_CLASS);
+        case 'd': return _check_keyword(1, 4, "efer", TOKEN_DEFER);
         case 'e': return _check_keyword(1, 3, "lse", TOKEN_ELSE);
         case 'f':
             if (_scanner.current - _scanner.start > 1) {
