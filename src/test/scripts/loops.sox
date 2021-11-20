@@ -1,0 +1,14 @@
+print "testing loops";
+
+print "Testing While";
+var initial = 0;
+
+while initial < 10 {
+    initial = initial + 1;
+    print initial;
+}
+
+print "Testing For";
+for var i = 0; i < 10; i = i + 1 {
+    print i;
+}

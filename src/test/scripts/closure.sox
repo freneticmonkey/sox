@@ -33,11 +33,11 @@ var globalOne;
 var globalTwo;
 
 fn main() {
-  for (var a = 1; a <= 2; a = a + 1) {
+  for var a = 1; a <= 2; a = a + 1 {
     fn closure() {
       print a;
     }
-    if (globalOne == nil) {
+    if globalOne == nil {
       globalOne = closure;
     } else {
       globalTwo = closure;

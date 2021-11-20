@@ -44,6 +44,7 @@ MunitSuite l_scripts_test_setup() {
         "src/test/scripts/funcs.sox",
         "src/test/scripts/defer.sox",
         "src/test/scripts/globals.sox",
+        "src/test/scripts/loops.sox",
         NULL,
     };
 

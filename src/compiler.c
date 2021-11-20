@@ -868,8 +868,6 @@ static void _expression_statement() {
 static void _for_statement() {
     _begin_scope();
 
-    _consume(TOKEN_LEFT_PAREN, "Expect '(' after 'for'.");
-
     // Process initializer + expression
     if (_match(TOKEN_SEMICOLON)) {
         // No initializer.
@@ -894,12 +892,12 @@ static void _for_statement() {
 
     // process the increment
 
-    if (!_match(TOKEN_RIGHT_PAREN)) {
+    if (!_match(TOKEN_LEFT_BRACE)) {
         int bodyJump = _emit_jump(OP_JUMP);
         int incrementStart = _current_chunk()->count;
         _expression();
         _emit_byte(OP_POP);
-        _consume(TOKEN_RIGHT_PAREN, "Expect ')' after for clauses.");
+        _check(TOKEN_LEFT_BRACE);
 
         _emit_loop(loopStart);
         loopStart = incrementStart;
@@ -919,9 +917,7 @@ static void _for_statement() {
 
 static void _if_statement() {
     // process the logical expression
-    _consume(TOKEN_LEFT_PAREN, "Expect '(' after 'if'.");
     _expression();
-    _consume(TOKEN_RIGHT_PAREN, "Expect ')' after condition."); 
 
     // run the 'then' statement
     int thenJump = _emit_jump(OP_JUMP_IF_FALSE);
@@ -967,9 +963,7 @@ static void _return_statement() {
 
 static void _while_statement() {
     int loopStart = _current_chunk()->count;
-    _consume(TOKEN_LEFT_PAREN, "Expect '(' after 'while'.");
     _expression();
-    _consume(TOKEN_RIGHT_PAREN, "Expect ')' after condition.");
 
     int exitJump = _emit_jump(OP_JUMP_IF_FALSE);
     _emit_byte(OP_POP);
