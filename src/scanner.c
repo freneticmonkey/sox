@@ -132,7 +132,7 @@ static TokenType _identifier_type() {
                 switch (_scanner.start[1]) {
                     case 'a': return _check_keyword(2, 3, "lse", TOKEN_FALSE);
                     case 'o': return _check_keyword(2, 1, "r", TOKEN_FOR);
-                    case 'u': return _check_keyword(2, 1, "n", TOKEN_FUN);
+                    case 'n': return _check_keyword(2, 0, "", TOKEN_FUN);
                 }
             }
             break;

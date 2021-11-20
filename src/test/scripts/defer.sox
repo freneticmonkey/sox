@@ -1,9 +1,9 @@
-fun hello(name) {
+fn hello(name) {
 
     defer () {
         print "sleep tight";
     }
-    
+
     defer () {
         var text = "goodbye: " + name;
         print text;

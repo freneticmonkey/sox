@@ -1,5 +1,5 @@
-fun makeClosure(value) {
-  fun closure() {
+fn makeClosure(value) {
+  fn closure() {
     print value;
   }
   return closure;
@@ -10,10 +10,10 @@ var bagel = makeClosure("bagel");
 doughnut();
 bagel();
 
-fun outer() {
+fn outer() {
   var x = "value";
-  fun middle() {
-    fun inner() {
+  fn middle() {
+    fn inner() {
       print x;
     }
 
@@ -32,9 +32,9 @@ in();
 var globalOne;
 var globalTwo;
 
-fun main() {
+fn main() {
   for (var a = 1; a <= 2; a = a + 1) {
-    fun closure() {
+    fn closure() {
       print a;
     }
     if (globalOne == nil) {

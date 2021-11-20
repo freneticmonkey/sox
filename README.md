@@ -23,6 +23,7 @@ variation of the implementation of the sox interpreter as described on http://cr
 
 ## Future Language features
 [x] Defer
+[x] replace fun with fn
 [ ] Switch statements
 [ ] bracketless expressions
 [ ] ternary operator
