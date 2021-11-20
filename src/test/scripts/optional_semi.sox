@@ -1,0 +1,8 @@
+fn hello() {
+    print "hi"
+    usleep(100)
+}
+
+var start = clock()
+hello()
+print clock() - start

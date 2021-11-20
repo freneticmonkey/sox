@@ -135,6 +135,14 @@ static void _advance() {
     }
 }
 
+static void _optional_consume(TokenType type, const char* message) {
+    if (_parser.current.type == type) {
+        _advance();
+        return;
+    }
+    // else don't do anything?
+}
+
 static void _consume(TokenType type, const char* message) {
     if (_parser.current.type == type) {
         _advance();
@@ -853,15 +861,14 @@ static void _var_declaration() {
     } else {
         _emit_byte(OP_NIL);
     }
-    _consume(TOKEN_SEMICOLON,
-            "Expect ';' after variable declaration.");
+    _optional_consume(TOKEN_SEMICOLON, "Expect ';' after variable declaration.");
 
     _define_variable(global);
 }
 
 static void _expression_statement() {
     _expression();
-    _consume(TOKEN_SEMICOLON, "Expect ';' after expression.");
+    _optional_consume(TOKEN_SEMICOLON, "Expect ';' after expression.");
     _emit_byte(OP_POP);
 }
 
@@ -940,7 +947,7 @@ static void _if_statement() {
 
 static void _print_statement() {
     _expression();
-    _consume(TOKEN_SEMICOLON, "Expect ';' after value.");
+    _optional_consume(TOKEN_SEMICOLON, "Expect ';' after value.");
     _emit_byte(OP_PRINT);
 }
 
@@ -956,7 +963,7 @@ static void _return_statement() {
             _error("Can't return a value from an initializer.");
         }
         _expression();
-        _consume(TOKEN_SEMICOLON, "Expect ';' after return value.");
+        _optional_consume(TOKEN_SEMICOLON, "Expect ';' after return value.");
         _emit_byte(OP_RETURN);
     }
 }

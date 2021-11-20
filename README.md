@@ -24,17 +24,18 @@ variation of the implementation of the sox interpreter as described on http://cr
 ## Future Language features
 [x] Defer
 [x] replace fun with fn
-[ ] Switch statements
-[ ] bracketless expressions
+[x] remove semi-colon line ending
+[x] bracketless expressions
 [ ] ternary operator
-[ ] remove semi-colon line ending
-[ ] multi-line comment blocks
-[ ] for-in container iteration
-[ ] remove global variables
+[ ] Switch statements
 [ ] impl break
 [ ] impl continue
+[ ] native container implementation
+[ ] for-in container iteration
 [ ] run scripts from repl
 [ ] default parameter values
+[ ] remove global variables
+[ ] multi-line comment blocks
 
 ## Advanced language features
 [ ] interfaces
