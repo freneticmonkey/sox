@@ -34,7 +34,8 @@ static char* _read_file(const char* path) {
     return buffer;
 }
 
-int l_run_file(const char* path) {
+int l_run_file(int argc, const char* argv[]) {
+    const char* path = argv[1];
     char* source = _read_file(path);
 
     if ( source == NULL )

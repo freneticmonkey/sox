@@ -75,6 +75,8 @@ typedef struct compiler_t {
 
     uint8_t         deferred_functions[UINT8_COUNT];
     int             defer_count;
+
+    int             main_function;
 } compiler_t;
 
 typedef struct class_compiler_t class_compiler_t;
@@ -85,10 +87,11 @@ typedef struct class_compiler_t {
 
 char _generated_variables_block[GEN_VAR_MAX];
 int  _gen_var_offset = 0;
-_parser_t   _parser;
-compiler_t* _current = NULL;
+
+_parser_t         _parser;
+compiler_t*       _current = NULL;
 class_compiler_t* _current_class;
-chunk_t*    _compiling_chunk;
+chunk_t*          _compiling_chunk;
 
 static chunk_t* _current_chunk() {
     return &_current->function->chunk;
@@ -106,8 +109,7 @@ static void _error_at(token_t* token, const char* message) {
     } 
     else if (token->type == TOKEN_ERROR) {
         // Nothing.
-    } 
-    else {
+    } else {
         fprintf(stderr, " at '%.*s'", token->length, token->start);
     }
 
@@ -125,7 +127,7 @@ static void _error_at_current(const char* message) {
 
 static void _advance() {
     _parser.previous = _parser.current;
-
+    
     for (;;) {
         _parser.current = l_scan_token();
         if (_parser.current.type != TOKEN_ERROR) 
@@ -133,6 +135,11 @@ static void _advance() {
 
         _error_at_current(_parser.current.start);
     }
+
+#ifdef DEBUG_PRINT_TOKENS
+    fprintf(stdout, " `%.*s` ", _parser.current.length, _parser.current.start);
+    fflush(stdout);
+#endif
 }
 
 static void _optional_consume(TokenType type, const char* message) {
@@ -264,6 +271,8 @@ static void l_init_compiler(compiler_t* compiler, FunctionType type) {
         local->name.start = "";
         local->name.length = 0;
     }
+
+    compiler->main_function = -1;
 }
 
 static obj_function_t* _end_compiler() {
@@ -402,7 +411,7 @@ static uint8_t _generate_variable(TokenType type, const char *hint) {
         _error("Too many generated values in script (defer).");
 
     char* temp_name =  &_generated_variables_block[_gen_var_offset];
-    sprintf(temp_name, "%s_%d\0", hint, _current->local_count);
+    sprintf(temp_name, "%s_%d", hint, _current->local_count);
     int length = strlen(temp_name);
     _gen_var_offset += length;
     
@@ -848,9 +857,20 @@ static void _defer_declaration() {
 
 static void _fun_declaration() {
     uint8_t global = _parse_variable("Expect function name.");
+    
+    if (_current->enclosing == NULL) {
+        if ( strncmp(_parser.previous.start, "main", 4) == 0 ) {
+            if (_current->main_function != -1) {
+                _error_at_current("Cannot have more than one main()");
+            }
+            _current->main_function = global;
+        }
+    }
+    
     _mark_initialized();
     _function(TYPE_FUNCTION);
     _define_variable(global);
+
 }
 
 static void _var_declaration() {
@@ -1061,6 +1081,12 @@ obj_function_t* l_compile(const char* source) {
 
     while (!_match(TOKEN_EOF)) {
         _declaration();
+    }
+
+    // if the main function is defined, call it
+    if ( compiler.main_function != -1 ) {
+        _emit_bytes(OP_GET_GLOBAL, compiler.main_function);
+        _emit_bytes(OP_CALL, 0);
     }
 
     obj_function_t* function = _end_compiler();

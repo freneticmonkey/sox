@@ -25,23 +25,32 @@ static void _repl() {
 }
 
 int main(int argc, const char* argv[]) {
-    printf("Starting sox %s ...\ncommit: %s\nbranch: %s\n", 
-        VERSION,
-        COMMIT,
-        BRANCH
-    );
-
     l_init_vm();
 
     if (argc == 1) {
+        printf("Starting sox %s ...\ncommit: %s\nbranch: %s\n", 
+            VERSION,
+            COMMIT,
+            BRANCH
+        );
         _repl();
-    } else if (argc == 2) {
-        int status = l_run_file(argv[1]);
+    } else if (argc >= 2) {
+        if ( argc == 2 && 
+            (strncmp(argv[1], "help", 4) == 0) || 
+            (strncmp(argv[1], "h", 4) == 0) ) {
+      
+            printf("Sox %s\ncommit: %s\nbranch: %s\n", 
+                VERSION,
+                COMMIT,
+                BRANCH
+            );
+            fprintf(stderr, "Usage: sox [path]\n");
+            exit(64);
+        }
+
+        int status = l_run_file(argc, argv);
         if (status != 0)
             exit(status);
-    } else {
-        fprintf(stderr, "Usage: sox [path]\n");
-        exit(64);
     }
 
     l_free_vm();

@@ -42,7 +42,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/sox",
-            "args": ["src/test/scripts/defer.sox"],
+            "args": ["src/test/scripts/main.sox"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

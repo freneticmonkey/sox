@@ -23,7 +23,10 @@ static MunitResult _run_file(const MunitParameter params[], void *user_data)
     l_init_vm();
 
     munit_logf(MUNIT_LOG_WARNING , "running script: %s", filename);
-    int status = l_run_file(filename);
+    int status = l_run_file(2, (const char *[]){
+                                "sox",
+                                filename
+                            });
 
     l_free_vm();
 
@@ -31,8 +34,6 @@ static MunitResult _run_file(const MunitParameter params[], void *user_data)
 
 	return MUNIT_OK;
 }
-
-
 
 MunitSuite l_scripts_test_setup() {
 
@@ -46,6 +47,7 @@ MunitSuite l_scripts_test_setup() {
         "src/test/scripts/globals.sox",
         "src/test/scripts/loops.sox",
         "src/test/scripts/optional_semi.sox",
+        "src/test/scripts/main.sox",
         NULL,
     };
 
