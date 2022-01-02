@@ -54,6 +54,8 @@ ifeq (${THIS_OS},windows)
 	tools/windows/x86/premake5 vs2019 platform=windows
 endif
 ifeq (${THIS_OS},darwin)
+	sed -i '' -e 's/<commit>/${COMMIT}/g' src/version.h
+	sed -i '' -e 's/<branch>/${BRANCH}/g' src/version.h
 	./tools/osx/x86/premake5 xcode4 platform=macosx
 endif
 ifeq (${THIS_OS},linux)
