@@ -35,9 +35,9 @@ int main(int argc, const char* argv[]) {
         );
         _repl();
     } else if (argc >= 2) {
-        if ( argc == 2 && 
+        if ( argc == 2 && (
             (strncmp(argv[1], "help", 4) == 0) || 
-            (strncmp(argv[1], "h", 4) == 0) ) {
+            (strncmp(argv[1], "h", 4) == 0) ) ) {
       
             printf("Sox %s\ncommit: %s\nbranch: %s\n", 
                 VERSION,

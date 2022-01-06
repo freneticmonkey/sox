@@ -29,11 +29,11 @@ variation of the implementation of the sox interpreter as described on http://cr
 - [x] bracketless expressions
 - [x] optional main entrypoint
 - [ ] Switch statements
-- [ ] unit test functions
 - [ ] impl break
 - [ ] impl continue
 - [ ] native container implementation
 - [ ] argc / argv parameters to main
+- [ ] unit test functions
 - [ ] for-in container iteration
 - [ ] run scripts from repl
 - [ ] default parameter values

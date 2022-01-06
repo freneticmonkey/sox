@@ -14,6 +14,8 @@
 
 #define GEN_VAR_MAX 1024 * 1024
 
+#define MAX_BRANCHES 32
+
 typedef struct {
     token_t current;
     token_t previous;
@@ -54,7 +56,7 @@ typedef struct {
   bool is_local;
 } upvalue_t;
 
-typedef enum {
+typedef enum FunctionType {
     TYPE_FUNCTION,
     TYPE_DEFER,
     TYPE_INITIALIZER,
@@ -198,6 +200,13 @@ static int _emit_jump(uint8_t instruction) {
     return _current_chunk()->count - 2;
 }
 
+static void _emit_jump_location(int location) {
+    _emit_byte(OP_JUMP);
+    uint8_t a = (location>>8) & 0xff;
+    uint8_t b =  location & 0xff;
+    _emit_bytes( a, b );
+}
+
 static void _emit_return() {
     if (_current->type == TYPE_INITIALIZER) {
         _emit_bytes(OP_GET_LOCAL, 0);
@@ -239,6 +248,11 @@ static void l_init_compiler(compiler_t* compiler, FunctionType type) {
     // initialise global state
     if ( compiler->enclosing == NULL ) {
         memset(&_generated_variables_block, 0, GEN_VAR_MAX);
+
+#ifdef DEBUG_PRINT_CODE
+        printf(" == COMPILER START == ");
+#endif
+
     }    
 
     // set the enclosing compiler if one exists
@@ -326,7 +340,8 @@ static void          _declaration();
 static parse_rule_t* _get_rule(TokenType type);
 static void          _parse_precedence(Precedence precedence);
 
-static uint8_t _identifier_constant(token_t* name) {
+static uint8_t 
+_identifier_constant(token_t* name) {
     return _make_constant(OBJ_VAL(l_copy_string(name->start,
                                                 name->length)));
 }
@@ -705,6 +720,9 @@ parse_rule_t rules[] = {
     [TOKEN_VAR]           = {NULL,     NULL,     PREC_NONE},
     [TOKEN_WHILE]         = {NULL,     NULL,     PREC_NONE},
     [TOKEN_DEFER]         = {NULL,     NULL,     PREC_NONE},
+    [TOKEN_SWITCH]        = {NULL,     NULL,     PREC_NONE},
+    [TOKEN_CASE]          = {NULL,     _binary,  PREC_EQUALITY},
+    [TOKEN_DEFAULT]       = {NULL,     NULL,     PREC_NONE},
     [TOKEN_ERROR]         = {NULL,     NULL,     PREC_NONE},
     [TOKEN_EOF]           = {NULL,     NULL,     PREC_NONE},
 };
@@ -943,8 +961,13 @@ static void _for_statement() {
 }
 
 static void _if_statement() {
+
+    // if
+
     // process the logical expression
     _expression();
+
+    // {
 
     // run the 'then' statement
     int thenJump = _emit_jump(OP_JUMP_IF_FALSE);
@@ -954,6 +977,9 @@ static void _if_statement() {
     // finshed then - jump over the 'else' statement
     int elseJump = _emit_jump(OP_JUMP);
 
+    // }
+
+    // else {
     // otherwise run the 'else' statement
     _patch_jump(thenJump);
     _emit_byte(OP_POP);
@@ -961,8 +987,97 @@ static void _if_statement() {
     if (_match(TOKEN_ELSE))
         _statement();
     
+    // }
+
     // set the post if statement jump point
     _patch_jump(elseJump);
+}
+
+static void _case_statement(int *endJumps, int *branchCount, int *defaultLocation, uint8_t switch_var) {
+
+    if (_match(TOKEN_CASE)) {
+        _emit_bytes(OP_GET_GLOBAL, switch_var);
+
+        // read the case variable
+        _expression();
+
+        // compare
+        _emit_byte(OP_EQUAL);
+
+        // run the 'case' statement
+        int thenJump = _emit_jump(OP_JUMP_IF_FALSE);
+        _emit_byte(OP_POP);
+        _statement();
+
+        // otherwise run the 'next' statement
+
+        // finshed then - jump over the 'else' statement
+        endJumps[(*branchCount)++] = _emit_jump(OP_JUMP);
+
+        _patch_jump(thenJump);
+        // pop the equal result
+        _emit_byte(OP_POP);
+    }
+
+    // check for a switch default if one hasn't already been found
+    if ((*defaultLocation) == 0 && _match(TOKEN_DEFAULT)) {
+        // create a jump point to skip the default statement by errr default
+        // this will ensure that the default statement will be run after all 
+        // of the case statements have been checked
+        int skipJump = _emit_jump(OP_JUMP);
+        
+        // Get the location of the beginning of the default statement
+        *defaultLocation = _current_chunk()->count;
+        _statement();
+
+        // jump to the end of the switch statement
+        endJumps[(*branchCount)++] = _emit_jump(OP_JUMP);
+        
+        // patch the jump for the skip jump
+        _patch_jump(skipJump);
+    }
+
+    // check if there are more case statements
+    if (_check(TOKEN_CASE)) {
+        _case_statement(endJumps, branchCount, defaultLocation, switch_var);
+    }
+}
+
+static void _switch_statement() {
+    
+    int endJumps[MAX_BRANCHES];
+    int branchCount = 0;
+    int defaultLocation = 0;
+    
+
+    uint8_t global = _generate_variable(TOKEN_SWITCH, "switch_var");
+    _mark_initialized();
+    
+    // read the value to be switched on
+    _expression();
+    
+    // store it in the global
+    _define_variable(global);
+
+    _consume(TOKEN_LEFT_BRACE, "Expect '{' before switch body.");
+    _begin_scope();
+
+    if (_check(TOKEN_CASE) || _check(TOKEN_DEFAULT) ) {
+        _case_statement(endJumps, &branchCount, &defaultLocation, global);
+    }
+
+    // Insert a jump (loop = backwards jump) to the default case location.
+    // This will be skipped to the jump patches below if a case statement is run
+    _emit_loop(defaultLocation);
+
+    // set the return jump points for all case and default branches
+    for ( int i = 0; i < branchCount; i++) {
+        _patch_jump(endJumps[i]);
+    }
+
+    _end_scope();
+
+    _consume(TOKEN_RIGHT_BRACE, "Expect '}' after switch body.");
 }
 
 static void _print_statement() {
@@ -1014,6 +1129,7 @@ static void _synchronize() {
             case TOKEN_VAR:
             case TOKEN_FOR:
             case TOKEN_IF:
+            case TOKEN_SWITCH:
             case TOKEN_WHILE:
             case TOKEN_PRINT:
             case TOKEN_RETURN:
@@ -1051,6 +1167,8 @@ static void _statement() {
         _print_statement();
     } else if ( _match(TOKEN_IF) ) {
         _if_statement();
+    } else if ( _match(TOKEN_SWITCH) ) {
+        _switch_statement();
     } else if ( _match(TOKEN_RETURN) ) {
         _return_statement();
     } else if ( _match(TOKEN_WHILE) ) {

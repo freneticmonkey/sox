@@ -78,6 +78,19 @@
               }
             ],
             "miDebuggerPath": "/usr/bin/gdb"
+        },
+        {
+            "name": "(macOS) Launch Script (clang - build first)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/sox",
+            "args": ["src/test/scripts/switch.sox"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": true,
+            "MIMode": "lldb",
+            "preLaunchTask": "Build Sox",
         }
     ]
 }

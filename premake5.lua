@@ -148,6 +148,7 @@ project "test"
     kind "ConsoleApp"
     language "C"
     targetdir( "build" )
+    debugdir ( "." )
     defines { 
        "SOX_UNIT"
     }

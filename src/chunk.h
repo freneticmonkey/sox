@@ -4,7 +4,7 @@
 #include "common.h"
 #include "value.h"
 
-typedef enum {
+typedef enum OpCode {
     OP_CONSTANT,
     OP_NIL,
     OP_TRUE,

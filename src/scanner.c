@@ -124,8 +124,21 @@ static TokenType _check_keyword(int start, int length, const char* rest, TokenTy
 static TokenType _identifier_type() {
     switch (_scanner.start[0]) {
         case 'a': return _check_keyword(1, 2, "nd", TOKEN_AND);
-        case 'c': return _check_keyword(1, 4, "lass", TOKEN_CLASS);
-        case 'd': return _check_keyword(1, 4, "efer", TOKEN_DEFER);
+        case 'c':
+            if (_scanner.current - _scanner.start > 1) {
+                switch (_scanner.start[1]) {
+                    case 'l': return _check_keyword(2, 3, "ass", TOKEN_CLASS);
+                    case 'a': return _check_keyword(2, 2, "se", TOKEN_CASE);
+                }
+            }
+            break;
+        case 'd':
+            if (_scanner.current - _scanner.start > 1) {
+                switch (_scanner.start[3]) {
+                    case 'e': return _check_keyword(4, 1, "r", TOKEN_DEFER);
+                    case 'a': return _check_keyword(4, 3, "ult", TOKEN_DEFAULT);
+                }
+            }
         case 'e': return _check_keyword(1, 3, "lse", TOKEN_ELSE);
         case 'f':
             if (_scanner.current - _scanner.start > 1) {
@@ -141,7 +154,14 @@ static TokenType _identifier_type() {
         case 'o': return _check_keyword(1, 1, "r", TOKEN_OR);
         case 'p': return _check_keyword(1, 4, "rint", TOKEN_PRINT);
         case 'r': return _check_keyword(1, 5, "eturn", TOKEN_RETURN);
-        case 's': return _check_keyword(1, 4, "uper", TOKEN_SUPER);
+        case 's': 
+            if (_scanner.current - _scanner.start > 1) {
+                switch (_scanner.start[1]) {
+                    case 'u': return _check_keyword(2, 3, "per", TOKEN_SUPER);
+                    case 'w': return _check_keyword(2, 4, "itch", TOKEN_SWITCH);
+                }
+            }
+            break;
         case 't':
             if (_scanner.current - _scanner.start > 1) {
                 switch (_scanner.start[1]) {

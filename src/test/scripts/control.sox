@@ -38,3 +38,17 @@ if false_val or false_val {
 } else {
     print "false_val or false_val. Success!";
 }
+
+if false_val {
+    print "false_val is true. Error!";
+} else if true_val {
+    print "true_val is true. Success";
+}
+
+if false_val {
+    print "false_val is true. Error!";
+} else if !true_val {
+    print "true_val is false. Error!";
+} else {
+    print "else Success."
+}

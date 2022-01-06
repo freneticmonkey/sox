@@ -107,6 +107,9 @@ void l_free_vm() {
 }
 
 static InterpretResult _run() {
+#ifdef DEBUG_TRACE_EXECUTION
+    printf(" == VM START ==  ");
+#endif
     callframe_t* frame = &vm.frames[vm.frame_count - 1];
 
 #define READ_BYTE() (*frame->ip++)

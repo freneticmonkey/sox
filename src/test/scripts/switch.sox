@@ -1,0 +1,49 @@
+
+
+var number_val = 1;
+
+// testing expression switch value
+switch number_val + 1 {
+    case 0 {
+        print "case 0. Error"
+    }
+    case 1 {
+        print "number_val 1. Error"
+    }
+    default {
+        print "default. Error"
+    }
+    case 2 {
+        print "number_val + 1. Success!"
+    }
+}
+
+// Testing default
+switch number_val + 3 {
+    case 0 {
+        print "case 0. Error!"
+    }
+    case 1 {
+        print "number_val 1. Error"
+    }
+    default {
+        print "default. Success"
+    }
+    case 2 {
+        print "number_val + 1. Error"
+    }
+}
+
+
+// Testing default at end
+switch number_val + 3 {
+    case 0 {
+        print "case 0. Error!"
+    }
+    case 1 {
+        print "number_val 1. Error"
+    }
+    default {
+        print "default. Success"
+    }
+}

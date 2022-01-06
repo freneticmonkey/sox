@@ -46,5 +46,5 @@ int main(int argc, const char* argv[]) {
         MUNIT_SUITE_OPTION_NONE
     };
 
-    return munit_suite_main(&test_suite, (void *)"array", argc, argv);
+    return munit_suite_main(&test_suite, (void *)"tests", argc, argv);
 }
