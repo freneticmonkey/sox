@@ -91,6 +91,19 @@
             "externalConsole": true,
             "MIMode": "lldb",
             "preLaunchTask": "Build Sox",
+        },
+        {
+            "name": "(macOS) Tests (build first)",
+            "preLaunchTask": "Build Tests",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/test",
+            "args": ["--no-fork"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": true,
+            "MIMode": "lldb",
         }
     ]
 }

@@ -12,6 +12,7 @@ int main(int argc, const char* argv[]) {
         l_vm_test_setup(),
         l_bytecode_test_setup(),
         l_scripts_test_setup(),
+        NULL,
     };
 
     /* Now we'll actually declare the test suite.  You could do this in
