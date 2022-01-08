@@ -831,6 +831,7 @@ static void _loop_update_start(int location) {
 }
 
 static void _loop_jump() {
+    _patch_jumps(_current->loop->start, OP_CONTINUE);
     _emit_loop(_current->loop->start);
 }
 
@@ -1260,6 +1261,15 @@ static void _break_statement() {
     _emit_jump(OP_BREAK);
 }
 
+static void _continue_statement() {
+    if ( _current->loop == NULL) {
+        _error("Can't use continue outside of a loop statement.");
+        return;
+    }
+    _optional_consume(TOKEN_SEMICOLON, "Expect ';' after value.");
+    _emit_jump(OP_CONTINUE);
+}
+
 static void _return_statement() {
     if (_current->type == TYPE_SCRIPT) {
         _error("Can't return from top-level code.");
@@ -1340,6 +1350,8 @@ static void _declaration() {
 static void _statement() {
     if ( _match(TOKEN_BREAK) ) {
         _break_statement();
+    } else if ( _match(TOKEN_CONTINUE) ) {
+        _continue_statement();
     } else if ( _match(TOKEN_PRINT) ) {
         _print_statement();
     } else if ( _match(TOKEN_IF) ) {

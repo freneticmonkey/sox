@@ -387,6 +387,14 @@ static InterpretResult _run() {
                 _runtime_error("Compiler Error. Break op-code shouldn't be used in the VM.");
                 return INTERPRET_RUNTIME_ERROR;
             }
+            case OP_CASE_FALLTHROUGH: {
+                _runtime_error("Compiler Error. Case Fallthrough op-code shouldn't be used in the VM.");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            case OP_CONTINUE: {
+                _runtime_error("Compiler Error. Continue op-code shouldn't be used in the VM.");
+                return INTERPRET_RUNTIME_ERROR;
+            }
             
             break;
         }

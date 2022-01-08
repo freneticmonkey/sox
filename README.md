@@ -30,7 +30,7 @@ variation of the implementation of the sox interpreter as described on http://cr
 - [x] optional main entrypoint
 - [x] Switch statements
 - [x] impl break
-- [ ] impl continue
+- [x] impl continue
 - [ ] native container implementation
 - [ ] argc / argv parameters to main
 - [ ] unit test functions

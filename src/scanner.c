@@ -130,6 +130,7 @@ static TokenType _identifier_type() {
                 switch (_scanner.start[1]) {
                     case 'l': return _check_keyword(2, 3, "ass", TOKEN_CLASS);
                     case 'a': return _check_keyword(2, 2, "se", TOKEN_CASE);
+                    case 'o': return _check_keyword(2, 6, "ntinue", TOKEN_CONTINUE);
                 }
             }
             break;
