@@ -762,7 +762,7 @@ parse_rule_t rules[] = {
     [TOKEN_WHILE]         = {NULL,     NULL,     PREC_NONE},
     [TOKEN_DEFER]         = {NULL,     NULL,     PREC_NONE},
     [TOKEN_SWITCH]        = {NULL,     NULL,     PREC_NONE},
-    [TOKEN_CASE]          = {NULL,     _binary,  PREC_EQUALITY},
+    [TOKEN_CASE]          = {NULL,     _binary,  PREC_NONE},
     [TOKEN_DEFAULT]       = {NULL,     NULL,     PREC_NONE},
     [TOKEN_ERROR]         = {NULL,     NULL,     PREC_NONE},
     [TOKEN_EOF]           = {NULL,     NULL,     PREC_NONE},
@@ -793,6 +793,29 @@ static void _parse_precedence(Precedence precedence) {
 
 static parse_rule_t* _get_rule(TokenType type) {
   return &rules[type];
+}
+
+// Patch all placeholder ops in the current code to jumps to the current location
+static void _patch_jumps(int from_location, OpCode patch_code) {
+    int i = from_location;
+
+    chunk_t *chunk = &_current->function->chunk;
+
+    while ( i < chunk->count) {
+
+        // if a break op code is found
+        if ( chunk->code[i] == patch_code ) {
+            // update it to a jump
+            chunk->code[i] = OP_JUMP;
+            // and patch the current location
+            _patch_jump(i+1);
+            i += 3;
+
+        } else {
+            // otherwise skip forward in the chunk using the operation type appropriate size
+            i += 1 + l_op_get_arg_size_bytes(chunk->code, chunk->constants.values, i);
+        }
+    }
 }
 
 static void _loop_start(loop_t *loop) {
@@ -829,25 +852,7 @@ static void _loop_end() {
         _emit_byte(OP_POP);
     }
 
-    int i = _current->loop->body;
-
-    chunk_t *chunk = &_current->function->chunk;
-
-    while ( i < chunk->count) {
-
-        // if a break op code is found
-        if ( chunk->code[i] == OP_BREAK ) {
-            // update it to a jump
-            chunk->code[i] = OP_JUMP;
-            // and patch the current location
-            _patch_jump(i+1);
-            i += 3;
-
-        } else {
-            // otherwise skip forward in the chunk using the operation type appropriate size
-            i += 1 + l_op_get_arg_size_bytes(chunk->code, chunk->constants.values, i);
-        }
-    }
+    _patch_jumps(_current->loop->body, OP_BREAK);
 
     _current->loop = _current->loop->enclosing;
 }
@@ -880,25 +885,7 @@ static void _switch_jump_default() {
 
 static void _switch_end() {
 
-    int i = _current->_switch->start;
-
-    chunk_t *chunk = &_current->function->chunk;
-
-    while ( i < chunk->count) {
-
-        // if a break op code is found
-        if ( chunk->code[i] == OP_BREAK ) {
-            // update it to a jump
-            chunk->code[i] = OP_JUMP;
-            // and patch the current location
-            _patch_jump(i+1);
-            i += 3;
-
-        } else {
-            // otherwise skip forward in the chunk using the operation type appropriate size
-            i += 1 + l_op_get_arg_size_bytes(chunk->code, chunk->constants.values, i);
-        }
-    }
+    _patch_jumps(_current->_switch->start, OP_BREAK);
 
     _current->_switch = _current->_switch->enclosing;
 }
@@ -1171,13 +1158,23 @@ static void _case_statement() {
         // run the 'case' statement
         int thenJump = _emit_jump(OP_JUMP_IF_FALSE);
         _emit_byte(OP_POP);
-        _statement();
 
-        // otherwise run the 'next' statement
+        // check if there is a statement block for this case
+        if ( _check(TOKEN_LEFT_BRACE) ) {
+            // patch any fall through statements to this block
+            _patch_jumps(_current->_switch->start, OP_CASE_FALLTHROUGH);
 
-        // finshed then - jump over the 'else' statement
-        _emit_jump(OP_BREAK);
+            // then run the statement
+            _statement();
 
+            // finshed now jump to the end of the switch statement
+            _emit_jump(OP_BREAK);
+
+        } else {
+            // insert a jump marker to jump to the next defined block
+            _emit_jump(OP_CASE_FALLTHROUGH);
+        }
+        
         _patch_jump(thenJump);
         // pop the equal result
         _emit_byte(OP_POP);

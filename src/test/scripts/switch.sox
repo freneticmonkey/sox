@@ -47,3 +47,15 @@ switch number_val + 3 {
         print "default. Success"
     }
 }
+
+// Testing fallthrough switch
+print "Testing fallthrough switch"
+switch 0 {
+    case 0
+    case 1 {
+        print "number_val 1 or 0"
+    }
+    default {
+        print "default. Success"
+    }
+}

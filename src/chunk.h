@@ -44,6 +44,7 @@ typedef enum OpCode {
     OP_METHOD,
     // VM NO-OP
     OP_BREAK,
+    OP_CASE_FALLTHROUGH,
 } OpCode;
 
 typedef struct {
