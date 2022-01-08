@@ -39,7 +39,7 @@ install-deps:
 	./install.sh
 
 run:
-	./build/${PROJECT_NAME}
+	./build/${PROJECT_NAME} ${SCRIPT}
 
 run-test:
 	./build/test
