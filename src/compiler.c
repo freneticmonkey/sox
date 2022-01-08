@@ -87,6 +87,15 @@ typedef struct loop_t {
 
 } loop_t;
 
+typedef struct switch_t switch_t;
+
+typedef struct switch_t {
+    switch_t *enclosing;
+    int      start;
+    int      default_jump;
+    uint8_t  global_variable;
+} switch_t;
+
 typedef struct compiler_t compiler_t;
 typedef struct compiler_t {
     compiler_t*     enclosing;
@@ -103,6 +112,9 @@ typedef struct compiler_t {
 
     // current loop being compiled or NULL if no loop
     loop_t         *loop;
+    
+    // current switch being compiled or NULL if no switch
+    switch_t       *_switch;
 
     int             main_function;
 } compiler_t;
@@ -288,6 +300,7 @@ static void l_init_compiler(compiler_t* compiler, FunctionType type) {
     compiler->type = type;
 
     compiler->loop = NULL;
+    compiler->_switch = NULL;
 
     compiler->local_count = 0;
     compiler->scope_depth = 0;
@@ -816,7 +829,6 @@ static void _loop_end() {
         _emit_byte(OP_POP);
     }
 
-    // TODO: iterate over loop body to patch any break or continue statements
     int i = _current->loop->body;
 
     chunk_t *chunk = &_current->function->chunk;
@@ -838,6 +850,57 @@ static void _loop_end() {
     }
 
     _current->loop = _current->loop->enclosing;
+}
+
+static void _switch_start(switch_t *_switch, uint8_t global) {
+
+    _switch->enclosing = _current->_switch;
+    _switch->start = _current_chunk()->count;
+    _switch->default_jump = -1;
+    _switch->global_variable = global;
+
+    _current->_switch = _switch;
+}
+
+static bool _switch_found_default() {
+    return _current->_switch->default_jump != -1;
+}
+
+static void _switch_get_variable() {
+    _emit_bytes(OP_GET_GLOBAL, _current->_switch->global_variable);
+}
+
+static void _switch_set_default_location() {
+    _current->_switch->default_jump = _current_chunk()->count;
+}
+
+static void _switch_jump_default() {
+    _emit_loop(_current->_switch->default_jump);
+}
+
+static void _switch_end() {
+
+    int i = _current->_switch->start;
+
+    chunk_t *chunk = &_current->function->chunk;
+
+    while ( i < chunk->count) {
+
+        // if a break op code is found
+        if ( chunk->code[i] == OP_BREAK ) {
+            // update it to a jump
+            chunk->code[i] = OP_JUMP;
+            // and patch the current location
+            _patch_jump(i+1);
+            i += 3;
+
+        } else {
+            // otherwise skip forward in the chunk using the operation type appropriate size
+            i += 1 + l_op_get_arg_size_bytes(chunk->code, chunk->constants.values, i);
+        }
+    }
+
+    _current->_switch = _current->_switch->enclosing;
 }
 
 static void _expression() {
@@ -1092,10 +1155,12 @@ static void _if_statement() {
     _patch_jump(elseJump);
 }
 
-static void _case_statement(int *endJumps, int *branchCount, int *defaultLocation, uint8_t switch_var) {
+// static void _case_statement(int *endJumps, int *branchCount, int *defaultLocation, uint8_t switch_var) {
+static void _case_statement() {
 
     if (_match(TOKEN_CASE)) {
-        _emit_bytes(OP_GET_GLOBAL, switch_var);
+        // Push the switched variable onto the stack
+        _switch_get_variable();
 
         // read the case variable
         _expression();
@@ -1111,7 +1176,7 @@ static void _case_statement(int *endJumps, int *branchCount, int *defaultLocatio
         // otherwise run the 'next' statement
 
         // finshed then - jump over the 'else' statement
-        endJumps[(*branchCount)++] = _emit_jump(OP_JUMP);
+        _emit_jump(OP_BREAK);
 
         _patch_jump(thenJump);
         // pop the equal result
@@ -1119,18 +1184,20 @@ static void _case_statement(int *endJumps, int *branchCount, int *defaultLocatio
     }
 
     // check for a switch default if one hasn't already been found
-    if ((*defaultLocation) == 0 && _match(TOKEN_DEFAULT)) {
+    if ( !_switch_found_default() && _match(TOKEN_DEFAULT)) {
         // create a jump point to skip the default statement by errr default
         // this will ensure that the default statement will be run after all 
         // of the case statements have been checked
         int skipJump = _emit_jump(OP_JUMP);
         
         // Get the location of the beginning of the default statement
-        *defaultLocation = _current_chunk()->count;
+        _switch_set_default_location();
+        // *defaultLocation = _current_chunk()->count;
+
         _statement();
 
         // jump to the end of the switch statement
-        endJumps[(*branchCount)++] = _emit_jump(OP_JUMP);
+        _emit_jump(OP_BREAK);
         
         // patch the jump for the skip jump
         _patch_jump(skipJump);
@@ -1138,41 +1205,43 @@ static void _case_statement(int *endJumps, int *branchCount, int *defaultLocatio
 
     // check if there are more case statements
     if (_check(TOKEN_CASE)) {
-        _case_statement(endJumps, branchCount, defaultLocation, switch_var);
+        _case_statement();
     }
 }
 
 static void _switch_statement() {
     
-    int endJumps[MAX_BRANCHES];
-    int branchCount = 0;
-    int defaultLocation = 0;
-    
-
+    // setup a global for the switched value
     uint8_t global = _generate_variable(TOKEN_SWITCH, "switch_var");
     _mark_initialized();
-    
+
     // read the value to be switched on
     _expression();
     
     // store it in the global
     _define_variable(global);
 
+    switch_t _switch;
+    _switch_start(&_switch, global);
+    
     _consume(TOKEN_LEFT_BRACE, "Expect '{' before switch body.");
     _begin_scope();
 
     if (_check(TOKEN_CASE) || _check(TOKEN_DEFAULT) ) {
-        _case_statement(endJumps, &branchCount, &defaultLocation, global);
+        _case_statement();
     }
 
     // Insert a jump (loop = backwards jump) to the default case location.
     // This will be skipped to the jump patches below if a case statement is run
-    _emit_loop(defaultLocation);
+    _switch_jump_default();
 
     // set the return jump points for all case and default branches
-    for ( int i = 0; i < branchCount; i++) {
-        _patch_jump(endJumps[i]);
-    }
+    // for ( int i = 0; i < branchCount; i++) {
+    //     _patch_jump(endJumps[i]);
+    // }
+
+    // patch all instances of OP_BREAK
+    _switch_end();
 
     _end_scope();
 
@@ -1186,7 +1255,7 @@ static void _print_statement() {
 }
 
 static void _break_statement() {
-    if ( _current->loop == NULL ) {
+    if ( _current->loop == NULL && _current->_switch == NULL ) {
         _error("Can't use break outside of a loop or switch statement.");
         return;
     }
