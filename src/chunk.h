@@ -42,6 +42,8 @@ typedef enum OpCode {
     OP_CLASS,
     OP_INHERIT,
     OP_METHOD,
+    // VM NO-OP
+    OP_BREAK,
 } OpCode;
 
 typedef struct {
@@ -57,5 +59,7 @@ void l_free_chunk(chunk_t* chunk);
 
 void l_write_chunk(chunk_t* chunk, uint8_t byte, int line);
 int  l_add_constant(chunk_t* chunk, value_t value);
+
+int l_op_get_arg_size_bytes(const uint8_t* code, const value_t* constants, int ip);
 
 #endif

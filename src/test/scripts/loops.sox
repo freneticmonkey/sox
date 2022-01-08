@@ -12,3 +12,21 @@ print "Testing For";
 for var i = 0; i < 10; i = i + 1 {
     print i;
 }
+
+print "Testing While Break @ 5"
+initial = 0;
+while initial < 10 {
+    initial = initial + 1;
+    print initial;
+    if initial == 5 {
+        break;
+    }
+}
+
+print "Testing For Break @ 3";
+for var i = 0; i < 10; i = i + 1 {
+    print i;
+    if i == 3 {
+        break;
+    }
+}

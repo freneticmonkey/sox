@@ -28,8 +28,8 @@ variation of the implementation of the sox interpreter as described on http://cr
 - [x] remove semi-colon line ending
 - [x] bracketless expressions
 - [x] optional main entrypoint
-- [ ] Switch statements
-- [ ] impl break
+- [x] Switch statements
+- [x] impl break
 - [ ] impl continue
 - [ ] native container implementation
 - [ ] argc / argv parameters to main

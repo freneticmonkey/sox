@@ -381,6 +381,13 @@ static InterpretResult _run() {
             case OP_METHOD:
                 _define_method(READ_STRING());
                 break;
+
+            // NO-OP Codes
+            case OP_BREAK: {
+                _runtime_error("Compiler Error. Break op-code shouldn't be used in the VM.");
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            
             break;
         }
     }

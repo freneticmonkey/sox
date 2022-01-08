@@ -64,6 +64,29 @@ typedef enum FunctionType {
     TYPE_SCRIPT
 } FunctionType;
 
+// bringing loop tracking across from Wren for break and continue functionality
+typedef struct loop_t loop_t;
+
+typedef struct loop_t {
+    // The loop enclosing this one or NULL if the outermost loop
+    loop_t *enclosing;
+
+    // Index of the instruction that the loop should jump back to.
+    int start;
+
+    // Index of the argument for the CODE_JUMP_IF instruction used to exit the
+    // loop. Stored so we can patch it once we know where the loop ends.
+    int exit_jump;
+
+    // Index of the first instruction of the body of the loop.
+    int body;
+
+    // Depth of the scope(s) that need to be exited if a break is hit inside the
+    // loop.
+    int scope_depth;
+
+} loop_t;
+
 typedef struct compiler_t compiler_t;
 typedef struct compiler_t {
     compiler_t*     enclosing;
@@ -77,6 +100,9 @@ typedef struct compiler_t {
 
     uint8_t         deferred_functions[UINT8_COUNT];
     int             defer_count;
+
+    // current loop being compiled or NULL if no loop
+    loop_t         *loop;
 
     int             main_function;
 } compiler_t;
@@ -260,6 +286,8 @@ static void l_init_compiler(compiler_t* compiler, FunctionType type) {
 
     compiler->function = NULL;
     compiler->type = type;
+
+    compiler->loop = NULL;
 
     compiler->local_count = 0;
     compiler->scope_depth = 0;
@@ -754,6 +782,64 @@ static parse_rule_t* _get_rule(TokenType type) {
   return &rules[type];
 }
 
+static void _loop_start(loop_t *loop) {
+    loop->enclosing = _current->loop;
+    loop->start = _current_chunk()->count;
+    loop->scope_depth = _current->scope_depth;
+    loop->exit_jump = -1;
+    _current->loop = loop;
+}
+
+static void _loop_update_start(int location) {
+    _current->loop->start = location;
+}
+
+static void _loop_jump() {
+    _emit_loop(_current->loop->start);
+}
+
+static void _loop_test_exit() {
+    _current->loop->exit_jump = _emit_jump(OP_JUMP_IF_FALSE);
+    // pop the condition check result from the stack
+    _emit_byte(OP_POP);
+}
+
+static void _loop_body(int body_offset) {
+    _current->loop->body = body_offset;
+}
+
+static void _loop_end() {
+    _emit_loop(_current->loop->start);
+    if ( _current->loop->exit_jump != -1 ) {
+        _patch_jump(_current->loop->exit_jump);
+        // pop the condition check result from the stack
+        _emit_byte(OP_POP);
+    }
+
+    // TODO: iterate over loop body to patch any break or continue statements
+    int i = _current->loop->body;
+
+    chunk_t *chunk = &_current->function->chunk;
+
+    while ( i < chunk->count) {
+
+        // if a break op code is found
+        if ( chunk->code[i] == OP_BREAK ) {
+            // update it to a jump
+            chunk->code[i] = OP_JUMP;
+            // and patch the current location
+            _patch_jump(i+1);
+            i += 3;
+
+        } else {
+            // otherwise skip forward in the chunk using the operation type appropriate size
+            i += 1 + l_op_get_arg_size_bytes(chunk->code, chunk->constants.values, i);
+        }
+    }
+
+    _current->loop = _current->loop->enclosing;
+}
+
 static void _expression() {
     _parse_precedence(PREC_ASSIGNMENT);
 }
@@ -922,40 +1008,53 @@ static void _for_statement() {
         _expression_statement();
     }
     
-    int loopStart = _current_chunk()->count;
+    loop_t loop;
+    _loop_start(&loop);
     
-    // Process the for exit condition
-    int exitJump = -1;
+    // Process the for loop exit condition
     if (!_match(TOKEN_SEMICOLON)) {
         _expression();
         _consume(TOKEN_SEMICOLON, "Expect ';' after loop condition.");
 
         // Jump out of the loop if the condition is false.
-        exitJump = _emit_jump(OP_JUMP_IF_FALSE);
-        _emit_byte(OP_POP); // Condition.
+        _loop_test_exit();
     }
 
     // process the increment
 
     if (!_match(TOKEN_LEFT_BRACE)) {
+        // set a jump location to skip to the loop body
         int bodyJump = _emit_jump(OP_JUMP);
+
+        // store the increment location
         int incrementStart = _current_chunk()->count;
+        
+        // increment
         _expression();
         _emit_byte(OP_POP);
         _check(TOKEN_LEFT_BRACE);
+        
+        // now set a jump to location for the loop end condition check
+        _loop_jump();
 
-        _emit_loop(loopStart);
-        loopStart = incrementStart;
+        // this will only be executed on entering the for loop
+        // the jumps being setup will ensure that it is jumped over on
+        // every subsequent iteration
+
+        // reset the loop start to the beginning of the increment.
+        _loop_update_start(incrementStart);
+
+        // patch the pre-increment jump to the body location
+        // this will skip the increment code after the loop end condition has been checked
         _patch_jump(bodyJump);
     }
     
     _statement();
-    _emit_loop(loopStart);
 
-    if (exitJump != -1) {
-        _patch_jump(exitJump);
-        _emit_byte(OP_POP); // Condition.
-    }
+    // jump to either the increment code, or if no increment the loop end condition check
+    _loop_jump();
+
+    _loop_end();
 
     _end_scope();
 }
@@ -1086,6 +1185,15 @@ static void _print_statement() {
     _emit_byte(OP_PRINT);
 }
 
+static void _break_statement() {
+    if ( _current->loop == NULL ) {
+        _error("Can't use break outside of a loop or switch statement.");
+        return;
+    }
+    _optional_consume(TOKEN_SEMICOLON, "Expect ';' after value.");
+    _emit_jump(OP_BREAK);
+}
+
 static void _return_statement() {
     if (_current->type == TYPE_SCRIPT) {
         _error("Can't return from top-level code.");
@@ -1104,16 +1212,18 @@ static void _return_statement() {
 }
 
 static void _while_statement() {
-    int loopStart = _current_chunk()->count;
+    loop_t loop;
+    _loop_start(&loop);
+
     _expression();
 
-    int exitJump = _emit_jump(OP_JUMP_IF_FALSE);
-    _emit_byte(OP_POP);
-    _statement();
-    _emit_loop(loopStart);
+    _loop_test_exit();
 
-    _patch_jump(exitJump);
-    _emit_byte(OP_POP);
+    _statement();
+    
+    _loop_jump();
+
+    _loop_end();
 }
 
 static void _synchronize() {
@@ -1157,13 +1267,14 @@ static void _declaration() {
         _statement();
     }
 
-
     if ( _parser.panic_mode )
         _synchronize();
 }
 
 static void _statement() {
-    if ( _match(TOKEN_PRINT) ) {
+    if ( _match(TOKEN_BREAK) ) {
+        _break_statement();
+    } else if ( _match(TOKEN_PRINT) ) {
         _print_statement();
     } else if ( _match(TOKEN_IF) ) {
         _if_statement();

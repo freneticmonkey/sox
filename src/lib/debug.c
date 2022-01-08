@@ -149,6 +149,11 @@ int l_disassemble_instruction(chunk_t* chunk, int offset) {
             return _simple_instruction("OP_INHERIT", offset);
         case OP_METHOD:
             return _constant_instruction("OP_METHOD", chunk, offset);
+
+        // NO_OP codes that the VM shouldn't ever see
+        case OP_BREAK:
+            printf("OP_BREAK: Compiler Error. The VM should never see this\n");
+            return offset + 3;
         default:
             printf("Unknown opcode %d\n", instruction);
             return offset + 1;

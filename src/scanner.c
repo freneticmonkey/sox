@@ -124,6 +124,7 @@ static TokenType _check_keyword(int start, int length, const char* rest, TokenTy
 static TokenType _identifier_type() {
     switch (_scanner.start[0]) {
         case 'a': return _check_keyword(1, 2, "nd", TOKEN_AND);
+        case 'b': return _check_keyword(1, 4, "reak", TOKEN_BREAK);
         case 'c':
             if (_scanner.current - _scanner.start > 1) {
                 switch (_scanner.start[1]) {
