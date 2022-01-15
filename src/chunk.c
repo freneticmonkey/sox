@@ -78,6 +78,8 @@ int l_op_get_arg_size_bytes(const uint8_t* code, const value_t* constants, int i
         case OP_GET_PROPERTY:
         case OP_SET_PROPERTY:
         case OP_GET_SUPER:
+        case OP_GET_INDEX:
+        case OP_SET_INDEX:
         case OP_CLASS:
         case OP_CALL:
         case OP_METHOD:
@@ -99,6 +101,11 @@ int l_op_get_arg_size_bytes(const uint8_t* code, const value_t* constants, int i
             // There are two bytes for the constant, then two for each upvalue.
             return 2 + (loadedFn->upvalue_count * 2);
         }
+
+        case OP_BREAK:
+        case OP_CASE_FALLTHROUGH:
+        case OP_CONTINUE:
+            return 0;
     }
 
     // TODO: Throw compile error here

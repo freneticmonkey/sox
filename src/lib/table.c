@@ -6,6 +6,8 @@
 #include "table.h"
 #include "value.h"
 
+#include "vm.h"
+
 #define TABLE_MAX_LOAD 0.75
 
 void l_init_table(table_t* table) {

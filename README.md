@@ -31,15 +31,21 @@ variation of the implementation of the sox interpreter as described on http://cr
 - [x] Switch statements
 - [x] impl break
 - [x] impl continue
-- [ ] native container implementation
 - [ ] argc / argv parameters to main
 - [ ] unit test functions
+- [ ] native container implementations
+    - [x] table
+    - [ ] list / slice
+    - [ ] helper functions
+        - [ ] append
+        - [/] len
+        - [ ] range -> for in range
 - [ ] for-in container iteration
 - [ ] run scripts from repl
 - [ ] default parameter values
 - [ ] remove global variables
 - [ ] multi-line comment blocks
-- [ ] load multiple scripts
+- [ ] load multiple scripts / modules
 
 ## Advanced language features
 - [ ] interfaces

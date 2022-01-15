@@ -15,7 +15,6 @@ typedef struct {
   entry_t* entries;
 } table_t;
 
-
 void l_init_table(table_t *table);
 void l_free_table(table_t* table);
 

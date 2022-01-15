@@ -4,8 +4,10 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "lib/memory.h"
 #include "lib/debug.h"
+#include "lib/memory.h"
+#include "lib/native_api.h"
+#include "lib/table.h"
 #include "common.h"
 #include "compiler.h"
 #include "vm.h"
@@ -21,6 +23,33 @@ static value_t _usleep_native(int argCount, value_t* args) {
         return NUMBER_VAL(usleep((unsigned int)AS_NUMBER(args[0])));
     }
     return NUMBER_VAL(-1);
+}
+
+static value_t _type(int argCount, value_t* args) {
+    if ( argCount == 1 ) {
+        const char* type = NULL;
+        switch (args[0].type) {
+            case VAL_BOOL:
+                type = "<bool>";
+                break;
+            case VAL_NIL:
+                type = "<nil>";
+                break;
+            case VAL_NUMBER:
+                type = "<number>";
+                break;
+            case VAL_OBJ: {
+                obj_t* obj = AS_OBJ(args[0]);
+                type = obj_type_to_string[obj->type];
+                break;
+            }
+        }
+        return OBJ_VAL(l_copy_string(type, strlen(type)));
+    }
+    const char* message = "type(): invalid argument(s)";
+    l_vm_runtime_error(message);
+    obj_string_t* msg = l_copy_string(message, strlen(message));
+    return OBJ_VAL(l_new_error(msg, NULL));
 }
 
 static value_t _peek(int distance);
@@ -42,7 +71,15 @@ static void _reset_stack() {
     vm.open_upvalues = NULL;
 }
 
-static void _runtime_error(const char* format, ...) {
+void l_vm_define_native(const char* name, native_func_t function) {
+    l_push(OBJ_VAL(l_copy_string(name, (int)strlen(name))));
+    l_push(OBJ_VAL(l_new_native(function)));
+    l_table_set(&vm.globals, AS_STRING(vm.stack[0]), vm.stack[1]);
+    l_pop();
+    l_pop();
+}
+
+void l_vm_runtime_error(const char* format, ...) {
     va_list args;
     va_start(args, format);
     vfprintf(stderr, format, args);
@@ -68,13 +105,13 @@ static void _runtime_error(const char* format, ...) {
     _reset_stack();
 }
 
-static void _define_native(const char* name, native_func_t function) {
-    l_push(OBJ_VAL(l_copy_string(name, (int)strlen(name))));
-    l_push(OBJ_VAL(l_new_native(function)));
-    l_table_set(&vm.globals, AS_STRING(vm.stack[0]), vm.stack[1]);
-    l_pop();
-    l_pop();
-}
+// void l_vm_define_native(const char* name, native_func_t function) {
+//     l_push(OBJ_VAL(l_copy_string(name, (int)strlen(name))));
+//     l_push(OBJ_VAL(l_new_native(function)));
+//     l_table_set(&vm.globals, AS_STRING(vm.stack[0]), vm.stack[1]);
+//     l_pop();
+//     l_pop();
+// }
 
 void l_init_vm() {
     _reset_stack();
@@ -93,10 +130,15 @@ void l_init_vm() {
     vm.init_string = NULL;
     vm.init_string = l_copy_string("init", 4);
 
+    // native lib functions
+    l_table_add_native();
+
+    l_vm_define_native("type", _type);
+
 
     // native functions
-    _define_native("clock", _clock_native);
-    _define_native("usleep", _usleep_native);
+    l_vm_define_native("clock", _clock_native);
+    l_vm_define_native("usleep", _usleep_native);
 }
 
 void l_free_vm() {
@@ -120,7 +162,7 @@ static InterpretResult _run() {
 #define BINARY_OP(valueType, op) \
     do { \
         if (!IS_NUMBER(_peek(0)) || !IS_NUMBER(_peek(1))) { \
-            _runtime_error("Operands must be numbers."); \
+            l_vm_runtime_error("Operands must be numbers."); \
             return INTERPRET_RUNTIME_ERROR; \
         } \
         double b = AS_NUMBER(l_pop()); \
@@ -172,7 +214,7 @@ static InterpretResult _run() {
                 obj_string_t* name = READ_STRING();
                 value_t value;
                 if (!l_table_get(&vm.globals, name, &value)) {
-                    _runtime_error("Undefined variable '%s'.", name->chars);
+                    l_vm_runtime_error("Undefined variable '%s'.", name->chars);
                     return INTERPRET_RUNTIME_ERROR;
                 }
                 l_push(value);
@@ -188,7 +230,7 @@ static InterpretResult _run() {
                 obj_string_t* name = READ_STRING();
                 if (l_table_set(&vm.globals, name, _peek(0))) {
                     l_table_delete(&vm.globals, name); 
-                    _runtime_error("Undefined variable '%s'.", name->chars);
+                    l_vm_runtime_error("Undefined variable '%s'.", name->chars);
                     return INTERPRET_RUNTIME_ERROR;
                 }
                 break;
@@ -205,7 +247,7 @@ static InterpretResult _run() {
             }
             case OP_GET_PROPERTY: {
                 if (!IS_INSTANCE(_peek(0))) {
-                    _runtime_error("Only instances have properties.");
+                    l_vm_runtime_error("Only instances have properties.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
@@ -226,7 +268,7 @@ static InterpretResult _run() {
             }
             case OP_SET_PROPERTY: {
                 if (!IS_INSTANCE(_peek(1))) {
-                    _runtime_error("Only instances have properties.");
+                    l_vm_runtime_error("Only instances have properties.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
@@ -244,6 +286,47 @@ static InterpretResult _run() {
                 if (!_bind_method(superclass, name)) {
                     return INTERPRET_RUNTIME_ERROR;
                 }
+                break;
+            }
+            case OP_GET_INDEX: {
+                value_t i = l_pop();
+
+                if ( !IS_STRING(i) ) {
+                    l_vm_runtime_error("Index value must be a string. type=(%s)", obj_type_to_string[i.type]);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                
+                if ( !IS_TABLE(_peek(0)) ) {
+                    l_vm_runtime_error("cannot index non-table types.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                obj_table_t* table = AS_TABLE(l_pop());
+                
+                value_t value;
+                if ( l_table_get(&table->table, AS_STRING(i), &value) )
+                    l_push(value);
+                else
+                    l_push(NIL_VAL);
+
+                break;
+            }
+            case OP_SET_INDEX: {
+                
+                value_t set_value = l_pop();
+                value_t index_value = l_pop();
+
+                if ( !IS_STRING(index_value) ) {
+                    l_vm_runtime_error("Index value must be a string. type=(%s)", obj_type_to_string[index_value.type]);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                
+                if ( !IS_TABLE(_peek(0)) ) {
+                    l_vm_runtime_error("cannot index non-table types.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                obj_table_t* table = AS_TABLE(l_pop());
+                l_table_set(&table->table, AS_STRING(index_value), set_value);
+                l_push(set_value);
                 break;
             }
             case OP_EQUAL: {
@@ -264,7 +347,7 @@ static InterpretResult _run() {
                     l_push(NUMBER_VAL(a + b));
                 } 
                 else {
-                    _runtime_error(
+                    l_vm_runtime_error(
                         "Operands must be two numbers or two strings.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
@@ -276,7 +359,7 @@ static InterpretResult _run() {
             case OP_NOT:      l_push(BOOL_VAL(_is_falsey(l_pop()))); break;
             case OP_NEGATE: {
                 if (!IS_NUMBER(_peek(0))) {
-                    _runtime_error("Operand must be a number.");
+                    l_vm_runtime_error("Operand must be a number.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
                 l_push(NUMBER_VAL(-AS_NUMBER(l_pop())));
@@ -370,7 +453,7 @@ static InterpretResult _run() {
             case OP_INHERIT: {
                 value_t superclass = _peek(1);
                 if (!IS_CLASS(superclass)) {
-                    _runtime_error("Superclass must be a class.");
+                    l_vm_runtime_error("Superclass must be a class.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
                 obj_class_t* subclass = AS_CLASS(_peek(0));
@@ -384,15 +467,15 @@ static InterpretResult _run() {
 
             // NO-OP Codes
             case OP_BREAK: {
-                _runtime_error("Compiler Error. Break op-code shouldn't be used in the VM.");
+                l_vm_runtime_error("Compiler Error. Break op-code shouldn't be used in the VM.");
                 return INTERPRET_RUNTIME_ERROR;
             }
             case OP_CASE_FALLTHROUGH: {
-                _runtime_error("Compiler Error. Case Fallthrough op-code shouldn't be used in the VM.");
+                l_vm_runtime_error("Compiler Error. Case Fallthrough op-code shouldn't be used in the VM.");
                 return INTERPRET_RUNTIME_ERROR;
             }
             case OP_CONTINUE: {
-                _runtime_error("Compiler Error. Continue op-code shouldn't be used in the VM.");
+                l_vm_runtime_error("Compiler Error. Continue op-code shouldn't be used in the VM.");
                 return INTERPRET_RUNTIME_ERROR;
             }
             
@@ -441,7 +524,7 @@ static value_t _peek(int distance) {
 
 static bool _call(obj_closure_t* closure, int argCount) {
     if (argCount != closure->function->arity) {
-        _runtime_error(
+        l_vm_runtime_error(
             "Expected %d arguments but got %d.",
             closure->function->arity, 
             argCount
@@ -450,7 +533,7 @@ static bool _call(obj_closure_t* closure, int argCount) {
     }
 
     if (vm.frame_count == FRAMES_MAX) {
-        _runtime_error("Stack overflow.");
+        l_vm_runtime_error("Stack overflow.");
         return false;
     }
 
@@ -478,7 +561,7 @@ static bool _call_value(value_t callee, int argCount) {
                 if (l_table_get(&klass->methods, vm.init_string, &initializer)) {
                     return _call(AS_CLOSURE(initializer), argCount);
                 } else if (argCount != 0) {
-                    _runtime_error("Expected 0 arguments but got %d.", argCount);
+                    l_vm_runtime_error("Expected 0 arguments but got %d.", argCount);
                     return false;
                 }
 
@@ -497,14 +580,14 @@ static bool _call_value(value_t callee, int argCount) {
                 break; // Non-callable object type.
         }
     }
-    _runtime_error("Can only call functions and classes.");
+    l_vm_runtime_error("Can only call functions and classes.");
     return false;
 }
 
 static bool _invoke_from_class(obj_class_t* klass, obj_string_t* name, int argCount) {
     value_t method;
     if (!l_table_get(&klass->methods, name, &method)) {
-        _runtime_error("Undefined property '%s'.", name->chars);
+        l_vm_runtime_error("Undefined property '%s'.", name->chars);
         return false;
     }
     return _call(AS_CLOSURE(method), argCount);
@@ -514,7 +597,7 @@ static bool _invoke(obj_string_t* name, int argCount) {
     value_t receiver = _peek(argCount);
 
     if (!IS_INSTANCE(receiver)) {
-        _runtime_error("Only instances have methods.");
+        l_vm_runtime_error("Only instances have methods.");
         return false;
     }
 
@@ -532,7 +615,7 @@ static bool _invoke(obj_string_t* name, int argCount) {
 static bool _bind_method(obj_class_t* klass, obj_string_t* name) {
     value_t method;
     if (!l_table_get(&klass->methods, name, &method)) {
-        _runtime_error("Undefined property '%s'.", name->chars);
+        l_vm_runtime_error("Undefined property '%s'.", name->chars);
         return false;
     }
 

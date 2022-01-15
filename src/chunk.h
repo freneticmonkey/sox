@@ -20,6 +20,8 @@ typedef enum OpCode {
     OP_GET_PROPERTY,
     OP_SET_PROPERTY,
     OP_GET_SUPER,
+    OP_GET_INDEX,
+    OP_SET_INDEX,
     OP_EQUAL,
     OP_GREATER,
     OP_LESS,

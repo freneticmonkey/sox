@@ -49,6 +49,7 @@ MunitSuite l_scripts_test_setup() {
         "src/test/scripts/optional_semi.sox",
         "src/test/scripts/main.sox",
         "src/test/scripts/switch.sox",
+        "src/test/scripts/table.sox",
         NULL,
     };
 

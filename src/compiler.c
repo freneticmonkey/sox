@@ -706,6 +706,18 @@ static void _this_(bool canAssign) {
     _variable(false);
 }
 
+static void _index(bool canAssign) {
+    _expression();
+    _consume(TOKEN_RIGHT_BRACKET, "Expect ']' after indexing expression.");
+
+    if (canAssign && _match(TOKEN_EQUAL)) {
+        _expression();
+        _emit_byte(OP_SET_INDEX);
+    } else {
+        _emit_byte(OP_GET_INDEX);
+    }
+}
+
 static void _unary(bool canAssign) {
     TokenType operatorType = _parser.previous.type;
 
@@ -726,6 +738,8 @@ parse_rule_t rules[] = {
     [TOKEN_RIGHT_PAREN]   = {NULL,     NULL,     PREC_NONE},
     [TOKEN_LEFT_BRACE]    = {NULL,     NULL,     PREC_NONE}, 
     [TOKEN_RIGHT_BRACE]   = {NULL,     NULL,     PREC_NONE},
+    [TOKEN_LEFT_BRACKET]  = {NULL,     _index,   PREC_CALL},
+    [TOKEN_RIGHT_BRACKET] = {NULL,     NULL,     PREC_NONE},
     [TOKEN_COMMA]         = {NULL,     NULL,     PREC_NONE},
     [TOKEN_DOT]           = {NULL,     _dot,     PREC_CALL},
     [TOKEN_MINUS]         = {_unary,   _binary,  PREC_TERM},
@@ -1373,8 +1387,6 @@ static void _statement() {
     }
 }
 
-
-
 obj_function_t* l_compile(const char* source) {
     l_init_scanner(source);
     compiler_t compiler;
@@ -1392,8 +1404,31 @@ obj_function_t* l_compile(const char* source) {
 
     // if the main function is defined, call it
     if ( compiler.main_function != -1 ) {
+
+        // Create argc + argv parameters
+        
+        // uint8_t global = _generate_variable(TOKEN_IDENTIFIER, "argc");
+        // _mark_initialized();
+
+        // _named_variable(_synthetic_token("argc"), false);
+
+        // // store it in the global
+        // _define_variable(global);
+
+
         _emit_bytes(OP_GET_GLOBAL, compiler.main_function);
-        _emit_bytes(OP_CALL, 0);
+
+        _emit_constant((value_t){
+            .type = VAL_NUMBER,
+            .as.number = 1,
+        });
+
+        _emit_constant((value_t){
+            .type = VAL_OBJ,
+            .as.obj = (obj_t*)l_copy_string("params", 6),
+        });
+
+        _emit_bytes(OP_CALL, 2);
     }
 
     obj_function_t* function = _end_compiler();

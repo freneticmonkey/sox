@@ -84,7 +84,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/sox",
-            "args": ["src/test/scripts/switch.sox"],
+            "args": ["src/test/scripts/closure.sox"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

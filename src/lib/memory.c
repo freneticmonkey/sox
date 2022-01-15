@@ -18,7 +18,9 @@ void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
 
     // deallocating
     size_t alloc_size = newSize - oldSize;
+#ifdef DEBUG_LOG_GC
     size_t vm_bytes = vm.bytes_allocated;
+#endif
 
     if ( (newSize < oldSize) && ( (SIZE_MAX - alloc_size + 1) > vm.bytes_allocated ) ) {
         printf("detected untracked vm memory. vm bytes: %zu. dealloc bytes: %zu\n", 
@@ -133,6 +135,9 @@ static void l_mark_array(value_array_t* array) {
 }
 
 static void _blacken_object(obj_t* object) {
+    if (object == NULL) {
+        return;
+    }
 
 #ifdef DEBUG_LOG_GC
     printf("%p blacken ", (void*)object);
@@ -176,6 +181,18 @@ static void _blacken_object(obj_t* object) {
         case OBJ_UPVALUE:
             l_mark_value(((obj_upvalue_t*)object)->closed);
             break;
+        case OBJ_TABLE: {
+            obj_table_t* table = (obj_table_t*)object;
+            l_mark_object((obj_t*)table);
+            l_mark_table(&table->table);
+            break;
+        }
+        case OBJ_ERROR: {
+            obj_error_t* error = (obj_error_t*)object;
+            l_mark_object((obj_t*)error->enclosed);
+            l_mark_object((obj_t*)error->msg);
+            l_mark_object((obj_t*)error);
+        }
         case OBJ_NATIVE:
         case OBJ_STRING:
         break;
@@ -183,6 +200,10 @@ static void _blacken_object(obj_t* object) {
 }
 
 static void _free_object(obj_t* object) {
+
+    if (object == NULL) {
+        return;
+    }
 
 #ifdef DEBUG_LOG_GC
 
@@ -218,6 +239,12 @@ static void _free_object(obj_t* object) {
         }
         case OBJ_UPVALUE:
             free_size = sizeof(obj_upvalue_t);
+            break;
+        case OBJ_TABLE:
+            free_size = sizeof(obj_table_t);
+            break;
+        case OBJ_ERROR:
+            free_size = sizeof(obj_error_t);
             break;
     }
 
@@ -269,6 +296,20 @@ static void _free_object(obj_t* object) {
         case OBJ_UPVALUE:
             FREE(obj_upvalue_t, object);
             break;
+
+        case OBJ_TABLE: {
+            obj_table_t* table = (obj_table_t *)object;
+            l_free_table(&table->table);
+            FREE(obj_table_t, table);
+            break;
+        }
+        case OBJ_ERROR: {
+            obj_error_t* error = (obj_error_t *)object;
+            _free_object((obj_t*)error->enclosed);
+            _free_object((obj_t*)error->msg);
+            FREE(obj_error_t, object);
+            break;
+        }
     }
 }
 
@@ -337,8 +378,8 @@ static void _sweep() {
 void  l_collect_garbage() {
 #ifdef DEBUG_LOG_GC
     printf("-- gc begin\n");
-#endif
     size_t before = vm.bytes_allocated;
+#endif
 
     _mark_roots();
 

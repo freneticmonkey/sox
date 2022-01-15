@@ -3,7 +3,7 @@
 
 #include "common.h"
 #include "chunk.h"
-#include "table.h"
+#include "lib/table.h"
 #include "value.h"
 
 #define OBJ_TYPE(value)   (AS_OBJ(value)->type)
@@ -15,6 +15,8 @@
 #define IS_INSTANCE(value)     l_is_obj_type(value, OBJ_INSTANCE)
 #define IS_NATIVE(value)       l_is_obj_type(value, OBJ_NATIVE)
 #define IS_STRING(value)       l_is_obj_type(value, OBJ_STRING)
+#define IS_TABLE(value)        l_is_obj_type(value, OBJ_TABLE)
+#define IS_ERROR(value)        l_is_obj_type(value, OBJ_ERROR)
 
 #define AS_BOUND_METHOD(value) ((obj_bound_method_t*)AS_OBJ(value))
 #define AS_CLASS(value)        ((obj_class_t*)AS_OBJ(value))
@@ -24,6 +26,8 @@
 #define AS_NATIVE(value)       (((obj_native_t*)AS_OBJ(value))->function)
 #define AS_STRING(value)       ((obj_string_t*)AS_OBJ(value))
 #define AS_CSTRING(value)      (((obj_string_t*)AS_OBJ(value))->chars)
+#define AS_TABLE(value)        ((obj_table_t*)AS_OBJ(value))
+#define AS_ERROR(value)        ((obj_error_t*)AS_OBJ(value))
 
 typedef enum {
     OBJ_BOUND_METHOD,
@@ -34,6 +38,8 @@ typedef enum {
     OBJ_NATIVE,
     OBJ_STRING,
     OBJ_UPVALUE,
+    OBJ_TABLE,
+    OBJ_ERROR,
 } ObjType;
 
 static char* obj_type_to_string[] = {
@@ -45,6 +51,8 @@ static char* obj_type_to_string[] = {
     "Native function",
     "String",
     "Upvalue",
+    "Table",
+    "Error"
 };
 
 struct obj_t{
@@ -74,6 +82,18 @@ struct obj_string_t {
     char*    chars;
     uint32_t hash;
 };
+
+typedef struct obj_table_t {
+    obj_t   obj;
+    table_t table;
+} obj_table_t;
+
+typedef struct obj_error_t obj_error_t;
+typedef struct obj_error_t {
+    obj_t         obj;
+    obj_string_t* msg;
+    obj_error_t*  enclosed;
+} obj_error_t;
 
 typedef struct obj_upvalue_t obj_upvalue_t;
 typedef struct obj_upvalue_t {
@@ -118,6 +138,8 @@ obj_native_t*       l_new_native(native_func_t function);
 obj_string_t*       l_take_string(char* chars, int length);
 obj_string_t*       l_copy_string(const char* chars, int length);
 obj_upvalue_t*      l_new_upvalue(value_t* slot);
+obj_table_t*        l_new_table();
+obj_error_t*        l_new_error(obj_string_t* msg, obj_error_t* enclosed);
 
 void l_print_object(value_t value);
 

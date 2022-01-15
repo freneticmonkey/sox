@@ -4,7 +4,7 @@ fn print_value(value) {
     print value
 }
 
-fn main() {
+fn main(argc, argv) {
     for var i = 0; i < 3; i = i + 1 {
         print_value("hello")
     }

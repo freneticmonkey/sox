@@ -3,7 +3,6 @@
 
 #include "lib/memory.h"
 #include "object.h"
-#include "table.h"
 #include "value.h"
 #include "vm.h"
 
@@ -125,6 +124,49 @@ obj_upvalue_t*  l_new_upvalue(value_t* slot) {
     return upvalue;
 }
 
+obj_table_t* l_new_table() {
+    obj_table_t* table = ALLOCATE_OBJ(obj_table_t, OBJ_TABLE);
+    l_init_table(&table->table);
+    return table;
+}
+
+obj_error_t* l_new_error(obj_string_t* msg, obj_error_t* enclosed) {
+    obj_error_t* error = ALLOCATE_OBJ(obj_error_t, OBJ_ERROR);
+    error->msg = l_copy_string(msg->chars, msg->length);
+    error->enclosed = (enclosed != NULL) ? enclosed : NULL;
+    return error;
+}
+
+void l_print_table(obj_table_t* table) {
+    // TODO: For each entry in table print <key> : var -> l_print_object
+    table_t* t = &table->table;
+
+    printf("{");
+
+    bool needSeparate = false;
+    for (int i = 0; i < t->capacity; i++) {
+        entry_t* entry = &t->entries[i];
+        if (entry->key == NULL) 
+            continue;
+
+        if ( needSeparate && i != 0 )
+            printf(",");
+        
+        printf("{\"%s\":\"", entry->key->chars);
+        l_print_value(entry->value);
+        printf("\"}");      
+        needSeparate = true;  
+    }
+    printf("}");
+}
+
+void l_print_error(obj_error_t* error) {
+    printf("error: %s", error->msg->chars);
+    if (error->enclosed != NULL) {
+        l_print_error(error->enclosed);
+    }
+}
+
 static void _print_function(obj_function_t* function) {
     if (function->name == NULL) {
         printf("<script>");
@@ -139,7 +181,7 @@ void l_print_object(value_t value) {
             _print_function(AS_BOUND_METHOD(value)->method->function);
             break;
         case OBJ_CLASS:
-            printf("class %s", AS_CLASS(value)->name->chars);
+            printf("<class: %s>", AS_CLASS(value)->name->chars);
         break;
         case OBJ_CLOSURE:
             _print_function(AS_CLOSURE(value)->function);
@@ -148,7 +190,7 @@ void l_print_object(value_t value) {
             _print_function(AS_FUNCTION(value));
             break;
         case OBJ_INSTANCE:
-            printf("%s instance", AS_INSTANCE(value)->klass->name->chars);
+            printf("<instance: %s> ", AS_INSTANCE(value)->klass->name->chars);
             break;
         case OBJ_NATIVE:
             printf("<native fn>");
@@ -157,7 +199,14 @@ void l_print_object(value_t value) {
             printf("%s", AS_CSTRING(value));
             break;
         case OBJ_UPVALUE:
-            printf("upvalue");
+            printf("<upvalue>");
+            break;
+        case OBJ_TABLE:
+            printf("<table>");
+            l_print_table(AS_TABLE(value));
+            break;
+        case OBJ_ERROR:
+            l_print_error(AS_ERROR(value));
             break;
     }
 }

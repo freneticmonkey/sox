@@ -90,6 +90,10 @@ int l_disassemble_instruction(chunk_t* chunk, int offset) {
             return _constant_instruction("OP_SET_PROPERTY", chunk, offset);
         case OP_GET_SUPER:
             return _constant_instruction("OP_GET_SUPER", chunk, offset);
+        case OP_GET_INDEX:
+            return _byte_instruction("OP_GET_INDEX", chunk, offset); // FIXME: Is this what I need?
+        case OP_SET_INDEX:
+            return _byte_instruction("OP_SET_INDEX", chunk, offset); // FIXME: Is this what I need?
         case OP_EQUAL:
             return _simple_instruction("OP_EQUAL", offset);
         case OP_GREATER:
