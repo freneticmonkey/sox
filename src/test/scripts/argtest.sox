@@ -1,0 +1,8 @@
+
+fn main(argc, argv) {
+    
+    print "arg count is: "
+    print argc
+    print "argv is "
+    print argv
+}

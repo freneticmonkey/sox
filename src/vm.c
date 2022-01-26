@@ -105,14 +105,6 @@ void l_vm_runtime_error(const char* format, ...) {
     _reset_stack();
 }
 
-// void l_vm_define_native(const char* name, native_func_t function) {
-//     l_push(OBJ_VAL(l_copy_string(name, (int)strlen(name))));
-//     l_push(OBJ_VAL(l_new_native(function)));
-//     l_table_set(&vm.globals, AS_STRING(vm.stack[0]), vm.stack[1]);
-//     l_pop();
-//     l_pop();
-// }
-
 void l_init_vm() {
     _reset_stack();
     vm.objects = NULL;

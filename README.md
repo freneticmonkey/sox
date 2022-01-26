@@ -33,6 +33,8 @@ variation of the implementation of the sox interpreter as described on http://cr
 - [x] impl continue
 - [ ] argc / argv parameters to main
 - [ ] unit test functions
+    - [ ] assert keyword + functionality
+    - [ ] benchmark option
 - [ ] native container implementations
     - [x] table
     - [ ] list / slice

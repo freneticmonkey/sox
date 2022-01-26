@@ -16,12 +16,9 @@ print(t)
 t["after"] = "goodbye"
 
 print(t)
-
-print(t)
-//     {"0","hello"}
-//     {"after","goodbye"}
+//     {"0","hello"},{"after","goodbye"}
 
 // var t2 = Table({
-//     "key" : "value",
-//     "name": "value"
+//     {"key" : "value"},
+//     {"name": "value"}
 // })
