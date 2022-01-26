@@ -5,7 +5,7 @@
 #include "test/scripts_test.h"
 #include "test/vm_test.h"
 
-int main(int argc, const char* argv[]) {
+int main(int argc, char* argv[]) {
     printf("Starting sox unit tests...\n");
 
     MunitSuite suites[] = {

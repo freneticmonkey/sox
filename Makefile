@@ -1,9 +1,15 @@
 COMMIT=$(shell git rev-parse --short HEAD)
 BRANCH=$(shell git rev-parse --abbrev-ref HEAD)
+BUILD_TIME=$(shell date)
+VERSION_H=src/version.h
 
 PROJECT_NAME=sox
 THIS_OS=windows
 THIS_ARCH=x86
+
+TOOL_PATH=.\tools\bin\windows\x86
+TOOL_BUILD=vs2019
+TOOL_PLATFORM=windows
 
 ifeq ($(OS),Windows_NT)
 	THIS_OS=windows
@@ -18,14 +24,25 @@ else
 	endif
 endif
 
+
 ifeq (${OS},win)
 	THIS_OS=windows
 endif
 ifeq (${OS},mac)
 	THIS_OS=darwin
+	TOOL_BUILD=xcode4
+	TOOL_PATH=./tools/bin/osx/x86
+	TOOL_PLATFORM=macosx
 endif
 ifeq (${OS},linux)
 	THIS_OS=linux
+	TOOL_BUILD=gmake
+	TOOL_PATH=./tools/bin/unix/x86
+	TOOL_PLATFORM=linux64
+	ifeq (${THIS_ARCH},aarch64)
+		TOOL_PATH=./tools/bin/unix/arm
+		TOOL_PLATFORM=linuxARM64
+	endif
 endif
 
 details:
@@ -46,28 +63,13 @@ run-test:
 
 gen: details
 	@echo "Setting Versions: Commit: ${COMMIT} Branch: ${BRANCH}"
-# Updating the commit info in version.h
-# Generating build projects
-ifeq (${THIS_OS},windows)
-	./tools/windows/x86/ssed -i 's/<commit>/${COMMIT}/g' src/version.h
-	./tools/windows/x86/ssed -i 's/<branch>/${BRANCH}/g' src/version.h
-	tools/windows/x86/premake5 vs2019 platform=windows
-endif
-ifeq (${THIS_OS},darwin)
-	sed -i '' -e 's/<commit>/${COMMIT}/g' src/version.h
-	sed -i '' -e 's/<branch>/${BRANCH}/g' src/version.h
-	./tools/osx/x86/premake5 xcode4 platform=macosx
-endif
-ifeq (${THIS_OS},linux)
-	sed -i 's/<commit>/${COMMIT}/g' src/version.h
-	sed -i 's/<branch>/${BRANCH}/g' src/version.h
-ifeq (${THIS_ARCH},aarch64)
-	./tools/unix/arm/premake5 gmake platform=linuxARM64
-else
-	./tools/unix/x86/premake5 gmake platform=linux64
-endif
 
-endif
+# Updating the commit info in version.h
+	git checkout ${VERSION_H}
+	${TOOL_PATH}\version -commit=${COMMIT} -branch=${BRANCH} -display=true -version_file=${VERSION_H}
+# Generating build projects
+	${TOOL_PATH}\premake5 ${TOOL_BUILD} platform=${TOOL_PLATFORM}
+	@echo "Gen Finished: Commit: ${COMMIT} Branch: ${BRANCH}"
 
 post-build:
 	git checkout src/version.h
@@ -151,3 +153,6 @@ else
 	rm -Rf ./build/
 	rm -Rf ./projects
 endif
+
+build-tools:
+	make -C tools/ all

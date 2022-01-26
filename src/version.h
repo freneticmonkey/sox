@@ -4,5 +4,6 @@
 static const char * VERSION = "0.0.1";
 static const char * COMMIT = "<commit>";
 static const char * BRANCH = "<branch>";
+static const char * BUILD_TIME = "<build_time>";
 
 #endif

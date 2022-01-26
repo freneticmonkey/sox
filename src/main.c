@@ -39,10 +39,11 @@ int main(int argc, const char* argv[]) {
             (strncmp(argv[1], "help", 4) == 0) || 
             (strncmp(argv[1], "h", 4) == 0) ) ) {
       
-            printf("Sox %s\ncommit: %s\nbranch: %s\n", 
+            printf("Sox %s\ncommit: %s\nbranch: %s\nbuild time: %s\n", 
                 VERSION,
                 COMMIT,
-                BRANCH
+                BRANCH,
+                BUILD_TIME
             );
             fprintf(stderr, "Usage: sox [path]\n");
             exit(64);
