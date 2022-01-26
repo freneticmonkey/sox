@@ -17,6 +17,20 @@
             "preLaunchTask": "Build Sox",
         },
         {
+          "name": "(Windows) Launch Script (build first)",
+          "type": "cppvsdbg",
+          "request": "launch",
+          "program": "${workspaceFolder}/build/sox",
+          "args": [
+            "src/test/scripts/main.sox"
+          ],
+          "stopAtEntry": false,
+          "cwd": "${workspaceFolder}",
+          "environment": [],
+          "externalConsole": false,
+          "preLaunchTask": "Build Sox",
+        },
+        {
             "name": "(Ubuntu) Launch (build first)",
             "type": "cppdbg",
             "request": "launch",

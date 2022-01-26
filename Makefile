@@ -24,18 +24,12 @@ else
 	endif
 endif
 
-
-ifeq (${OS},win)
-	THIS_OS=windows
-endif
-ifeq (${OS},mac)
-	THIS_OS=darwin
+ifeq (${THIS_OS},darwin)
 	TOOL_BUILD=xcode4
 	TOOL_PATH=./tools/bin/osx/x86
 	TOOL_PLATFORM=macosx
 endif
-ifeq (${OS},linux)
-	THIS_OS=linux
+ifeq (${THIS_OS},linux)
 	TOOL_BUILD=gmake
 	TOOL_PATH=./tools/bin/unix/x86
 	TOOL_PLATFORM=linux64
@@ -66,9 +60,9 @@ gen: details
 
 # Updating the commit info in version.h
 	git checkout ${VERSION_H}
-	${TOOL_PATH}\version -commit=${COMMIT} -branch=${BRANCH} -display=true -version_file=${VERSION_H}
+	${TOOL_PATH}/version -commit=${COMMIT} -branch=${BRANCH} -display=true -version_file=${VERSION_H}
 # Generating build projects
-	${TOOL_PATH}\premake5 ${TOOL_BUILD} platform=${TOOL_PLATFORM}
+	${TOOL_PATH}/premake5 ${TOOL_BUILD} platform=${TOOL_PLATFORM}
 	@echo "Gen Finished: Commit: ${COMMIT} Branch: ${BRANCH}"
 
 post-build:

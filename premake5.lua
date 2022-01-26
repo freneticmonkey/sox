@@ -99,7 +99,9 @@ project "sox"
       -- ignore all testing files
       removefiles {
          "src/test/**",
-         "src/**_test.*"
+         "src/**_test.*",
+         -- ignore windows specific includes
+         "src/lib/win/**"
       }
 
    -- enable tracing for debug builds
@@ -132,6 +134,13 @@ project "sox"
       }
       -- Turn off edit and continue
       editAndContinue "Off"
+      -- if on windows include the win32 impl of unix utils
+      sysincludedirs {
+         "src/lib/win"
+      }
+      files { 
+         "src/lib/win/*.c",
+      }
 
    filter { "system:macosx"}
       links {
@@ -195,6 +204,23 @@ project "test"
           "m",
           "pthread",
        }
+    
+    filter { "system:windows" }
+      defines {
+         "_CRT_SECURE_NO_WARNINGS"
+      }
+      disablewarnings { 
+         "4005"
+      }
+      -- Turn off edit and continue
+      editAndContinue "Off"
+      -- if on windows include the win32 impl of unix utils
+      sysincludedirs {
+         "src/lib/win"
+      }
+      files { 
+         "src/lib/win/*.c",
+      }
 
 -- External Libraries
 
