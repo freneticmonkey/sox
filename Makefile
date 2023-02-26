@@ -28,6 +28,10 @@ ifeq (${THIS_OS},darwin)
 	TOOL_BUILD=xcode4
 	TOOL_PATH=./tools/bin/osx/x86
 	TOOL_PLATFORM=macosx
+	ifeq (${THIS_ARCH},arm64)
+		# TOOL_PATH=./tools/bin/unix/arm
+		TOOL_PLATFORM=macosxARM
+	endif
 endif
 ifeq (${THIS_OS},linux)
 	TOOL_BUILD=gmake
@@ -42,6 +46,10 @@ endif
 details:
 	@echo "Detected OS: ${THIS_OS}"
 	@echo "Detected Arch: ${THIS_ARCH}"
+	@echo "Tool Path: ${TOOL_PATH}"
+	@echo "Tool Build: ${TOOL_BUILD}"
+	@echo "Tool Platform: ${TOOL_PLATFORM}"
+	
 	@echo "Commit: ${COMMIT}"
 	@echo "Branch: ${BRANCH}"
 	@echo "-----"
@@ -62,6 +70,7 @@ gen: details
 	git checkout ${VERSION_H}
 	${TOOL_PATH}/version -commit=${COMMIT} -branch=${BRANCH} -display=true -version_file=${VERSION_H}
 # Generating build projects
+	@echo "Tool Platform: ${TOOL_PLATFORM}"
 	${TOOL_PATH}/premake5 ${TOOL_BUILD} platform=${TOOL_PLATFORM}
 	@echo "Gen Finished: Commit: ${COMMIT} Branch: ${BRANCH}"
 
@@ -76,7 +85,7 @@ ifeq (${THIS_OS},windows)
 	msbuild.exe ./projects/${PROJECT_NAME}.sln -p:Platform="windows";Configuration=Debug -target:${PROJECT_NAME}
 endif
 ifeq (${THIS_OS},darwin)
-	xcodebuild -configuration "Debug" ARCHS="x86_64" -destination 'platform=macOS' -project "projects/${PROJECT_NAME}.xcodeproj" -target ${PROJECT_NAME}
+	xcodebuild -configuration "Debug" ARCHS="${THIS_ARCH}" -destination 'platform=macOS' -project "projects/${PROJECT_NAME}.xcodeproj" -target ${PROJECT_NAME}
 endif
 ifeq (${THIS_OS},linux)
 	make -C projects ${PROJECT_NAME} config=debug_linux64
