@@ -64,6 +64,6 @@ void l_free_chunk(chunk_t* chunk);
 void l_write_chunk(chunk_t* chunk, uint8_t byte, int line);
 int  l_add_constant(chunk_t* chunk, value_t value);
 
-int l_op_get_arg_size_bytes(const uint8_t* code, const value_t* constants, int ip);
+int l_op_get_arg_size_bytes(const chunk_t* chunk, int ip);
 
 #endif

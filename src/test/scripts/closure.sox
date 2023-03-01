@@ -32,7 +32,7 @@ in();
 var globalOne;
 var globalTwo;
 
-fn main() {
+fn start() {
   for var a = 1; a <= 2; a = a + 1 {
     fn closure() {
       print a;
@@ -45,6 +45,6 @@ fn main() {
   }
 }
 
-main();
+start();
 globalOne();
 globalTwo();

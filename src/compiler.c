@@ -812,7 +812,7 @@ static parse_rule_t* _get_rule(TokenType type) {
 // Patch all placeholder ops in the current code to jumps to the current location
 static void _patch_jumps(int from_location, OpCode patch_code) {
     int i = from_location;
-
+    int skip_size = 0;
     chunk_t *chunk = &_current->function->chunk;
 
     while ( i < chunk->count) {
@@ -827,7 +827,17 @@ static void _patch_jumps(int from_location, OpCode patch_code) {
 
         } else {
             // otherwise skip forward in the chunk using the operation type appropriate size
-            i += 1 + l_op_get_arg_size_bytes(chunk->code, chunk->constants.values, i);
+            skip_size = l_op_get_arg_size_bytes(chunk, i);
+
+            // if the bytecode wasn't able to be correctly read, display an error and return
+            // this is not ideal as it will just result in an error and corrupted bytecode
+            // should really be stopping execution entirely
+            if (skip_size == -1) {
+                _error("Invalid chunk data detected while patching jumps.");
+                return;
+            }
+
+            i += 1 + skip_size;
         }
     }
 }
