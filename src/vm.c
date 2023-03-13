@@ -1,8 +1,6 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
-#include <unistd.h>
 
 #include "lib/debug.h"
 #include "lib/memory.h"
@@ -14,43 +12,6 @@
 
 vm_t vm;
 
-static value_t _clock_native(int argCount, value_t* args) {
-    return NUMBER_VAL((double)clock() / CLOCKS_PER_SEC);
-}
-
-static value_t _usleep_native(int argCount, value_t* args) {
-    if ( argCount == 1 && IS_NUMBER(args[0]) ) {
-        return NUMBER_VAL(usleep((unsigned int)AS_NUMBER(args[0])));
-    }
-    return NUMBER_VAL(-1);
-}
-
-static value_t _type(int argCount, value_t* args) {
-    if ( argCount == 1 ) {
-        const char* type = NULL;
-        switch (args[0].type) {
-            case VAL_BOOL:
-                type = "<bool>";
-                break;
-            case VAL_NIL:
-                type = "<nil>";
-                break;
-            case VAL_NUMBER:
-                type = "<number>";
-                break;
-            case VAL_OBJ: {
-                obj_t* obj = AS_OBJ(args[0]);
-                type = obj_type_to_string[obj->type];
-                break;
-            }
-        }
-        return OBJ_VAL(l_copy_string(type, strlen(type)));
-    }
-    const char* message = "type(): invalid argument(s)";
-    l_vm_runtime_error(message);
-    obj_string_t* msg = l_copy_string(message, strlen(message));
-    return OBJ_VAL(l_new_error(msg, NULL));
-}
 
 static value_t _peek(int distance);
 static bool    _call(obj_closure_t* closure, int argCount);
@@ -74,6 +35,10 @@ static void _reset_stack() {
 void l_vm_define_native(const char* name, native_func_t function) {
     l_push(OBJ_VAL(l_copy_string(name, (int)strlen(name))));
     l_push(OBJ_VAL(l_new_native(function)));
+    
+    // register the new native call object in the memory tracking system
+    l_allocate_track_register_native(name, AS_NATIVE(vm.stack[1]));
+
     l_table_set(&vm.globals, AS_STRING(vm.stack[0]), vm.stack[1]);
     l_pop();
     l_pop();
@@ -124,13 +89,6 @@ void l_init_vm() {
 
     // native lib functions
     l_table_add_native();
-
-    l_vm_define_native("type", _type);
-
-
-    // native functions
-    l_vm_define_native("clock", _clock_native);
-    l_vm_define_native("usleep", _usleep_native);
 }
 
 void l_free_vm() {
@@ -483,9 +441,6 @@ static InterpretResult _run() {
 }
 
 InterpretResult l_interpret(const char* source) {
-    chunk_t chunk;
-    l_init_chunk(&chunk);
-
     obj_function_t* function = l_compile(source);
     if (function == NULL) {
         return INTERPRET_COMPILE_ERROR;
@@ -497,6 +452,10 @@ InterpretResult l_interpret(const char* source) {
     l_push(OBJ_VAL(closure));
     _call(closure, 0);
 
+    return INTERPRET_OK;
+}
+
+InterpretResult l_run() {
     return _run();
 }
 

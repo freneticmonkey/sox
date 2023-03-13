@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 
 #include "lib/memory.h"
 #include "vm.h"
@@ -13,6 +14,15 @@
 static size_t _internal_alloc = 0;
 static size_t _internal_dealloc = 0;
 static size_t _internal_vm_alloc_max = 0;
+
+typedef struct mem_track {
+    // memory tracking
+    bool track_allocations;
+    native_lookup_t native_lookup;
+    object_lookup_t object_lookup;
+} mem_track;
+
+static mem_track _mem_track;
 
 void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
 
@@ -410,3 +420,172 @@ void l_free_objects() {
 
     free(vm.gray_stack);
 }
+
+// bytecode deserialisation
+
+
+// initialise the bytecode deserialisation allocation tracking
+void l_allocate_track_init() {
+    _mem_track.track_allocations = true;
+
+    _mem_track.native_lookup = (native_lookup_t) {
+        .items = NULL,
+        .count = 0,
+        .capacity = 0
+    };
+
+    // allocate the initial capacity for the native lookup
+    _mem_track.native_lookup.capacity = 64;
+    _mem_track.native_lookup.items = ALLOCATE(native_lookup_item_t, 64);
+
+    _mem_track.object_lookup = (object_lookup_t) {
+        .items = NULL,
+        .count = 0,
+        .capacity = 0
+    };
+
+    // allocate the initial capacity for the object lookup
+    _mem_track.object_lookup.capacity = 64;
+    _mem_track.object_lookup.items = ALLOCATE(object_lookup_item_t, 64);
+}
+
+// cleanup the allocation tracking data
+void l_allocate_track_free() {
+    _mem_track.track_allocations = false;
+
+    FREE_ARRAY(native_lookup_item_t, _mem_track.native_lookup.items, _mem_track.native_lookup.capacity);
+
+    // iterate through the object lookup items and free each of the registered targets
+
+
+    FREE_ARRAY(object_lookup_item_t, _mem_track.object_lookup.items, _mem_track.object_lookup.capacity);
+}
+
+// register a native function pointer into the tracking structure
+void l_allocate_track_register_native(const char *name, void * ptr) {
+    if (_mem_track.native_lookup.count + 1 > _mem_track.native_lookup.capacity) {
+        size_t old_capacity = _mem_track.native_lookup.capacity;
+        _mem_track.native_lookup.capacity = GROW_CAPACITY(old_capacity);
+        _mem_track.native_lookup.items = GROW_ARRAY(
+            native_lookup_item_t,
+            _mem_track.native_lookup.items,
+            old_capacity,
+            _mem_track.native_lookup.capacity
+        );
+    }
+
+    _mem_track.native_lookup.items[_mem_track.native_lookup.count] = (native_lookup_item_t) {
+        .name = name,
+        .native = ptr
+    };
+
+    _mem_track.native_lookup.count++;
+}
+
+// get a native function pointer
+void * l_allocate_track_get_native_ptr(const char *name) {
+    for (int i = 0; i < _mem_track.native_lookup.count; i++) {
+        if (strcmp(_mem_track.native_lookup.items[i].name, name) == 0) {
+            return _mem_track.native_lookup.items[i].native;
+        }
+    }
+
+    return NULL;
+}
+
+// get a native function name
+const char * l_allocate_track_get_native_name(void * ptr) {
+    for (int i = 0; i < _mem_track.native_lookup.count; i++) {
+        if (_mem_track.native_lookup.items[i].native == ptr) {
+            return _mem_track.native_lookup.items[i].name;
+        }
+    }
+
+    return NULL;
+}
+
+// insert a new allocation for tracking into the allocation lookup table
+object_lookup_item_t * _insert_or_get_object_lookup_item(uintptr_t id) {
+
+    // Check if the item already exists, and return if found
+    for (int i = 0; i < _mem_track.object_lookup.count; i++) {
+        if (_mem_track.object_lookup.items[i].id == id) {
+            return &_mem_track.object_lookup.items[i];
+        }
+    }
+
+    // otherwise, insert a new item
+    if (_mem_track.object_lookup.count + 1 > _mem_track.object_lookup.capacity) {
+        size_t old_capacity = _mem_track.object_lookup.capacity;
+        _mem_track.object_lookup.capacity = GROW_CAPACITY(old_capacity);
+        _mem_track.object_lookup.items = GROW_ARRAY(
+            object_lookup_item_t,
+            _mem_track.object_lookup.items,
+            old_capacity,
+            _mem_track.object_lookup.capacity
+        );
+    }
+
+    _mem_track.object_lookup.items[_mem_track.object_lookup.count] = (object_lookup_item_t) {
+        .id = id,
+        .address = NULL,
+        .registered_targets = NULL,
+    };
+
+    _mem_track.object_lookup.count++;
+
+    // return the newly inserted item
+    return &_mem_track.object_lookup.items[_mem_track.object_lookup.count - 1];
+}
+
+// insert a new allocation for tracking into the allocation lookup table
+void l_allocate_track_register(uintptr_t id, void *address) {
+
+    object_lookup_item_t * item = _insert_or_get_object_lookup_item(id);
+
+    // assign the new address
+    item->address = address;
+}
+
+// register interest in a target address
+void l_allocate_track_target_register(uintptr_t id, void **target) {
+
+    // if the id doesn't in the lookup table, then we need to add it
+    // this is because the target address may be set before the object is
+    // allocated, so we need to register the target address before the object
+
+    object_lookup_item_t * item = _insert_or_get_object_lookup_item(id);
+
+    // check if the target is already registered, ignore the second registration
+    for (int i = 0; i < item->count; i++) {
+        if (item->registered_targets[i] == (obj_t *)target) {
+            return;
+        }
+    }
+
+    // otherwise, insert a new target
+    if (item->count + 1 > item->capacity) {
+        size_t old_capacity = item->capacity;
+        item->capacity = GROW_CAPACITY(old_capacity);
+        item->registered_targets = GROW_ARRAY(
+            obj_t*,
+            item->registered_targets,
+            old_capacity,
+            item->capacity
+        );
+    }
+
+    item->registered_targets[item->count] = (obj_t *)target;
+}
+
+// link the registered targets to the allocated addresses for those targets
+void l_allocate_track_link_targets() {
+    for (int i = 0; i < _mem_track.object_lookup.count; i++) {
+        object_lookup_item_t * item = &_mem_track.object_lookup.items[i];
+
+        for (int j = 0; j < item->count; j++) {
+            item->registered_targets[j] = item->address;
+        }
+    }
+}
+

@@ -48,6 +48,7 @@ variation of the implementation of the sox interpreter as described on http://cr
 - [ ] remove global variables
 - [ ] multi-line comment blocks
 - [ ] load multiple scripts / modules
+- [ ] Bytecode scripts
 
 ## Advanced language features
 - [ ] interfaces

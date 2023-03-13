@@ -468,7 +468,7 @@ static uint8_t _generate_variable(TokenType type, const char *hint) {
 
     char* temp_name =  &_generated_variables_block[_gen_var_offset];
     sprintf(temp_name, "%s_%d", hint, _current->local_count);
-    int length = strlen(temp_name);
+    int length = (int)strlen(temp_name);
     _gen_var_offset += length;
     
     token_t name = {

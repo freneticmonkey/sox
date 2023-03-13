@@ -2,6 +2,7 @@
 #define SOX_VM_H
 
 #include "object.h"
+#include "lib/memory.h"
 #include "lib/table.h"
 #include "value.h"
 
@@ -51,6 +52,8 @@ void    l_push(value_t value);
 value_t l_pop();
 
 InterpretResult l_interpret(const char * source);
+
+InterpretResult l_run(void);
 
 void l_vm_define_native(const char* name, native_func_t function);
 

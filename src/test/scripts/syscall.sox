@@ -1,0 +1,7 @@
+fn sleep() {
+    usleep(100)
+}
+
+var start = clock()
+sleep()
+print clock() - start
