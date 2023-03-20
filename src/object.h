@@ -132,6 +132,7 @@ typedef struct {
 obj_bound_method_t* l_new_bound_method(value_t receiver, obj_closure_t* method);
 obj_class_t*        l_new_class(obj_string_t* name);
 obj_closure_t*      l_new_closure(obj_function_t* function);
+obj_closure_t*      l_new_closure_empty();
 obj_function_t*     l_new_function();
 obj_instance_t*     l_new_instance(obj_class_t* klass);
 obj_native_t*       l_new_native(native_func_t function);

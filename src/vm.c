@@ -70,16 +70,57 @@ void l_vm_runtime_error(const char* format, ...) {
     _reset_stack();
 }
 
-void l_init_vm() {
+void _mark_roots() {
+    
+    // mark the stack
+    for (value_t* slot = vm.stack; slot < vm.stack_top; slot++) {
+        l_mark_value(*slot);
+    }
+
+    // mark the call stack frames
+    for (int i = 0; i < vm.frame_count; i++) {
+        l_mark_object(
+            (obj_t*)vm.frames[i].closure
+        );
+    }
+
+    // mark any upvalues
+    for (obj_upvalue_t* upvalue = vm.open_upvalues;
+                                  upvalue != NULL;
+                                  upvalue = upvalue->next) {
+        l_mark_object((obj_t*)upvalue);
+    }
+
+    // mark any globals
+    l_mark_table(&vm.globals);
+
+    // ensure that compiler owned memory is also tracked
+    l_mark_compiler_roots();
+
+    l_mark_object((obj_t*)vm.init_string);
+}
+
+void _garbage_collect() {
+    l_table_remove_white(&vm.strings);
+}
+
+void l_init_vm(vm_config_t config) {
+
+    vm.config = config;
+
     _reset_stack();
-    vm.objects = NULL;
+
+    l_register_mark_roots_cb(_mark_roots);
+    l_register_garbage_collect_cb(_garbage_collect);
+
+    // vm.objects = NULL;
 
     // garbage collection
-    vm.bytes_allocated = 0;
-    vm.next_gc = 1024 * 1024;
-    vm.gray_count = 0;
-    vm.gray_capacity = 0;
-    vm.gray_stack = NULL;
+    // vm.bytes_allocated = 0;
+    // vm.next_gc = 1024 * 1024;
+    // vm.gray_count = 0;
+    // vm.gray_capacity = 0;
+    // vm.gray_stack = NULL;
 
     l_init_table(&vm.globals);
     l_init_table(&vm.strings);
@@ -91,11 +132,16 @@ void l_init_vm() {
     l_table_add_native();
 }
 
+
+
 void l_free_vm() {
     l_free_table(&vm.strings);
     l_free_table(&vm.globals);
+
     vm.init_string = NULL;
-    l_free_objects();
+
+    l_unregister_mark_roots_cb(_mark_roots);
+    l_register_garbage_collect_cb(_garbage_collect);
 }
 
 static InterpretResult _run() {
@@ -316,8 +362,12 @@ static InterpretResult _run() {
                 break;
             }
             case OP_PRINT: {
-                l_print_value(l_pop());
-                printf("\n");
+                if (vm.config.suppress_print)
+                    l_pop();
+                else {
+                    l_print_value(l_pop());
+                    printf("\n");
+                }
                 break;
             }
             case OP_JUMP: {
@@ -449,10 +499,14 @@ InterpretResult l_interpret(const char* source) {
     l_push(OBJ_VAL(function));
     obj_closure_t* closure = l_new_closure(function);
     l_pop();
-    l_push(OBJ_VAL(closure));
-    _call(closure, 0);
+    l_set_entry_point(closure);
 
     return INTERPRET_OK;
+}
+
+void l_set_entry_point(obj_closure_t * entry_point) {
+    l_push(OBJ_VAL(entry_point));
+    _call(entry_point, 0);
 }
 
 InterpretResult l_run() {

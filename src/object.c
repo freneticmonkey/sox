@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "lib/memory.h"
+#include "lib/string.h"
 #include "object.h"
 #include "value.h"
 #include "vm.h"
@@ -13,8 +14,7 @@ static obj_t* _allocate_object(size_t size, ObjType type) {
     obj_t* object = (obj_t*)reallocate(NULL, 0, size);
     object->type = type;
     object->is_marked = false;
-    object->next = vm.objects;
-    vm.objects = object;
+    l_add_object(object);
 
 #ifdef DEBUG_LOG_GC
     printf("%p allocate %zu for %s\n", (void*)object, size, obj_type_to_string[type]);
@@ -57,6 +57,21 @@ obj_closure_t* l_new_closure(obj_function_t* function) {
     return closure;
 }
 
+obj_closure_t* l_new_closure_empty(int upvalue_count) {
+    
+    obj_upvalue_t** upvalues = ALLOCATE(obj_upvalue_t*, upvalue_count);
+    for (int i = 0; i < upvalue_count; i++) {
+        upvalues[i] = NULL;
+    }
+
+    obj_closure_t* closure = ALLOCATE_OBJ(obj_closure_t, OBJ_CLOSURE);
+    closure->function = NULL;
+    closure->upvalues = upvalues;
+    closure->upvalue_count = upvalue_count;
+
+    return closure;
+}
+
 obj_function_t* l_new_function() {
     obj_function_t* function = ALLOCATE_OBJ(obj_function_t, OBJ_FUNCTION);
     function->arity = 0;
@@ -83,17 +98,8 @@ static obj_string_t* _allocate_string(char* chars, int length, uint32_t hash) {
     return string;
 }
 
-static uint32_t _hash_string(const char* key, int length) {
-    uint32_t hash = 2166136261u;
-    for (int i = 0; i < length; i++) {
-        hash ^= (uint8_t)key[i];
-        hash *= 16777619;
-    }
-return hash;
-}
-
 obj_string_t* l_take_string(char* chars, int length) {
-    uint32_t hash = _hash_string(chars, length);
+    uint32_t hash = l_hash_string(chars, length);
 
     obj_string_t* interned = l_table_find_string(&vm.strings, chars, length, hash);
     if (interned != NULL) {
@@ -104,7 +110,7 @@ obj_string_t* l_take_string(char* chars, int length) {
 }
 
 obj_string_t* l_copy_string(const char* chars, int length) {
-    uint32_t hash = _hash_string(chars, length);
+    uint32_t hash = l_hash_string(chars, length);
 
     obj_string_t* interned = l_table_find_string(&vm.strings, chars, length, hash);
     if (interned != NULL) 

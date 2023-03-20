@@ -18,7 +18,12 @@ static MunitResult _chunk_compare(const MunitParameter params[], void *user_data
 	(void)user_data;
 	// munit_log(MUNIT_LOG_WARNING , "test NYI");
 
-    l_init_vm();
+    vm_config_t config = {
+        .suppress_print = true
+    };
+
+    l_init_memory();
+    l_init_vm(config);
 
     chunk_t chunk;
     l_init_chunk(&chunk);
@@ -39,6 +44,7 @@ static MunitResult _chunk_compare(const MunitParameter params[], void *user_data
     l_free_chunk(&chunk);
 
     l_free_vm();
+    l_free_memory();
 
 	return MUNIT_OK;
 }

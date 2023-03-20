@@ -1,11 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "lib/file.h"
 #include "serialise.h"
 #include "vm.h"
 
-static char* _read_file(const char* path) {
+char* _read_file(const char* path) {
     FILE* file = fopen(path, "rb");
     if (file == NULL) {
         fprintf(stderr, "Could not open file \"%s\".\n", path);
@@ -35,49 +36,193 @@ static char* _read_file(const char* path) {
     return buffer;
 }
 
-int l_run_file(int argc, const char* argv[]) {
-    const char* path = argv[1];
-    char* source = _read_file(path);
+bool _file_exists(const char* path) {
+    FILE* file = fopen(path, "rb");
+    if (file == NULL) {
+        return false;
+    }
+    fclose(file);
+    return true;
+}
 
-    if ( source == NULL )
-        return 74;
+int _deserialise_bytecode(vm_config_t config, const char* path, const char* source) {
 
-    l_init_vm();
+    l_init_memory();
 
-    // serialise the interpreted bytecode
-    // TODO: once deserialisation is implemented, an existing bytecode file
-    // should be checked for before interpreting. Also the hash of the source needs 
-    // to be embedded within the bytecode file so that it can be invalidated when the source changes
-    
-    // setup serialisation
-    serialiser_t * serialiser = l_serialise_new(path);
+    // Check for existing bytecode
+    serialiser_t * serialiser = l_serialise_new(path, source, SERIALISE_MODE_READ);
+
+    if ( serialiser->error != SERIALISE_OK) {
+
+        switch ( serialiser->error ) {
+            case SERIALISE_ERROR_SOURCE_HASH_MISMATCH:
+                printf("source change detected. recompiling");
+                break;
+            case SERIALISE_ERROR_SOX_VERSION_MISMATCH:
+                printf("Bytecode version for an old Sox version. recompiling");
+                break;
+            default:
+                break;
+        }
+        return 1;
+    }
+
+    // deserialise the bytecode file
+
+    // start tracking allocations
+    l_allocate_track_init();
+
+    // initialise the vm
+    l_init_vm(config);
+
+    // deserialise the objects
+    obj_closure_t * entry_point = l_deserialise_vm(serialiser);
+
+    // link the objects
+    l_allocate_track_link_targets();
+
+     printf("linking complete\n");
+
+    // free tracking allocations
+    l_allocate_track_free();
+
+    // set the entry point for the VM
+    // this must be done after the link step
+    l_set_entry_point(entry_point);
+
+    // free the reader serialiser
+    l_serialise_del(serialiser);
+
+    return 0;
+}
+
+int _interpret_serialise_bytecode(vm_config_t config, const char* path, const char* source) {
+    // setup to serialise the interpreted bytecode
+
+    l_init_memory();
+
+    // setup the writer serialiser
+    serialiser_t * serialiser = l_serialise_new(path, source, SERIALISE_MODE_WRITE);
+
+    l_init_vm(config);
 
     l_serialise_vm_set_init_state(serialiser);
 
     // interpret the source
     InterpretResult result = l_interpret(source);
-    free(source); 
+    
 
     if (result == INTERPRET_COMPILE_ERROR) 
-            return 65;
-
+        return 65;
 
     // serialise the vm state
     l_serialise_vm(serialiser);
 
     // flush to the file and free the serialiser
-    // l_serialise_flush(serialiser);
+    l_serialise_flush(serialiser);
     l_serialise_del(serialiser);
+
+    // free the vm
+    l_free_vm();
+
+    l_free_memory();
+
+    return 0;
+}
+
+int l_run_file(int argc, const char* argv[]) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: sox [path] [optional: --serialise]\n");
+        return 64;
+    }
+    const char* path = argv[1];
+
+    if (path == NULL || (strcmp(path, "--serialise") == 0)) {
+        fprintf(stderr, "Usage: sox [path] [optional: --serialise]\n");
+        return 64;
+    }
+
+    char* source = _read_file(path);
+
+    if (source == NULL) {
+        printf("Could not read file: %s\n", path);
+        return 74;
+    }
+
+    // check if serialisation has been enabled
+    bool serialise = false;
+    bool suppress_print = false;
+    
+    if (argc > 2) {
+        for (int i = 2; i < argc; i++) {
+            if (strcmp(argv[i], "--serialise") == 0) {
+                serialise = true;
+            }
+            if (strcmp(argv[i], "--suppress-print") == 0) {
+                suppress_print = true;
+            }
+        }
+    }
+
+    if ( source == NULL )
+        return 74;
+
+    vm_config_t config = {
+        .suppress_print = suppress_print
+    };
+
+    InterpretResult result;
+
+    if (serialise == false) {
+        l_init_memory();
+
+        // start the VM and interpret the source
+        l_init_vm(config);
+
+        // interpret the source
+        result = l_interpret(source);
+
+        if (result == INTERPRET_COMPILE_ERROR) {
+            l_free_vm();
+            l_free_memory();
+            return 65;
+        }
+
+    } else {
+       
+        if (0) {
+            if (_file_exists(path)) {
+                _deserialise_bytecode(config, path, source);
+            } else {
+                _interpret_serialise_bytecode(config, path, source);
+            }
+        } else {
+            // while testing the serialisation
+            // serialise and deserialise every run 
+            printf("Starting serialisation\n");
+            printf(">>>>>>>>>>>>>>>>>>>>>>\n");
+            _interpret_serialise_bytecode(config, path, source);
+
+            printf("\n\nstarting deserialisation\n");
+            printf("<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
+            _deserialise_bytecode(config, path, source);
+        }
+    }
+
+    free(source);
 
     // run the vm
     result = l_run();
+
+    //clean up
+    l_free_vm();
+
+    l_free_memory();
 
     if (result == INTERPRET_COMPILE_ERROR) 
         return 65;
     if (result == INTERPRET_RUNTIME_ERROR) 
         return 70;
-
-    l_free_vm();
 
     return 0;
 }

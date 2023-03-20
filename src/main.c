@@ -32,9 +32,15 @@ int main(int argc, const char* argv[]) {
             COMMIT,
             BRANCH
         );
-        l_init_vm();
+         vm_config_t config = {
+            .suppress_print = false
+        };
+
+        l_init_memory();
+        l_init_vm(config);
         _repl();
         l_free_vm();
+        l_free_memory();
     } else if (argc >= 2) {
         if ( argc == 2 && (
             (strncmp(argv[1], "help", 4) == 0) || 

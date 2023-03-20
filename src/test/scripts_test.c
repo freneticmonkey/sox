@@ -20,15 +20,12 @@ static MunitResult _run_file(const MunitParameter params[], void *user_data)
 	
     char* filename = params[0].value;
 
-    l_init_vm();
-
     munit_logf(MUNIT_LOG_WARNING , "running script: %s", filename);
-    int status = l_run_file(2, (const char *[]){
+    int status = l_run_file(3, (const char *[]){
                                 "sox",
-                                filename
+                                filename,
+                                "--suppress-print"
                             });
-
-    l_free_vm();
 
     munit_assert_int(status, == , 0);
 
@@ -60,7 +57,7 @@ MunitSuite l_scripts_test_setup() {
 
     static MunitTest bytecode_suite_tests[] = {
         {
-            .name = (char *)"run files", 
+            .name = (char *)"run_files", 
             .test = _run_file, 
             .setup = NULL, 
             .tear_down = NULL, 

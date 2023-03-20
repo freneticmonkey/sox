@@ -16,6 +16,14 @@ typedef struct {
 } callframe_t;
 
 typedef struct {
+    // additional config
+
+    // for unit testing
+    bool suppress_print;
+} vm_config_t;
+
+typedef struct {
+    bool init;
     callframe_t frames[FRAMES_MAX];
     int frame_count;
 
@@ -23,16 +31,18 @@ typedef struct {
     value_t* stack_top;
     table_t  globals;
     table_t  strings;
-    obj_t*   objects;
     obj_upvalue_t* open_upvalues;
     obj_string_t*  init_string;
 
     // garbage collection
-    size_t bytes_allocated;
-    size_t next_gc;
-    int    gray_count;
-    int    gray_capacity;
-    obj_t** gray_stack;
+    // obj_t*   objects;
+    // size_t bytes_allocated;
+    // size_t next_gc;
+    // int    gray_count;
+    // int    gray_capacity;
+    // obj_t** gray_stack;
+
+    vm_config_t config;
 
 } vm_t;
 
@@ -45,14 +55,14 @@ typedef enum {
 // exposing the vm instance
 extern vm_t vm;
 
-void l_init_vm();
+void l_init_vm(vm_config_t config);
 void l_free_vm();
 
 void    l_push(value_t value);
 value_t l_pop();
 
 InterpretResult l_interpret(const char * source);
-
+void l_set_entry_point(obj_closure_t * entry_point);
 InterpretResult l_run(void);
 
 void l_vm_define_native(const char* name, native_func_t function);
