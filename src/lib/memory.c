@@ -36,17 +36,31 @@ typedef struct native_lookup_t {
 
 typedef struct {
     uintptr_t id;
-    obj_t **address;
     size_t count;
     size_t capacity;
+    obj_t **address;
     obj_t * **registered_targets;
 } object_lookup_item_t;
 
 typedef struct object_lookup_t {
-    object_lookup_item_t *items;
     size_t count;
     size_t capacity;
+    object_lookup_item_t *items;
 } object_lookup_t;
+
+typedef struct string_lookup_item_t {
+    uint32_t hash;
+    size_t count;
+    size_t capacity;
+    obj_string_t *address;
+    obj_string_t * **registered_targets;
+} string_lookup_item_t;
+
+typedef struct string_lookup_t {
+    size_t count;
+    size_t capacity;
+    string_lookup_item_t *items;
+} string_lookup_t;
 
 typedef struct mem_track {
     // memory tracking
@@ -54,6 +68,7 @@ typedef struct mem_track {
     size_t bytes_allocated;
     native_lookup_t native_lookup;
     object_lookup_t object_lookup;
+    string_lookup_t string_lookup;
 } mem_track_t;
 
 typedef struct {
@@ -287,6 +302,11 @@ void l_free_memory() {
                 .capacity = 0
             },
             .object_lookup = {
+                .items = NULL,
+                .count = 0,
+                .capacity = 0
+            },
+            .string_lookup = {
                 .items = NULL,
                 .count = 0,
                 .capacity = 0
@@ -657,25 +677,17 @@ void l_allocate_track_init() {
 
     track->track_allocations = true;
 
-    track->native_lookup = (native_lookup_t) {
-        .items = NULL,
-        .count = 0,
-        .capacity = 0
-    };
-
     // allocate the initial capacity for the native lookup
     track->native_lookup.capacity = 64;
     track->native_lookup.items = ALLOCATE(native_lookup_item_t, track->native_lookup.capacity);
 
-    track->object_lookup = (object_lookup_t) {
-        .items = NULL,
-        .count = 0,
-        .capacity = 0
-    };
-
     // allocate the initial capacity for the object lookup
     track->object_lookup.capacity = 64;
     track->object_lookup.items = ALLOCATE(object_lookup_item_t, track->object_lookup.capacity);
+
+    // allocate the initial capacity for the string lookup
+    track->string_lookup.capacity = 64;
+    track->string_lookup.items = ALLOCATE(string_lookup_item_t, track->string_lookup.capacity);
 }
 
 // cleanup the allocation tracking data
@@ -691,7 +703,15 @@ void l_allocate_track_free() {
         object_lookup_item_t item = track->object_lookup.items[i];
         FREE_ARRAY(obj_t **, item.registered_targets, item.capacity);
     }
+
     FREE_ARRAY(object_lookup_item_t, track->object_lookup.items, track->object_lookup.capacity);
+
+    for (int i = 0; i < track->string_lookup.count; i++) {
+        string_lookup_item_t item = track->string_lookup.items[i];
+        FREE_ARRAY(obj_t **, item.registered_targets, item.capacity);
+    }
+
+    FREE_ARRAY(string_lookup_item_t, track->string_lookup.items, track->string_lookup.capacity);
 }
 
 // register a native function pointer into the tracking structure
@@ -823,11 +843,96 @@ void l_allocate_track_target_register(uintptr_t id, void **target) {
         }
     }
 
-
+    // register a new interest in the target address
     item->registered_targets[item->count] = (obj_t **)target;
+    // ensure that the target is NULL'd
     *item->registered_targets[item->count] = NULL;
 #if defined(LINK_DEBUGGING)
     printf("Registering interest in id: %lu -> %p\n", id, *target);
+#endif
+    item->count++;
+}
+
+
+string_lookup_item_t * _insert_or_get_string_lookup_item(uint32_t hash) {
+
+    string_lookup_t * lookup = &_mem.track.string_lookup;
+
+    // Check if the item already exists, and return if found
+    for (int i = 0; i < lookup->count; i++) {
+        if (lookup->items[i].hash == hash) {
+            return &lookup->items[i];
+        }
+    }
+
+    // otherwise, insert a new item
+    if (lookup->count + 1 > lookup->capacity) {
+        size_t old_capacity = lookup->capacity;
+        lookup->capacity = GROW_CAPACITY(old_capacity);
+        lookup->items = GROW_ARRAY(
+            string_lookup_item_t,
+            lookup->items,
+            old_capacity,
+            lookup->capacity
+        );
+    }
+
+    lookup->items[lookup->count++] = (string_lookup_item_t) {
+        .hash = hash,
+        .registered_targets = NULL,
+    };
+
+    // return the newly inserted item
+    return &lookup->items[lookup->count - 1];
+}
+
+// insert a new string for tracking into the allocation lookup table
+void l_allocate_track_string_register(uint32_t hash, obj_string_t *address) {
+    
+    string_lookup_item_t * item = _insert_or_get_string_lookup_item(hash);
+
+    // assign the new address
+    item->address = address;
+
+#if defined(LINK_DEBUGGING)
+    // display the registered id
+    printf("Registered string hash: %lu -> %s [%d]\n", hash, item->address->chars, item->count);
+#endif
+}
+
+// register interest in a string by hash
+void l_allocate_track_string_target_register(uint32_t hash, obj_string_t **target) {
+
+    string_lookup_item_t * item = _insert_or_get_string_lookup_item(hash);
+
+    // check if the target is already registered, ignore the second registration
+    for (int i = 0; i < item->count; i++) {
+        if (item->registered_targets[i] == (obj_t **)target) {
+            return;
+        }
+    }
+
+    // otherwise, insert a new target
+    if (item->count + 1 > item->capacity) {
+        size_t old_capacity = item->capacity;
+        item->capacity = GROW_CAPACITY(old_capacity);
+        item->registered_targets = GROW_ARRAY(
+            obj_t **,
+            item->registered_targets,
+            old_capacity,
+            item->capacity
+        );
+        for (int i = item->count; i < item->capacity; i++) {
+            item->registered_targets[i] = NULL;
+        }
+    }
+
+    // register a new interest in the string
+    item->registered_targets[item->count] = (obj_string_t **)target;
+    // ensure that the target is NULL'd
+    *item->registered_targets[item->count] = NULL;
+#if defined(LINK_DEBUGGING)
+    printf("Registering interest in string hash: %lu -> %p\n", hash, target);
 #endif
     item->count++;
 }
@@ -836,6 +941,7 @@ void l_allocate_track_target_register(uintptr_t id, void **target) {
 void l_allocate_track_link_targets() {
     mem_track_t * track = &_mem.track;
 
+    // link objects
     for (int i = 0; i < track->object_lookup.count; i++) {
         object_lookup_item_t * item = &track->object_lookup.items[i];
         
@@ -848,6 +954,22 @@ void l_allocate_track_link_targets() {
             obj_t **target = item->registered_targets[j];
 #if defined(LINK_DEBUGGING)
             printf("linking alloc: %lu: p: %p -> target:%p\n", item->id, item->address, *target);
+#endif
+            *target = item->address;
+        }
+    }
+
+    // link strings
+    for (int i = 0; i < track->string_lookup.count; i++) {
+        string_lookup_item_t * item = &track->string_lookup.items[i];
+#if defined(LINK_DEBUGGING)
+            printf("for string: %lu: %s\n", item->hash, item->address->chars );
+#endif        
+        for (int j = 0; j < item->count; j++) {
+            // set the string pointer into the registered targets
+            obj_string_t **target = item->registered_targets[j];
+#if defined(LINK_DEBUGGING)
+            printf("\tlinking string: %lu: p: %p -> target:%p\n", item->hash, item->address, *target);
 #endif
             *target = item->address;
         }

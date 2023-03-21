@@ -113,26 +113,15 @@ void l_init_vm(vm_config_t config) {
     l_register_mark_roots_cb(_mark_roots);
     l_register_garbage_collect_cb(_garbage_collect);
 
-    // vm.objects = NULL;
-
-    // garbage collection
-    // vm.bytes_allocated = 0;
-    // vm.next_gc = 1024 * 1024;
-    // vm.gray_count = 0;
-    // vm.gray_capacity = 0;
-    // vm.gray_stack = NULL;
-
     l_init_table(&vm.globals);
     l_init_table(&vm.strings);
 
     vm.init_string = NULL;
-    vm.init_string = l_copy_string("init", 4);
+    vm.init_string = l_new_string("init");
 
     // native lib functions
     l_table_add_native();
 }
-
-
 
 void l_free_vm() {
     l_free_table(&vm.strings);

@@ -108,7 +108,6 @@ typedef struct {
     obj_function_t* function;
     obj_upvalue_t** upvalues;
     int             upvalue_count;
-
 } obj_closure_t;
 
 typedef struct {
@@ -138,6 +137,7 @@ obj_instance_t*     l_new_instance(obj_class_t* klass);
 obj_native_t*       l_new_native(native_func_t function);
 obj_string_t*       l_take_string(char* chars, int length);
 obj_string_t*       l_copy_string(const char* chars, int length);
+obj_string_t*       l_new_string(const char* chars);
 obj_upvalue_t*      l_new_upvalue(value_t* slot);
 obj_table_t*        l_new_table();
 obj_error_t*        l_new_error(obj_string_t* msg, obj_error_t* enclosed);

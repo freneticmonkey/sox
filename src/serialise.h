@@ -67,5 +67,6 @@ void l_serialise_rewind(serialiser_t* serialiser);
 obj_closure_t * l_deserialise_vm(serialiser_t* serialiser);
 void l_deserialise_vm_set_init_state(serialiser_t* serialiser, obj_closure_t * entry_point);
 obj_t * l_deserialise_obj(serialiser_t* serialiser);
+void l_deserialise_table(serialiser_t* serialiser, table_t* table);
 
 #endif

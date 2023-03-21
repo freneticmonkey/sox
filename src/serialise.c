@@ -159,6 +159,10 @@ void _serialise_ptr(serialiser_t* serialiser, void* ptr) {
     _serialise_buf_write_uintptr(serialiser->buffer, (uintptr_t)ptr);
 }
 
+void _serialise_string_ptr(serialiser_t* serialiser, obj_string_t* string) {
+    _serialise_buf_write_uint32(serialiser->buffer, string->hash);
+}
+
 void _serialise_write_object(serialiser_t* serialiser, obj_t* object) {
 
     printf("{\n");
@@ -182,7 +186,7 @@ void _serialise_write_object(serialiser_t* serialiser, obj_t* object) {
             _serialise_buf_write_int(serialiser->buffer, OBJ_CLASS);
             
             obj_class_t* class = (obj_class_t*)object;
-            _serialise_ptr(serialiser, class->name);
+            _serialise_string_ptr(serialiser, class->name);
             l_serialise_table(serialiser, &class->methods);
             break;
         }
@@ -210,7 +214,7 @@ void _serialise_write_object(serialiser_t* serialiser, obj_t* object) {
             _serialise_buf_write_int(serialiser->buffer, function->arity);
             _serialise_buf_write_int(serialiser->buffer, function->upvalue_count);
             _serialise_chunk(serialiser, &function->chunk);
-            _serialise_ptr(serialiser, function->name);
+            _serialise_string_ptr(serialiser, function->name);
             break;
         }
         case OBJ_INSTANCE: {
@@ -489,7 +493,12 @@ obj_string_t * _serialise_buf_read_string(serialiser_buf_t* buffer) {
     memcpy(copy_chars, chars, length);
     
     // insert the string into the strings table, will be freed if a) already exists or b) when the vm is freed
-    return l_take_string(copy_chars, length);
+    obj_string_t * str = l_take_string(copy_chars, length);
+
+    // register the string
+    l_allocate_track_string_register(str->hash, str);
+
+    return str;
 }
 
 const char * _serialise_buf_read_string_char(serialiser_buf_t* buffer) {
@@ -556,6 +565,13 @@ void _serialise_read_ptr(serialiser_t* serialiser, void ** ptr) {
     l_allocate_track_target_register(ptr_id, ptr);
 }
 
+void _serialise_read_str_ptr(serialiser_t* serialiser, obj_string_t ** ptr) {
+
+    // register an interest in the string object when it's eventually created using its hash
+    uint32_t hash = _serialise_buf_read_uint32(serialiser->buffer);
+    l_allocate_track_string_target_register(hash, ptr);
+}
+
 void l_deserialise_table(serialiser_t* serialiser, table_t* table) {
     int count = _serialise_buf_read_int(serialiser->buffer);
     for (int i = 0; i < count; i++) {
@@ -586,7 +602,7 @@ obj_t * _serialise_read_object(serialiser_t* serialiser) {
             obj_class_t* klass = l_new_class(NULL);
 
             // register an interest in the name object when it's eventually created
-            _serialise_read_ptr(serialiser, (void**)&klass->name);
+            _serialise_read_str_ptr(serialiser, &klass->name);
 
             // deserialise the methods table
             l_deserialise_table(serialiser, &klass->methods);
@@ -628,7 +644,7 @@ obj_t * _serialise_read_object(serialiser_t* serialiser) {
             _serialise_read_chunk(serialiser, &func->chunk);
 
             // register for the function name when it's created
-            _serialise_read_ptr(serialiser, (void**)&func->name);
+            _serialise_read_str_ptr(serialiser, &func->name);
 
             result = (obj_t*)func;
             break;

@@ -122,6 +122,10 @@ obj_string_t* l_copy_string(const char* chars, int length) {
     return _allocate_string(heapChars, length, hash);
 }
 
+obj_string_t* l_new_string(const char* chars) {
+    return l_copy_string(chars, (int)strlen(chars));
+}
+
 obj_upvalue_t*  l_new_upvalue(value_t* slot) {
     obj_upvalue_t* upvalue = ALLOCATE_OBJ(obj_upvalue_t, OBJ_UPVALUE);
     upvalue->location = slot;
