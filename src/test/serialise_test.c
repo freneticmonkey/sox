@@ -149,7 +149,7 @@ static MunitResult _serialise_function(const MunitParameter params[], void *user
     serialiser_t * serialiser = l_serialise_new(NULL, NULL, SERIALISE_MODE_WRITE);
 
     // serialise the function including the chunk
-    l_serialise_obj(serialiser, func);
+    l_serialise_obj(serialiser, (obj_t*)func);
 
     // rewrind the buffer and start deserialising
     l_serialise_rewind(serialiser);

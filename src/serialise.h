@@ -46,7 +46,7 @@ typedef struct {
     // VM State
     int global_offset;
     int string_offset;
-    int flush_offset;
+    size_t flush_offset;
 } serialiser_t;
 
 serialiser_t * l_serialise_new(const char * filename_source, const char * source, SerialisationMode mode);

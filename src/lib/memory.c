@@ -804,7 +804,7 @@ void l_allocate_track_register(uintptr_t id, void **address) {
     object_lookup_item_t * item = _insert_or_get_object_lookup_item(id);
 
     // assign the new address
-    item->address = address;
+    item->address = (obj_t **)address;
 #if defined(LINK_DEBUGGING)
     // display the registered id
     printf("Registered allocation id: %lu -> %p\n", id, item->address);
@@ -822,7 +822,7 @@ void l_allocate_track_target_register(uintptr_t id, void **target) {
     object_lookup_item_t * item = _insert_or_get_object_lookup_item(id);
 
     // check if the target is already registered, ignore the second registration
-    for (int i = 0; i < item->count; i++) {
+    for (size_t i = 0; i < item->count; i++) {
         if (item->registered_targets[i] == (obj_t **)target) {
             return;
         }
@@ -838,7 +838,7 @@ void l_allocate_track_target_register(uintptr_t id, void **target) {
             old_capacity,
             item->capacity
         );
-        for (int i = item->count; i < item->capacity; i++) {
+        for (size_t i = item->count; i < item->capacity; i++) {
             item->registered_targets[i] = NULL;
         }
     }
@@ -859,7 +859,7 @@ string_lookup_item_t * _insert_or_get_string_lookup_item(uint32_t hash) {
     string_lookup_t * lookup = &_mem.track.string_lookup;
 
     // Check if the item already exists, and return if found
-    for (int i = 0; i < lookup->count; i++) {
+    for (size_t i = 0; i < lookup->count; i++) {
         if (lookup->items[i].hash == hash) {
             return &lookup->items[i];
         }
@@ -906,8 +906,8 @@ void l_allocate_track_string_target_register(uint32_t hash, obj_string_t **targe
     string_lookup_item_t * item = _insert_or_get_string_lookup_item(hash);
 
     // check if the target is already registered, ignore the second registration
-    for (int i = 0; i < item->count; i++) {
-        if (item->registered_targets[i] == (obj_t **)target) {
+    for (size_t i = 0; i < item->count; i++) {
+        if ((obj_t**)(item->registered_targets[i]) == (obj_t **)target) {
             return;
         }
     }
@@ -917,12 +917,12 @@ void l_allocate_track_string_target_register(uint32_t hash, obj_string_t **targe
         size_t old_capacity = item->capacity;
         item->capacity = GROW_CAPACITY(old_capacity);
         item->registered_targets = GROW_ARRAY(
-            obj_t **,
+            obj_string_t **,
             item->registered_targets,
             old_capacity,
             item->capacity
         );
-        for (int i = item->count; i < item->capacity; i++) {
+        for (size_t i = item->count; i < item->capacity; i++) {
             item->registered_targets[i] = NULL;
         }
     }
@@ -942,25 +942,25 @@ void l_allocate_track_link_targets() {
     mem_track_t * track = &_mem.track;
 
     // link objects
-    for (int i = 0; i < track->object_lookup.count; i++) {
+    for (size_t i = 0; i < track->object_lookup.count; i++) {
         object_lookup_item_t * item = &track->object_lookup.items[i];
         
         if (item->address == NULL) {
             continue;
         }
 
-        for (int j = 0; j < item->count; j++) {
+        for (size_t j = 0; j < item->count; j++) {
             // print the target address and the linked address
             obj_t **target = item->registered_targets[j];
 #if defined(LINK_DEBUGGING)
             printf("linking alloc: %lu: p: %p -> target:%p\n", item->id, item->address, *target);
 #endif
-            *target = item->address;
+            *target = *item->address;
         }
     }
 
     // link strings
-    for (int i = 0; i < track->string_lookup.count; i++) {
+    for (size_t i = 0; i < track->string_lookup.count; i++) {
         string_lookup_item_t * item = &track->string_lookup.items[i];
 #if defined(LINK_DEBUGGING)
             printf("for string: %lu: %s\n", item->hash, item->address->chars );

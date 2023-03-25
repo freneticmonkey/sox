@@ -89,8 +89,12 @@ void _serialise_buf_write_int(serialiser_buf_t* buffer, int value) {
     _serialise_buf_write(buffer, &value, sizeof(int));
 }
 
-void _serialise_buf_write_bytes(serialiser_buf_t* buffer, const void* bytes, int count) {
-    _serialise_buf_write_int(buffer, count);
+void _serialise_buf_write_long(serialiser_buf_t* buffer, size_t value) {
+    _serialise_buf_write(buffer, &value, sizeof(size_t));
+}
+
+void _serialise_buf_write_bytes(serialiser_buf_t* buffer, const void* bytes, size_t count) {
+    _serialise_buf_write_long(buffer, count);
     _serialise_buf_write(buffer, bytes, count);
 }
 
@@ -352,7 +356,7 @@ void l_serialise_flush(serialiser_t* serialiser) {
         return;
     }
     
-    int flush_length = serialiser->buffer->count - serialiser->flush_offset;
+    size_t flush_length = serialiser->buffer->count - serialiser->flush_offset;
 
     fwrite(&serialiser->buffer->bytes[serialiser->flush_offset], sizeof(uint8_t), flush_length, serialiser->file);
     serialiser->flush_offset = serialiser->buffer->count;
@@ -436,7 +440,7 @@ const void* _serialise_buf_read_bytes(serialiser_buf_t* buffer) {
 }
 
 int _serialise_buf_read_int(serialiser_buf_t* buffer) {
-    int *read = _serialise_buf_read(buffer, sizeof(int));
+    int *read = (int *)_serialise_buf_read(buffer, sizeof(int));
     return *read;
 }
 
@@ -480,7 +484,7 @@ double _serialise_buf_read_double(serialiser_buf_t* buffer) {
 
 obj_string_t * _serialise_buf_read_string(serialiser_buf_t* buffer) {
 
-    uint8_t hash = _serialise_buf_read_uint8(buffer);
+    _serialise_buf_read_uint8(buffer); // unused
     int length = _serialise_buf_read_int(buffer);
     // read the bytes from the file
     char * chars = (char*)_serialise_buf_read(buffer, length);
@@ -518,7 +522,8 @@ const char * _serialise_buf_read_string_char(serialiser_buf_t* buffer) {
 }
 
 bool _serialise_buf_read_bool(serialiser_buf_t* buffer) {
-    return _serialise_buf_read(buffer, sizeof(bool)) == 1;
+    bool * read = (bool *)_serialise_buf_read(buffer, sizeof(bool));
+    return *read == 1;
 }
 
 value_t l_deserialise_value(serialiser_t* serialiser) {
@@ -539,6 +544,8 @@ value_t l_deserialise_value(serialiser_t* serialiser) {
         default:
             break;
     }
+    // TODO: is this the correct default?
+    return NIL_VAL;
 }
 
 void _serialise_read_value_array(serialiser_t* serialiser, value_array_t * array) {
@@ -554,7 +561,7 @@ void _serialise_read_value_array(serialiser_t* serialiser, value_array_t * array
 void _serialise_read_chunk(serialiser_t* serialiser, chunk_t * chunk) {
     chunk->count = _serialise_buf_read_int(serialiser->buffer);
     chunk->capacity = _serialise_buf_read_int(serialiser->buffer);
-    chunk->code = _serialise_buf_read_bytes(serialiser->buffer);
+    chunk->code = (uint8_t*)_serialise_buf_read_bytes(serialiser->buffer);
     chunk->lines = _serialise_buf_read_ints(serialiser->buffer);
     _serialise_read_value_array(serialiser, &chunk->constants);
 }
@@ -621,7 +628,7 @@ obj_t * _serialise_read_object(serialiser_t* serialiser) {
             
             // read their values
             for (int i = 0; i < upvalue_count; i++) {
-                closure->upvalues[i] = _serialise_read_object(serialiser);
+                closure->upvalues[i] =(obj_upvalue_t*) _serialise_read_object(serialiser);
             }
 
             // track the pointer for the function the closure contains
@@ -664,12 +671,12 @@ obj_t * _serialise_read_object(serialiser_t* serialiser) {
         case OBJ_NATIVE:
             printf("read native\n");
             
-            char * func_name = _serialise_buf_read_string_char(serialiser->buffer);
+            char * func_name = (char *)_serialise_buf_read_string_char(serialiser->buffer);
 
             native_func_t * native_func = l_allocate_track_get_native_ptr(func_name);
             FREE(char, func_name);
 
-            obj_native_t * native = l_new_native(native_func);
+            obj_native_t * native = l_new_native(*native_func);
 
             result = (obj_t*)native;
 
@@ -690,7 +697,7 @@ obj_t * _serialise_read_object(serialiser_t* serialiser) {
         case OBJ_TABLE:
             printf("read table\n");
             obj_table_t * table = l_new_table();
-            l_deserialise_table(serialiser, table);
+            l_deserialise_table(serialiser, &table->table);
 
             result = (obj_t *)table;
             break;
@@ -702,7 +709,7 @@ obj_t * _serialise_read_object(serialiser_t* serialiser) {
     }
 
     // register the object with the id
-    l_allocate_track_register(obj_id, result);
+    l_allocate_track_register(obj_id, (void **)(&result));
 
     return result;
 }
@@ -738,7 +745,7 @@ void _serialise_read_header(serialiser_t* serialiser, const char * filename_sour
     }
 
     // read the sox version
-    char * sox_version = _serialise_buf_read_string_char(serialiser->buffer);
+    char * sox_version = (char *)_serialise_buf_read_string_char(serialiser->buffer);
     printf("sox version: %s\n", sox_version);
     if (strcmp(sox_version, VERSION) != 0) {
         fprintf(stderr, "Serialisation version mismatch. Expected %s, got %s\n", VERSION, sox_version);
@@ -749,7 +756,7 @@ void _serialise_read_header(serialiser_t* serialiser, const char * filename_sour
     FREE(char, sox_version);
 
     // read the source filename
-    char * source_filename = _serialise_buf_read_string_char(serialiser->buffer);
+    char * source_filename = (char *)_serialise_buf_read_string_char(serialiser->buffer);
     printf("source filename: %s\n", source_filename);
 
     if (strcmp(source_filename, filename_source) != 0) {

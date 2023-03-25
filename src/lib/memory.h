@@ -5,8 +5,8 @@
 #include "compiler.h"
 #include "object.h"
 
-#define LINK_DEBUGGING 1
-#define DEBUG_LOG_ALLOC 1
+// #define LINK_DEBUGGING 1
+// #define DEBUG_LOG_ALLOC 1
 
 // General memory management
 // 
