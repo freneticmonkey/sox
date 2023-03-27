@@ -5,9 +5,6 @@
 #include "compiler.h"
 #include "object.h"
 
-// #define LINK_DEBUGGING 1
-// #define DEBUG_LOG_ALLOC 1
-
 // General memory management
 // 
 
@@ -75,10 +72,10 @@ void * l_allocate_track_get_native_ptr(const char *name);
 const char * l_allocate_track_get_native_name(void * ptr);
 
 // insert a new allocation for tracking into the allocation lookup table
-void l_allocate_track_register(uintptr_t id, void **address);
+void l_allocate_track_register(uintptr_t id, obj_t *address);
 
 // register interest in a target address
-void l_allocate_track_target_register(uintptr_t id, void **target);
+void l_allocate_track_target_register(uintptr_t id, obj_t **target);
 
 // insert a new string for tracking into the allocation lookup table
 void l_allocate_track_string_register(uint32_t hash, obj_string_t *address);

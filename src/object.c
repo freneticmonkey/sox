@@ -87,7 +87,7 @@ obj_native_t* l_new_native(native_func_t function) {
     return native;
 }
 
-static obj_string_t* _allocate_string(char* chars, int length, uint32_t hash) {
+static obj_string_t* _allocate_string(char* chars, size_t length, uint32_t hash) {
     obj_string_t* string = ALLOCATE_OBJ(obj_string_t, OBJ_STRING);
     string->length = length;
     string->chars = chars;
@@ -98,7 +98,7 @@ static obj_string_t* _allocate_string(char* chars, int length, uint32_t hash) {
     return string;
 }
 
-obj_string_t* l_take_string(char* chars, int length) {
+obj_string_t* l_take_string(char* chars, size_t length) {
     uint32_t hash = l_hash_string(chars, length);
 
     obj_string_t* interned = l_table_find_string(&vm.strings, chars, length, hash);
@@ -109,7 +109,7 @@ obj_string_t* l_take_string(char* chars, int length) {
     return _allocate_string(chars, length, hash);
 }
 
-obj_string_t* l_copy_string(const char* chars, int length) {
+obj_string_t* l_copy_string(const char* chars, size_t length) {
     uint32_t hash = l_hash_string(chars, length);
 
     obj_string_t* interned = l_table_find_string(&vm.strings, chars, length, hash);
@@ -123,7 +123,7 @@ obj_string_t* l_copy_string(const char* chars, int length) {
 }
 
 obj_string_t* l_new_string(const char* chars) {
-    return l_copy_string(chars, (int)strlen(chars));
+    return l_copy_string(chars, strlen(chars));
 }
 
 obj_upvalue_t*  l_new_upvalue(value_t* slot) {

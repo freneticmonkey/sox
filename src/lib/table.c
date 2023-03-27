@@ -86,6 +86,13 @@ static void _adjust_capacity(table_t* table, int capacity) {
 }
 
 bool l_table_set(table_t* table, obj_string_t* key, value_t value) {
+
+    if ( key == NULL)
+    {
+        // what is going on here
+        return false;
+    }
+
     if (table->count + 1 > table->capacity * TABLE_MAX_LOAD) {
         int capacity = GROW_CAPACITY(table->capacity);
         _adjust_capacity(table, capacity);

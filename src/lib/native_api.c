@@ -12,7 +12,7 @@
 
 static obj_error_t* _native_error(const char * message) {
     l_vm_runtime_error(message);
-    obj_string_t* msg = l_copy_string(message, (int)strlen(message));
+    obj_string_t* msg = l_copy_string(message, strlen(message));
     return l_new_error(msg, NULL);
 }
 
@@ -84,11 +84,11 @@ static value_t _type(int argCount, value_t* args) {
                 break;
             }
         }
-        return OBJ_VAL(l_copy_string(type, (int)strlen(type)));
+        return OBJ_VAL(l_copy_string(type, strlen(type)));
     }
     const char* message = "type(): invalid argument(s)";
     l_vm_runtime_error(message);
-    obj_string_t* msg = l_copy_string(message, (int)strlen(message));
+    obj_string_t* msg = l_copy_string(message, strlen(message));
     return OBJ_VAL(l_new_error(msg, NULL));
 }
 

@@ -3,12 +3,6 @@
 
 #include "object.h"
 
-// typedef obj_function_t obj_function_t;
-// typedef obj_string_t obj_string_t;
-// typedef value_t value_t;
-// typedef value_array_t value_array_t;
-// typedef table_t table_t;
-
 typedef FILE FILE;
 
 typedef enum SerialiseErrorCode {
@@ -62,11 +56,39 @@ void l_serialise_table(serialiser_t* serialiser, table_t* table);
 void l_serialise_table_offset(serialiser_t* serialiser, table_t* table, int offset);
 void l_serialise_value(serialiser_t* serialiser, value_t* value);
 
+
+void l_serialise_int(serialiser_t* serialiser, int value);
+void l_serialise_ints(serialiser_t* serialiser, int *values, size_t count);
+void l_serialise_uint8(serialiser_t* serialiser, uint8_t value);
+void l_serialise_uint8s(serialiser_t* serialiser, uint8_t *values, size_t count);
+void l_serialise_uint32(serialiser_t* serialiser, uint32_t value);
+void l_serialise_uintptr(serialiser_t* serialiser, uintptr_t value);
+void l_serialise_long(serialiser_t* serialiser, size_t value);
+
+void l_serialise_double(serialiser_t* serialiser, double value);
+void l_serialise_bool(serialiser_t* serialiser, bool value);
+void l_serialise_char(serialiser_t* serialiser, const char *chars);
+
 void l_serialise_rewind(serialiser_t* serialiser);
 
 obj_closure_t * l_deserialise_vm(serialiser_t* serialiser);
-void l_deserialise_vm_set_init_state(serialiser_t* serialiser, obj_closure_t * entry_point);
+void            l_deserialise_vm_set_init_state(serialiser_t* serialiser, obj_closure_t * entry_point);
+
 obj_t * l_deserialise_obj(serialiser_t* serialiser);
-void l_deserialise_table(serialiser_t* serialiser, table_t* table);
+void    l_deserialise_table(serialiser_t* serialiser, table_t* table);
+value_t l_deserialise_value(serialiser_t* serialiser);
+
+int       l_deserialise_int(serialiser_t* serialiser);
+int *     l_deserialise_ints(serialiser_t* serialiser);
+uint8_t   l_deserialise_uint8(serialiser_t* serialiser);
+uint8_t * l_deserialise_uint8s(serialiser_t* serialiser);
+uint32_t  l_deserialise_uint32(serialiser_t* serialiser);
+uintptr_t l_deserialise_uintptr(serialiser_t* serialiser);
+size_t    l_deserialise_long(serialiser_t* serialiser);
+
+double l_deserialise_double(serialiser_t* serialiser);
+bool   l_deserialise_bool(serialiser_t* serialiser);
+char * l_deserialise_char(serialiser_t* serialiser);
+
 
 #endif

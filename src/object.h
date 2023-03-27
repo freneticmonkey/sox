@@ -78,7 +78,7 @@ typedef struct {
 
 struct obj_string_t {
     obj_t    obj;
-    int      length;
+    size_t   length;
     char*    chars;
     uint32_t hash;
 };
@@ -135,8 +135,8 @@ obj_closure_t*      l_new_closure_empty();
 obj_function_t*     l_new_function();
 obj_instance_t*     l_new_instance(obj_class_t* klass);
 obj_native_t*       l_new_native(native_func_t function);
-obj_string_t*       l_take_string(char* chars, int length);
-obj_string_t*       l_copy_string(const char* chars, int length);
+obj_string_t*       l_take_string(char* chars, size_t length);
+obj_string_t*       l_copy_string(const char* chars, size_t length);
 obj_string_t*       l_new_string(const char* chars);
 obj_upvalue_t*      l_new_upvalue(value_t* slot);
 obj_table_t*        l_new_table();

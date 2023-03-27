@@ -38,7 +38,7 @@ typedef struct {
     uintptr_t id;
     size_t count;
     size_t capacity;
-    obj_t **address;
+    obj_t *address;
     obj_t * **registered_targets;
 } object_lookup_item_t;
 
@@ -172,7 +172,7 @@ void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
 #if defined(DEBUG_LOG_ALLOC)
     printf("internal tracking. %p %s: %zu alloc bytes: %zu. dealloc bytes: %zu vm alloc: %zu\n", 
                 pointer,
-                "DEALLOC",
+                "DEALLOC <<",
                 dealloc_readable,
                 _internal_alloc, 
                 _internal_dealloc,
@@ -189,7 +189,7 @@ void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
 #if defined(DEBUG_LOG_ALLOC)
     printf("internal tracking. %p %s: %zu alloc bytes: %zu. dealloc bytes: %zu vm alloc: %zu\n", 
                 result,
-                "ALLOC",
+                "  ALLOC >>",
                 alloc_size,
                 _internal_alloc, 
                 _internal_dealloc,
@@ -799,12 +799,12 @@ object_lookup_item_t * _insert_or_get_object_lookup_item(uintptr_t id) {
 }
 
 // insert a new allocation for tracking into the allocation lookup table
-void l_allocate_track_register(uintptr_t id, void **address) {
+void l_allocate_track_register(uintptr_t id, obj_t *address) {
 
     object_lookup_item_t * item = _insert_or_get_object_lookup_item(id);
 
     // assign the new address
-    item->address = (obj_t **)address;
+    item->address = address;
 #if defined(LINK_DEBUGGING)
     // display the registered id
     printf("Registered allocation id: %lu -> %p\n", id, item->address);
@@ -813,7 +813,7 @@ void l_allocate_track_register(uintptr_t id, void **address) {
 }
 
 // register interest in a target address
-void l_allocate_track_target_register(uintptr_t id, void **target) {
+void l_allocate_track_target_register(uintptr_t id, obj_t **target) {
 
     // if the id doesn't in the lookup table, then we need to add it
     // this is because the target address may be set before the object is
@@ -941,35 +941,50 @@ void l_allocate_track_string_target_register(uint32_t hash, obj_string_t **targe
 void l_allocate_track_link_targets() {
     mem_track_t * track = &_mem.track;
 
+#if defined(LINK_DEBUGGING)
+    printf("linking:\n");
+#endif
+
     // link objects
+#if defined(LINK_DEBUGGING)
+        printf("linking: pointers\n");
+#endif
+
     for (size_t i = 0; i < track->object_lookup.count; i++) {
         object_lookup_item_t * item = &track->object_lookup.items[i];
         
         if (item->address == NULL) {
             continue;
         }
-
         for (size_t j = 0; j < item->count; j++) {
             // print the target address and the linked address
             obj_t **target = item->registered_targets[j];
 #if defined(LINK_DEBUGGING)
-            printf("linking alloc: %lu: p: %p -> target:%p\n", item->id, item->address, *target);
+            printf("\tlinking alloc: %lu: p: %p -> target:%p\n", item->id, item->address, *target);
 #endif
-            *target = *item->address;
+            *target = item->address;
         }
     }
 
     // link strings
+#if defined(LINK_DEBUGGING)
+        printf("linking: strings\n");
+#endif
     for (size_t i = 0; i < track->string_lookup.count; i++) {
         string_lookup_item_t * item = &track->string_lookup.items[i];
+
 #if defined(LINK_DEBUGGING)
-            printf("for string: %lu: %s\n", item->hash, item->address->chars );
-#endif        
+            printf("\tfor string: %lu: %s\n", item->hash, (item->address == NULL) ? "NULL: skipping" : item->address->chars );
+#endif   
+
+        if (item->address == NULL)
+            continue;
+
         for (int j = 0; j < item->count; j++) {
             // set the string pointer into the registered targets
             obj_string_t **target = item->registered_targets[j];
 #if defined(LINK_DEBUGGING)
-            printf("\tlinking string: %lu: p: %p -> target:%p\n", item->hash, item->address, *target);
+            printf("\t\tlinking string: %lu: p: %p -> target:%p\n", item->hash, item->address, *target);
 #endif
             *target = item->address;
         }

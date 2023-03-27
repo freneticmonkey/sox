@@ -33,7 +33,7 @@ static void _reset_stack() {
 }
 
 void l_vm_define_native(const char* name, native_func_t function) {
-    l_push(OBJ_VAL(l_copy_string(name, (int)strlen(name))));
+    l_push(OBJ_VAL(l_copy_string(name, strlen(name))));
     l_push(OBJ_VAL(l_new_native(function)));
     
     // register the new native call object in the memory tracking system
