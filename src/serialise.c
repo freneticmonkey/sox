@@ -10,6 +10,16 @@
 
 #define SERIALISATION_VERSION 1
 
+
+#if defined(SERIALISE_DEBUG)
+#define INDENT_SIZE 4
+int indent = 0;
+#define INDENT() for (int i = 0; i < indent; i++) printf(" ");
+#define BLOCK_START(block_name) INDENT(); printf("" block_name " {\n"); indent+=INDENT_SIZE; 
+#define BLOCK_END() indent-=INDENT_SIZE; INDENT(); printf("}\n");
+#endif
+
+
 const char * l_serialise_get_error_string(SerialiseErrorCode error) {
     switch (error) {
         case SERIALISE_OK: return "No error.";
@@ -87,7 +97,7 @@ void _serialise_buf_read_file(serialiser_buf_t* buffer, FILE* file) {
 
 #if defined(SERIALISE_DEBUG)
 #define WRITE_DEBUG(type, size) \
-    printf("\twriting <" type "> (%lu bytes) at offset %lu\n", size, buffer->count - size);
+    INDENT(); printf("writing <" type "> (%lu bytes) at offset %lu\n", size, buffer->count - size);
 #else
 #define WRITE_DEBUG(type, size)
 #endif
@@ -109,7 +119,7 @@ void _serialise_buf_write_int(serialiser_buf_t* buffer, int value) {
 
 void _serialise_buf_write_ints(serialiser_buf_t* buffer, int *values, size_t count) {
     _serialise_buf_write_bytes(buffer, values, sizeof(int) * count);
-    WRITE_DEBUG("ints", sizeof(int) * count)
+    WRITE_DEBUG("int *", sizeof(int) * count)
 }
 
 void _serialise_buf_write_uint8(serialiser_buf_t* buffer, uint8_t value) {
@@ -119,7 +129,7 @@ void _serialise_buf_write_uint8(serialiser_buf_t* buffer, uint8_t value) {
 
 void _serialise_buf_write_uint8s(serialiser_buf_t* buffer, uint8_t *values, size_t count) {
     _serialise_buf_write_bytes(buffer, values, sizeof(uint8_t) * count);
-    WRITE_DEBUG("uint8s", sizeof(uint8_t) * count)
+    WRITE_DEBUG("uint8 *", sizeof(uint8_t) * count)
 }
 
 void _serialise_buf_write_uint32(serialiser_buf_t* buffer, uint32_t value) {
@@ -170,18 +180,33 @@ void _serialise_buf_write_file(serialiser_buf_t* buffer, FILE* file) {
 }
 
 void _serialise_value_array(serialiser_t* serialiser, value_array_t* array) {
+
+#if defined(SERIALISE_DEBUG)
+    BLOCK_START("Write Value Array")
+#endif
+
     _serialise_buf_write_int(serialiser->buffer, array->count);
     for (int i = 0; i < array->count; i++) {
         l_serialise_value(serialiser, &array->values[i]);
     }
+#if defined(SERIALISE_DEBUG)
+    BLOCK_END()
+#endif
 }
 
 void _serialise_chunk(serialiser_t* serialiser, chunk_t* chunk) {
+
+#if defined(SERIALISE_DEBUG)
+    BLOCK_START("Write CHUNK")
+#endif
     _serialise_buf_write_int(serialiser->buffer, chunk->count);
     _serialise_buf_write_int(serialiser->buffer, chunk->capacity);
     _serialise_buf_write_bytes(serialiser->buffer, chunk->code, chunk->count);
     _serialise_buf_write_ints(serialiser->buffer, chunk->lines, chunk->count);
     _serialise_value_array(serialiser, &chunk->constants);
+#if defined(SERIALISE_DEBUG)
+    BLOCK_END()
+#endif
 }
 
 void _serialise_ptr(serialiser_t* serialiser, void* ptr) {
@@ -189,7 +214,13 @@ void _serialise_ptr(serialiser_t* serialiser, void* ptr) {
 }
 
 void _serialise_string_ptr(serialiser_t* serialiser, obj_string_t* string) {
-    _serialise_buf_write_uint32(serialiser->buffer, string->hash);
+
+    // if the string being serialised is NULL, then write a hash of 0 to indicate that
+    // there is no string
+    if (string == NULL)
+        _serialise_buf_write_uint32(serialiser->buffer, 0);
+    else
+        _serialise_buf_write_uint32(serialiser->buffer, string->hash);
 }
 
 void _serialise_write_object(serialiser_t* serialiser, obj_t* object) {
@@ -198,47 +229,47 @@ void _serialise_write_object(serialiser_t* serialiser, obj_t* object) {
     switch (object->type)
     {
         case OBJ_BOUND_METHOD: {
-            printf("\nSerialising BOUND_METHOD - NYI {\n");
+            BLOCK_START("Write BOUND_METHOD - NYI");
             break;
         }
         case OBJ_CLASS: {
-            printf("\nSerialising CLASS {\n");
+            BLOCK_START("Write CLASS");
             break;
         }
         case OBJ_CLOSURE: {
-            printf("\nSerialising CLOSURE {\n");
+            BLOCK_START("Write CLOSURE");
             break;
         }
         case OBJ_FUNCTION: {
-            printf("\nSerialising FUNCTION {\n");
+            BLOCK_START("Write FUNCTION");
             break;
         }
         case OBJ_INSTANCE: {
-            printf("\nSerialising INSTANCE {\n");
+            BLOCK_START("Write INSTANCE");
             break;
         }
         case OBJ_NATIVE: {
-            printf("\nSerialising NATIVE {\n");
+            BLOCK_START("Write NATIVE");
             break;
         }
         case OBJ_STRING: {
-            printf("\nSerialising STRING {\n");
+            BLOCK_START("Write STRING");
             break;
         }
         case OBJ_UPVALUE: {
-            printf("\nSerialising UPVALUE - NYI {\n");
+            BLOCK_START("Write UPVALUE - NYI");
             break;
         }
         case OBJ_TABLE: {
-            printf("\nSerialising TABLE {\n");
+            BLOCK_START("Write TABLE");
             break;
         }
         case OBJ_ERROR: {
-            printf("\nSerialising ERROR {\n");
+            BLOCK_START("Write ERROR");
             break;
         }
         default: {
-            printf("Serialising UNKNOWN - Error\n");
+            BLOCK_START("Write UNKNOWN - Error");
             break;
         }
     }
@@ -288,7 +319,8 @@ void _serialise_write_object(serialiser_t* serialiser, obj_t* object) {
             _serialise_buf_write_int(serialiser->buffer, function->arity);
             _serialise_buf_write_int(serialiser->buffer, function->upvalue_count);
             _serialise_chunk(serialiser, &function->chunk);
-            _serialise_string_ptr(serialiser, function->name);
+            _serialise_string_ptr(serialiser, function->name);                
+
             break;
         }
         case OBJ_INSTANCE: {
@@ -340,11 +372,11 @@ void _serialise_write_object(serialiser_t* serialiser, obj_t* object) {
             serialiser->error = SERIALISE_ERROR_UNKNOWN_OBJECT_TYPE;
             break;
     }
-
-    l_serialise_flush(serialiser);
-
 #if defined(SERIALISE_DEBUG)
-    printf("\n}\n");
+    // enabling this will cause the serialiser to flush the buffer after every object
+    // this will also cause an error state if used with unit tests and memory only serialisation
+    // l_serialise_flush(serialiser);
+    BLOCK_END();
 #endif
 }
 
@@ -441,7 +473,7 @@ void l_serialise_obj(serialiser_t* serialiser, obj_t* object) {
 void l_serialise_table(serialiser_t* serialiser, table_t* table) {
 
 #if defined(SERIALISE_DEBUG)
-    printf("\nSerialising Table: {\n");
+    BLOCK_START("Write TABLE");
 #endif
 
     // determine how many entries need to be serialised by counting the number of non-null keys
@@ -458,7 +490,7 @@ void l_serialise_table(serialiser_t* serialiser, table_t* table) {
     _serialise_buf_write_int(serialiser->buffer, count);
 
 #if defined(SERIALISE_DEBUG)
-    printf("\tkeys: {\n");
+    BLOCK_START("keys");
 #endif
     for (int i = 0; i < table->capacity; i++) {
         entry_t* entry = &table->entries[i];
@@ -483,8 +515,8 @@ void l_serialise_table(serialiser_t* serialiser, table_t* table) {
     }
 
 #if defined(SERIALISE_DEBUG)
-    printf("\t}\n");
-    printf("}\n");
+    BLOCK_END();
+    BLOCK_END();
 #endif
 }
 
@@ -503,6 +535,30 @@ void l_serialise_table_offset(serialiser_t* serialiser, table_t* table, int offs
 void l_serialise_value(serialiser_t* serialiser, value_t * value) {
 
     _serialise_buf_write_int(serialiser->buffer, value->type);
+
+#if defined(SERIALISE_DEBUG)
+    BLOCK_START("Write VALUE");
+    switch (value->type) {
+        case VAL_BOOL:
+            BLOCK_START("bool");
+            break;
+        case VAL_NIL:
+
+            BLOCK_START("nil");
+            break;
+        case VAL_NUMBER:
+            BLOCK_START("number");
+            break;
+        case VAL_OBJ:
+            BLOCK_START("object");
+            break;
+        default:
+            BLOCK_START("unknown");
+            break;
+    }
+#endif
+
+
     switch (value->type) {
         case VAL_BOOL:
             _serialise_buf_write_bool(serialiser->buffer, AS_BOOL(*value));
@@ -519,26 +575,43 @@ void l_serialise_value(serialiser_t* serialiser, value_t * value) {
         default:
             break;
     }
+
+#if defined(SERIALISE_DEBUG)
+    BLOCK_END();
+    BLOCK_END();
+#endif
+
 }
 
+const void* _serialise_buf_read(serialiser_buf_t* buffer, size_t length);
 int _serialise_buf_read_int(serialiser_buf_t* buffer);
 size_t _serialise_buf_read_long(serialiser_buf_t* buffer);
 obj_t * _serialise_read_object(serialiser_t* serialiser);
 void _serialise_read_ptr(serialiser_t* serialiser, obj_t ** ptr);
 
 #if defined(SERIALISE_DEBUG)
-#define READ_DEBUG(type, size) \
-    printf("\treading <" type "> (%lu bytes) at offset %lu\n", (size), buffer->offset - (size));
+#define READ_DEBUG(type, expected_size, actual_size) \
+    INDENT(); \
+    printf("reading <" type "> (expected: %lu actual: %lu bytes) at offset %lu\n", expected_size, actual_size, buffer->offset - actual_size);
 #else
-#define READ_DEBUG(type, size)
+#define READ_DEBUG(type, expected_size, actual_size)
 #endif
 
-#define READ_POD_TYPE(type, debug) \
-    _serialise_buf_read_long(buffer); \
-    type value; \
-    memcpy(&value, _serialise_buf_read(buffer, sizeof(type)), sizeof(type)); \
-    debug \
-    return value;
+void _read_pod_type(serialiser_buf_t* buffer, const char * type, void* value, size_t length) {
+    size_t read_length = _serialise_buf_read_long(buffer);
+    
+#if defined(SERIALISE_DEBUG)
+    INDENT();
+    printf("reading <%s> (expected: %lu actual: %lu bytes) at offset %lu\n", type, length, read_length, buffer->offset - read_length);
+#endif
+
+    if (read_length != length) {
+        fprintf(stderr, "Serialiser buffer data error while reading <%s>.", type);
+        exit(1);
+    }
+
+    memcpy(value, _serialise_buf_read(buffer, length), length);
+}
 
 const void* _serialise_buf_read(serialiser_buf_t* buffer, size_t length) {
     const void* result = &buffer->bytes[buffer->offset];
@@ -552,77 +625,106 @@ const void* _serialise_buf_read(serialiser_buf_t* buffer, size_t length) {
 
 const void* _serialise_buf_read_bytes(serialiser_buf_t* buffer) {
     size_t length = _serialise_buf_read_long(buffer);
+    if (length == 0) {
+        return NULL;
+    }
     uint8_t *bytes = ALLOCATE(uint8_t, length + 1);
     memcpy(bytes, _serialise_buf_read(buffer, length), length);
     return bytes;
 }
 
 int _serialise_buf_read_int(serialiser_buf_t* buffer) {
-    READ_POD_TYPE(int, READ_DEBUG("int", sizeof(int)))
+    int value;
+    _read_pod_type(buffer, "int", &value, sizeof(int));
+    return value;
 }
 
 size_t _serialise_buf_read_long(serialiser_buf_t* buffer) {
     size_t value;
     memcpy(&value, _serialise_buf_read(buffer, sizeof(size_t)), sizeof(size_t));
-    READ_DEBUG("long", sizeof(size_t))
+    READ_DEBUG("long", sizeof(size_t), sizeof(size_t))
     return value;
 }
 
 int * _serialise_buf_read_ints(serialiser_buf_t* buffer) {
     size_t bytes_length = _serialise_buf_read_long(buffer);
     
+    if (bytes_length == 0) {
+        READ_DEBUG("int * (empty)", bytes_length, bytes_length)
+        return NULL;
+    }
+
     // convert from bytes to length
     size_t length = bytes_length / sizeof(int);
 
     int *value = ALLOCATE(int, length + 1);
     memcpy(value, _serialise_buf_read(buffer, bytes_length), sizeof(int) * length);
-    READ_DEBUG("int *", bytes_length)
+    READ_DEBUG("int *", bytes_length, bytes_length)
 
     return value;
 }
 
 uint8_t _serialise_buf_read_uint8(serialiser_buf_t* buffer) {
-    READ_POD_TYPE(uint8_t, READ_DEBUG("uint8", sizeof(uint8_t)))
-    
+    uint8_t value;
+    _read_pod_type(buffer, "uint8_t", &value, sizeof(uint8_t));
+    return value;
 }
 
 uint8_t* _serialise_buf_read_uint8s(serialiser_buf_t* buffer) {
     size_t bytes_length = _serialise_buf_read_long(buffer);
     
+    if (bytes_length == 0) {
+        READ_DEBUG("uint8 * (empty)", bytes_length, bytes_length)
+        return NULL;
+    }
+
     // convert from bytes to length
     size_t length = bytes_length / sizeof(uint8_t);
 
     uint8_t *value = ALLOCATE(uint8_t, length + 1);
     memcpy(value, _serialise_buf_read(buffer, bytes_length), sizeof(uint8_t) * length);
-    READ_DEBUG("uint8 *", bytes_length)
+
+    READ_DEBUG("uint8 *", bytes_length, bytes_length)
+
     return value;
 }
 
 uint32_t _serialise_buf_read_uint32(serialiser_buf_t* buffer) {
-    READ_POD_TYPE(uint32_t, READ_DEBUG("uint8", sizeof(uint32_t)))
+    uint32_t value;
+    _read_pod_type(buffer, "uint32_t", &value, sizeof(uint32_t));
+    return value;
     
 }
 
 uintptr_t _serialise_buf_read_uintptr(serialiser_buf_t* buffer) {
-    READ_POD_TYPE(uintptr_t, READ_DEBUG("uintptr_t", sizeof(uintptr_t)))
-    
+    uintptr_t value;
+    _read_pod_type(buffer, "uintptr_t", &value, sizeof(uintptr_t));
+    return value;
 }
 
 double _serialise_buf_read_double(serialiser_buf_t* buffer) {
-    READ_POD_TYPE(double, READ_DEBUG("double", sizeof(double)))
-    
+    double value;
+    _read_pod_type(buffer, "double", &value, sizeof(double));
+    return value;
 }
 
 obj_string_t * _serialise_buf_read_string(serialiser_buf_t* buffer) {
 
     _serialise_buf_read_uint32(buffer); // unused
     size_t length = _serialise_buf_read_long(buffer);
+
+    if (length == 0) {
+        READ_DEBUG("string (NULL)", length, length)
+        return NULL;
+    }
+
     // read the bytes from the file
     char * chars = (char*)_serialise_buf_read(buffer, length);
 
-    READ_DEBUG("string", length)
+    READ_DEBUG("string", length, length)
 #if defined(SERIALISE_DEBUG)
-    printf("\t - %s\n", chars);
+    INDENT();
+    printf(" - %s\n", chars);
 #endif
     // convert the length into characters from bytes
     length /= sizeof(char);
@@ -640,12 +742,18 @@ obj_string_t * _serialise_buf_read_string(serialiser_buf_t* buffer) {
     return str;
 }
 
-const char * _serialise_buf_read_string_char(serialiser_buf_t* buffer) {
+char * _serialise_buf_read_string_char(serialiser_buf_t* buffer) {
 
     size_t bytes_length = _serialise_buf_read_long(buffer);
+
+    if (bytes_length == 0) {
+        READ_DEBUG("char * (empty)", bytes_length, bytes_length)
+        return NULL;
+    }
+
     char * chars = (char*)_serialise_buf_read(buffer, bytes_length);
 
-    READ_DEBUG("char *", bytes_length)
+    READ_DEBUG("char *", bytes_length, bytes_length)
 #if defined(SERIALISE_DEBUG)
     printf("\t - %s\n", chars);
 #endif
@@ -663,48 +771,105 @@ const char * _serialise_buf_read_string_char(serialiser_buf_t* buffer) {
 
 bool _serialise_buf_read_bool(serialiser_buf_t* buffer) {
     bool * read = (bool *)_serialise_buf_read(buffer, sizeof(bool));
-    READ_DEBUG("bool", sizeof(bool))
+    READ_DEBUG("bool", sizeof(bool), sizeof(bool))
     return *read == 1;
 }
 
-value_t l_deserialise_value(serialiser_t* serialiser) {
+// read a value from the serialiser buffer
+// the value is passed by reference and will be updated, so that the caller
+// can provide a value for an object pointer to be corrected linked into
+// at the end of deserilisation
+void l_deserialise_value(serialiser_t* serialiser, value_t *value) {
     int type = _serialise_buf_read_int(serialiser->buffer);
+#if defined(SERIALISE_DEBUG)
+    BLOCK_START("Read VALUE: ");
     switch (type) {
         case VAL_BOOL:
-            return BOOL_VAL(_serialise_buf_read_bool(serialiser->buffer));
+            BLOCK_START("BOOL");
+            break;
         case VAL_NIL:
-            return NIL_VAL;
+            BLOCK_START("NIL");
+            break;
         case VAL_NUMBER:
-            return NUMBER_VAL(_serialise_buf_read_double(serialiser->buffer));
+            BLOCK_START("NUMBER");
+            break;
         case VAL_OBJ:
-        {
-            value_t obj;
-            _serialise_read_ptr(serialiser, &obj.as.obj);
-            return obj;
-        }
+            BLOCK_START("OBJECT");
+            break;
         default:
+            BLOCK_START("UNKNOWN");
             break;
     }
-    // TODO: is this the correct default?
-    return NIL_VAL;
+#endif
+
+    value_t read_value;
+    switch (type) {
+        case VAL_BOOL: {
+            read_value = BOOL_VAL(_serialise_buf_read_bool(serialiser->buffer));
+            value->type = VAL_BOOL;
+            value->as.boolean = read_value.as.boolean;
+            break;
+        }
+        case VAL_NUMBER: {
+            read_value = NUMBER_VAL(_serialise_buf_read_double(serialiser->buffer));
+            value->type = VAL_NUMBER;
+            value->as.number = read_value.as.number;
+            break;
+        }
+        case VAL_OBJ:
+        {
+            value->type = VAL_OBJ;
+            obj_t ** ptr = &value->as.obj;
+            _serialise_read_ptr(serialiser, ptr);
+            break;
+        }
+        case VAL_NIL:
+        // TODO: is this the correct default?
+        default:
+            value->type = VAL_NIL;
+            value->as.boolean = false;
+            break;
+    }
+
+#if defined(SERIALISE_DEBUG)
+   BLOCK_END()
+   BLOCK_END()
+#endif
 }
 
 void _serialise_read_value_array(serialiser_t* serialiser, value_array_t * array) {
+
+#if defined(SERIALISE_DEBUG)
+    BLOCK_START("Read VALUE ARRAY: ");
+#endif
+
     int count = _serialise_buf_read_int(serialiser->buffer);
     array->values = ALLOCATE(value_t, count);
     array->capacity = count;
     array->count = count;
     for (int i = 0; i < count; i++) {
-        array->values[i] = l_deserialise_value(serialiser);
+        l_deserialise_value(serialiser, &array->values[i]);
     }
+
+#if defined(SERIALISE_DEBUG)
+   BLOCK_END()
+#endif
 }
 
 void _serialise_read_chunk(serialiser_t* serialiser, chunk_t * chunk) {
+
+#if defined(SERIALISE_DEBUG)
+    BLOCK_START("Read CHUNK: ");
+#endif
+
     chunk->count = _serialise_buf_read_int(serialiser->buffer);
     chunk->capacity = _serialise_buf_read_int(serialiser->buffer);
     chunk->code = (uint8_t*)_serialise_buf_read_bytes(serialiser->buffer);
     chunk->lines = _serialise_buf_read_ints(serialiser->buffer);
     _serialise_read_value_array(serialiser, &chunk->constants);
+#if defined(SERIALISE_DEBUG)
+   BLOCK_END()
+#endif
 }
 
 void _serialise_read_ptr(serialiser_t* serialiser, obj_t ** ptr) {
@@ -717,36 +882,48 @@ void _serialise_read_str_ptr(serialiser_t* serialiser, obj_string_t ** ptr) {
 
     // register an interest in the string object when it's eventually created using its hash
     uint32_t hash = _serialise_buf_read_uint32(serialiser->buffer);
+
+    // if the hash is zero, then the string pointer was NULL when serialised
+    if (hash == 0) {
+        *ptr = NULL;
+        return;
+    }
     l_allocate_track_string_target_register(hash, ptr);
 }
 
 void l_deserialise_table(serialiser_t* serialiser, table_t* table) {
 
 #if defined(SERIALISE_DEBUG)
-    printf("\nRead TABLE {\n");
+    BLOCK_START("Read TABLE {\n");
 #endif
 
     int count = _serialise_buf_read_int(serialiser->buffer);
 
 #if defined(SERIALISE_DEBUG)
-    printf("\tkeys: {\n");
+    BLOCK_START("keys: {\n");
 #endif
     for (int i = 0; i < count; i++) {
 #if defined(SERIALISE_DEBUG)
-        printf("\t>\n");
+        INDENT()
+        printf(">\n");
 #endif
         obj_string_t* key = _serialise_buf_read_string(serialiser->buffer);
-        value_t value = l_deserialise_value(serialiser);
+
+        // TODO: This will totally break if the table contains a value that is a pointer to an object
+        // e.g. a string. :'(
+        value_t value;
+        l_deserialise_value(serialiser, &value);
 
 #if defined(SERIALISE_DEBUG)
-        printf("\t<\n");
+        INDENT()
+        printf("<\n");
 #endif
         l_table_set(table, key, value);
     }
 
 #if defined(SERIALISE_DEBUG)
-    printf("\t}\n");
-    printf("}\n");
+    BLOCK_END()
+    BLOCK_END()
 #endif
 }
 
@@ -754,58 +931,60 @@ obj_t * _serialise_read_object(serialiser_t* serialiser) {
 
     obj_t * result = NULL;
 
+#if defined(SERIALISE_DEBUG)
+    BLOCK_START("Read OBJECT");
+#endif
+
     // read the uintptr_t id of the object
     uintptr_t obj_id = _serialise_buf_read_uintptr(serialiser->buffer);
 
     int type = _serialise_buf_read_int(serialiser->buffer);
 
-
-
 #if defined(SERIALISE_DEBUG)
     switch (type)
     {
         case OBJ_BOUND_METHOD: {
-            printf("\nRead BOUND_METHOD - NYI {\n");
+            BLOCK_START("Read BOUND_METHOD - NYI");
             break;
         }
         case OBJ_CLASS: {
-            printf("\nRead CLASS {\n");
+            BLOCK_START("Read CLASS");
             break;
         }
         case OBJ_CLOSURE: {
-            printf("\nRead CLOSURE {\n");
+            BLOCK_START("Read CLOSURE");
             break;
         }
         case OBJ_FUNCTION: {
-            printf("\nRead FUNCTION {\n");
+            BLOCK_START("Read FUNCTION");
             break;
         }
         case OBJ_INSTANCE: {
-            printf("\nRead INSTANCE {\n");
+            BLOCK_START("Read INSTANCE");
             break;
         }
         case OBJ_NATIVE: {
-            printf("\nRead NATIVE {\n");
+            BLOCK_START("Read NATIVE");
             break;
         }
         case OBJ_STRING: {
-            printf("\nRead STRING {\n");
+            BLOCK_START("Read STRING");
             break;
         }
         case OBJ_UPVALUE: {
-            printf("\nRead UPVALUE - NYI {\n");
+            BLOCK_START("Read UPVALUE - NYI");
             break;
         }
         case OBJ_TABLE: {
-            printf("\nRead TABLE {\n");
+            BLOCK_START("Read TABLE");
             break;
         }
         case OBJ_ERROR: {
-            printf("\nRead ERROR {\n");
+            BLOCK_START("Read ERROR");
             break;
         }
         default: {
-            printf("Serialising UNKNOWN - Error\n");
+            BLOCK_START("Read UNKNOWN - Error");
             break;
         }
     }
@@ -913,7 +1092,8 @@ obj_t * _serialise_read_object(serialiser_t* serialiser) {
     }
 
 #if defined(SERIALISE_DEBUG)
-    printf("}\n");  
+    BLOCK_END()
+    BLOCK_END()
 #endif
 
     // register the object with the id
@@ -930,7 +1110,7 @@ obj_t * _serialise_read_object(serialiser_t* serialiser) {
 void _serialise_write_header(serialiser_t* serialiser, const char * filename_source, const char * source) {
 
 #if defined(SERIALISE_DEBUG)
-    printf("\nSerialising Header: {\n");
+    BLOCK_START("Write Header:");
 #endif
 
     // serialisation version
@@ -944,7 +1124,7 @@ void _serialise_write_header(serialiser_t* serialiser, const char * filename_sou
     _serialise_buf_write_uint32(serialiser->buffer, source_hash);
     
 #if defined(SERIALISE_DEBUG)
-    printf("\n}\n");
+    BLOCK_END();
 #endif
 
     // flush the header
@@ -954,7 +1134,7 @@ void _serialise_write_header(serialiser_t* serialiser, const char * filename_sou
 void _serialise_read_header(serialiser_t* serialiser, const char * filename_source, const char * source) {
 
 #if defined(SERIALISE_DEBUG)
-    printf("\nReading Header: {\n");
+    BLOCK_START("Read Header:");
 #endif
     
     // read the serialisation version
@@ -1001,7 +1181,7 @@ void _serialise_read_header(serialiser_t* serialiser, const char * filename_sour
     }
 
 #if defined(SERIALISE_DEBUG)
-    printf("\n}\n");
+    BLOCK_END();
 #endif
 }
 
@@ -1024,6 +1204,10 @@ void l_serialise_vm(serialiser_t* serialiser) {
     // l_serialise_table_offset(serialiser, &vm.globals, serialiser->global_offset);
     // l_serialise_table_offset(serialiser, &vm.strings, serialiser->string_offset);
     
+#if defined(SERIALISE_DEBUG)
+    BLOCK_START("Write VM START");
+#endif
+
     // l_serialise_value(serialiser, vm.stack_top);
     obj_t * obj = l_get_objects();
 
@@ -1054,6 +1238,11 @@ void l_serialise_vm(serialiser_t* serialiser) {
     _serialise_ptr(serialiser, AS_CLOSURE(*closure)->function);
 
     printf("serialisation complete.\n");
+
+#if defined(SERIALISE_DEBUG)
+    BLOCK_END();
+#endif
+
 }
 
 void l_serialise_rewind(serialiser_t* serialiser) {
@@ -1061,6 +1250,11 @@ void l_serialise_rewind(serialiser_t* serialiser) {
 }
 
 obj_closure_t * l_deserialise_vm(serialiser_t* serialiser) {
+
+
+#if defined(SERIALISE_DEBUG)
+    BLOCK_START("Read VM START");
+#endif
 
     // read the number of objects
     int objects_serialised_count = _serialise_buf_read_int(serialiser->buffer);
@@ -1085,11 +1279,17 @@ obj_closure_t * l_deserialise_vm(serialiser_t* serialiser) {
     // setup the tracking for the closure function to the stack value
     _serialise_read_ptr(serialiser, (obj_t **)&closure->function);
 
+
+#if defined(SERIALISE_DEBUG)
+    BLOCK_END();
+#endif
+
+
     return closure;
 }
 
 void l_deserialise_vm_set_init_state(serialiser_t* serialiser, obj_closure_t * entry_point) {
-    l_push(OBJ_VAL(entry_point));
+    l_set_entry_point(entry_point);
 }
 
 obj_t * l_deserialise_obj(serialiser_t* serialiser) {

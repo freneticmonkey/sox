@@ -76,7 +76,7 @@ void            l_deserialise_vm_set_init_state(serialiser_t* serialiser, obj_cl
 
 obj_t * l_deserialise_obj(serialiser_t* serialiser);
 void    l_deserialise_table(serialiser_t* serialiser, table_t* table);
-value_t l_deserialise_value(serialiser_t* serialiser);
+void l_deserialise_value(serialiser_t* serialiser, value_t *value);
 
 int       l_deserialise_int(serialiser_t* serialiser);
 int *     l_deserialise_ints(serialiser_t* serialiser);

@@ -743,8 +743,9 @@ void * l_allocate_track_get_native_ptr(const char *name) {
     mem_track_t * track = &_mem.track;
 
     for (int i = 0; i < track->native_lookup.count; i++) {
-        if (strcmp(track->native_lookup.items[i].name, name) == 0) {
-            return track->native_lookup.items[i].native;
+        native_lookup_item_t * item = &track->native_lookup.items[i];
+        if (item->name != NULL && strcmp(item->name, name) == 0) {
+            return item->native;
         }
     }
 
@@ -756,8 +757,9 @@ const char * l_allocate_track_get_native_name(void * ptr) {
     mem_track_t * track = &_mem.track;
 
     for (int i = 0; i < track->native_lookup.count; i++) {
-        if (track->native_lookup.items[i].native == ptr) {
-            return track->native_lookup.items[i].name;
+        native_lookup_item_t * item = &track->native_lookup.items[i];
+        if (item->native != NULL && item->native == ptr) {
+            return item->name;
         }
     }
 

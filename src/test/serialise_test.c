@@ -802,8 +802,6 @@ static MunitResult _serialise_table(const MunitParameter params[], void *user_da
     l_init_memory();
     l_init_vm(config);
 
-
-
     // init the serialiser
     serialiser_t * serialiser = l_serialise_new(NULL, NULL, SERIALISE_MODE_WRITE);
 
@@ -837,6 +835,74 @@ static MunitResult _serialise_table(const MunitParameter params[], void *user_da
 
     return MUNIT_OK;
 }
+
+
+// test creating a vm, interpreting source, serialising it, deserialising it, running the VM and testing for an error
+static MunitResult _serialise_vm(const MunitParameter params[], void *user_data)
+{
+    (void)params;
+    (void)user_data;
+    
+    const char * source = "print(\"hello world\")";    
+    
+    vm_config_t config = {
+        .suppress_print = false
+    };
+
+    l_init_memory();
+    l_init_vm(config);
+
+    // init the serialiser
+    serialiser_t * serialiser = l_serialise_new(NULL, NULL, SERIALISE_MODE_WRITE);
+
+    // setup the VM serialisation
+    l_serialise_vm_set_init_state(serialiser);
+
+    // interpret the source
+    InterpretResult result = l_interpret(source);
+    
+    if (result == INTERPRET_COMPILE_ERROR) 
+        return 65;
+
+    // serialise the vm
+    l_serialise_vm(serialiser);
+
+    // now restart the the vm
+    l_free_vm();
+
+    // enable memory tracking so that the deserialised objects can be linked
+    l_allocate_track_init();
+
+    l_init_vm(config);
+
+    // rewrind the buffer and start deserialising
+    l_serialise_rewind(serialiser);
+
+    // deserialise the VM
+    obj_closure_t * closure = l_deserialise_vm(serialiser);
+
+    // link the objects
+    l_allocate_track_link_targets();
+
+    // free tracking allocations
+    l_allocate_track_free();
+
+    // set the deserialised closure as the entry point in the VM
+    l_deserialise_vm_set_init_state(serialiser, closure);
+
+    // run the deserialised VM
+    result = l_run();
+
+    munit_assert_int(result, != , INTERPRET_RUNTIME_ERROR);
+
+    l_serialise_del(serialiser);
+
+    l_free_vm();
+    l_free_memory();
+
+    return MUNIT_OK;
+}
+
 
 MunitSuite l_serialise_test_setup() {
 
@@ -972,6 +1038,14 @@ MunitSuite l_serialise_test_setup() {
         {
             .name = (char *)"serialise_table", 
             .test = _serialise_table, 
+            .setup = NULL, 
+            .tear_down = NULL, 
+            .options = MUNIT_TEST_OPTION_NONE,
+            .parameters = NULL
+        },
+        {
+            .name = (char *)"serialise_vm",
+            .test = _serialise_vm,
             .setup = NULL, 
             .tear_down = NULL, 
             .options = MUNIT_TEST_OPTION_NONE,
