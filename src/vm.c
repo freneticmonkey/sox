@@ -135,7 +135,7 @@ void l_free_vm() {
 
 static InterpretResult _run() {
 #ifdef DEBUG_TRACE_EXECUTION
-    printf(" == VM START ==  ");
+    printf(" == VM START ==  \n");
 #endif
     callframe_t* frame = &vm.frames[vm.frame_count - 1];
 
