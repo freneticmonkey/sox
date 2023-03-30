@@ -186,6 +186,11 @@ static void _print_function(obj_function_t* function) {
 }
 
 void l_print_object(value_t value) {
+    if ( value.as.obj == NULL ) {
+        printf("<NULL: ERROR>");
+        return;
+    }
+
     switch (OBJ_TYPE(value)) {
         case OBJ_BOUND_METHOD:
             _print_function(AS_BOUND_METHOD(value)->method->function);
