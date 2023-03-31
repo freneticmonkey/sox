@@ -837,6 +837,73 @@ void l_deserialise_value(serialiser_t* serialiser, value_t *value) {
 #endif
 }
 
+
+// read a value from the serialiser buffer
+// the value is passed by reference and will be updated, so that the caller
+// can provide a value for an object pointer to be corrected linked into
+// at the end of deserilisation
+void l_deserialise_table_value(serialiser_t* serialiser, table_t *table) {
+
+    // extract the key for the value
+    obj_string_t* key = _serialise_buf_read_string(serialiser->buffer);
+    
+    int type = _serialise_buf_read_int(serialiser->buffer);
+
+#if defined(SERIALISE_DEBUG)
+    BLOCK_START("Read TABLE VALUE: ");
+    INDENT();
+    printf("key: %s\n", key->chars);
+    switch (type) {
+        case VAL_BOOL:
+            BLOCK_START("BOOL");
+            break;
+        case VAL_NIL:
+            BLOCK_START("NIL");
+            break;
+        case VAL_NUMBER:
+            BLOCK_START("NUMBER");
+            break;
+        case VAL_OBJ:
+            BLOCK_START("OBJECT");
+            break;
+        default:
+            BLOCK_START("UNKNOWN");
+            break;
+    }
+#endif
+    
+    value_t read_value;
+    switch (type) {
+        case VAL_BOOL: {
+            read_value = BOOL_VAL(_serialise_buf_read_bool(serialiser->buffer));
+            l_table_set(table, key, read_value);
+            break;
+        }
+        case VAL_NUMBER: {
+            read_value = NUMBER_VAL(_serialise_buf_read_double(serialiser->buffer));
+            l_table_set(table, key, read_value);
+            break;
+        }
+        case VAL_OBJ:
+        {
+            entry_t * entry = l_table_set_entry(table, key);
+            obj_t ** ptr = &entry->value.as.obj;
+            _serialise_read_ptr(serialiser, ptr);
+            break;
+        }
+        case VAL_NIL:
+        // TODO: is this the correct default?
+        default:
+            l_table_set(table, key, NIL_VAL);
+            break;
+    }
+
+#if defined(SERIALISE_DEBUG)
+   BLOCK_END()
+   BLOCK_END()
+#endif
+}
+
 void _serialise_read_value_array(serialiser_t* serialiser, value_array_t * array) {
 
 #if defined(SERIALISE_DEBUG)
@@ -875,6 +942,12 @@ void _serialise_read_chunk(serialiser_t* serialiser, chunk_t * chunk) {
 void _serialise_read_ptr(serialiser_t* serialiser, obj_t ** ptr) {
     // register an interest in the name object when it's eventually created
     uintptr_t ptr_id = _serialise_buf_read_uintptr(serialiser->buffer);
+
+    if (ptr_id == 0) {
+        *ptr = NULL;
+        return;
+    }
+
     l_allocate_track_target_register(ptr_id, ptr);
 }
 
@@ -907,18 +980,12 @@ void l_deserialise_table(serialiser_t* serialiser, table_t* table) {
         INDENT()
         printf(">\n");
 #endif
-        obj_string_t* key = _serialise_buf_read_string(serialiser->buffer);
-
-        // TODO: This will totally break if the table contains a value that is a pointer to an object
-        // e.g. a string. :'(
-        value_t value;
-        l_deserialise_value(serialiser, &value);
+        l_deserialise_table_value(serialiser, table);
 
 #if defined(SERIALISE_DEBUG)
         INDENT()
         printf("<\n");
 #endif
-        l_table_set(table, key, value);
     }
 
 #if defined(SERIALISE_DEBUG)
@@ -1234,10 +1301,15 @@ void l_serialise_vm(serialiser_t* serialiser) {
     printf("serialised %d objects\n", objects_serialised);
 
     // serialise the closure pointer on the top of the stack
-    value_t * closure = vm.stack_top-1;
-    _serialise_ptr(serialiser, AS_CLOSURE(*closure)->function);
+    if ( vm.stack_top == vm.stack ) {
+        fprintf(stderr, "Stack is empty, cannot serialise closure.\n");
+        _serialise_buf_write_uintptr(serialiser->buffer, 0);
+    } else {
+        value_t * closure = vm.stack_top-1;
+        _serialise_ptr(serialiser, AS_CLOSURE(*closure)->function);
 
-    printf("serialisation complete.\n");
+        printf("serialisation complete.\n");
+    }
 
 #if defined(SERIALISE_DEBUG)
     BLOCK_END();

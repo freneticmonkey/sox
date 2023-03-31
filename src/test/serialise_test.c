@@ -836,6 +836,95 @@ static MunitResult _serialise_table(const MunitParameter params[], void *user_da
     return MUNIT_OK;
 }
 
+// test creating a table, insert a string value, serialising it, deserialising it, and test that the table value is correct
+static MunitResult _serialise_table_pointer(const MunitParameter params[], void *user_data)
+{
+    (void)params;
+    (void)user_data;
+    
+    vm_config_t config = {
+        .suppress_print = true
+    };
+
+    l_init_memory();
+    l_init_vm(config);
+
+    table_t table;
+    l_init_table(&table);
+
+    // create a string key and value to insert into the table
+    obj_string_t * key = l_new_string("test_key");
+    obj_string_t * str_value = l_new_string("test_value");
+
+    value_t value = OBJ_VAL(str_value);
+
+    // insert the key and value into the table
+    l_table_set(&table, key, value);
+    
+    // init the serialiser
+    serialiser_t * serialiser = l_serialise_new(NULL, NULL, SERIALISE_MODE_WRITE);
+
+    // serialise the vm
+    l_serialise_vm(serialiser);
+
+    // serialise the test table
+    l_serialise_table(serialiser, &table);
+
+    // now restart the the vm
+    l_free_vm();
+
+    // enable memory tracking so that the deserialised objects can be linked
+    l_allocate_track_init();
+
+    l_init_vm(config);
+
+    // rewrind the buffer and start deserialising
+    l_serialise_rewind(serialiser);
+
+    // deserialise the VM
+    l_deserialise_vm(serialiser);
+
+    // now deserialise the test table
+    table_t deserialised_table;
+    l_init_table(&deserialised_table);
+
+    // deserialise the VM
+    l_deserialise_table(serialiser, &deserialised_table);
+
+    // link the objects
+    l_allocate_track_link_targets();
+
+    // free tracking allocations
+    l_allocate_track_free();
+
+
+    // now get the value from the deserialised table
+    // it is important to use a newly allocated string here so that
+    // is is pointing to the correct value in the strings table.
+    // if it is not, then the table lookup fails as it uses pointer values
+    // and the 'key' pointer created at the start of this test will not be
+    // in the new VM's strings table, and therefore be unknown to the table
+    obj_string_t * find_key = l_new_string("test_key");
+    
+    value_t d_value;
+    bool found = l_table_get(&deserialised_table, find_key, &d_value);
+
+    munit_assert_true(found);
+    munit_assert_int(d_value.type, == , VAL_OBJ);
+    munit_assert_int(d_value.as.obj->type, == , OBJ_STRING);
+
+    obj_string_t * d_str = (obj_string_t *)d_value.as.obj;
+    munit_assert_not_null(d_str->chars);
+    munit_assert_int(d_str->length, == , str_value->length);
+    munit_assert_memory_equal(d_str->length, d_str->chars, str_value->chars);
+
+    l_serialise_del(serialiser);
+
+    l_free_vm();
+    l_free_memory();
+
+    return MUNIT_OK;
+}
 
 // test creating a vm, interpreting source, serialising it, deserialising it, running the VM and testing for an error
 static MunitResult _serialise_vm(const MunitParameter params[], void *user_data)
@@ -1038,6 +1127,14 @@ MunitSuite l_serialise_test_setup() {
         {
             .name = (char *)"serialise_table", 
             .test = _serialise_table, 
+            .setup = NULL, 
+            .tear_down = NULL, 
+            .options = MUNIT_TEST_OPTION_NONE,
+            .parameters = NULL
+        },
+        {
+            .name = (char *)"serialise_table_pointer",
+            .test = _serialise_table_pointer,
             .setup = NULL, 
             .tear_down = NULL, 
             .options = MUNIT_TEST_OPTION_NONE,

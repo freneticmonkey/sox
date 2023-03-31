@@ -37,7 +37,7 @@ static entry_t* _find_entry(entry_t* entries, int capacity, obj_string_t* key) {
                 if (tombstone == NULL) 
                     tombstone = entry;
             }
-        } 
+        }
         else if (entry->key == key) {
             // We found the key.
             return entry;
@@ -155,6 +155,29 @@ obj_string_t* l_table_find_string(table_t* table, const char* chars, int length,
 
         index = (index + 1) % table->capacity;
     }
+}
+
+entry_t * l_table_set_entry(table_t * table, obj_string_t * key) {
+    if ( key == NULL)
+    {
+        // what is going on here
+        return false;
+    }
+
+    if (table->count + 1 > table->capacity * TABLE_MAX_LOAD) {
+        int capacity = GROW_CAPACITY(table->capacity);
+        _adjust_capacity(table, capacity);
+    }
+    
+    entry_t* entry = _find_entry(table->entries, table->capacity, key);
+    bool isNewKey = entry->key == NULL;
+    if (isNewKey && IS_NIL(entry->value)) 
+        table->count++;
+
+    entry->key = key;
+    // Initialise an object value to NULL
+    entry->value = OBJ_VAL(NULL);
+    return entry;
 }
 
 void l_mark_table(table_t* table) {

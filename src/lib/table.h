@@ -26,6 +26,9 @@ void l_table_add_all(table_t* from, table_t* to);
 
 obj_string_t* l_table_find_string(table_t* table, const char* chars, int length, uint32_t hash);
 
+// deserialisation helper
+entry_t * l_table_set_entry(table_t * table, obj_string_t * key);
+
 // garbage collection
 void l_mark_table(table_t* table);
 void l_table_remove_white(table_t* table);
