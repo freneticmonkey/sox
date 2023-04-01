@@ -257,9 +257,11 @@ void l_init_memory() {
     };
 
     // // setup mark roots callback values
+    _mem.roots_cb_capacity = 8;
     _mem.roots_cb = (l_mark_roots_callback*)malloc(sizeof(l_mark_roots_callback) * _mem.roots_cb_capacity);
     
     // setup the garbage collect callback values
+    _mem.gc_cb_capacity = 8;
     _mem.gc_cb = (l_gc_callback*)malloc(sizeof(l_gc_callback) * _mem.gc_cb_capacity);
 }
 // cleanup the memory management system
