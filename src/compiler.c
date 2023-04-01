@@ -87,6 +87,14 @@ typedef struct loop_t {
 
 } loop_t;
 
+void _loop_init(loop_t *loop) {
+    loop->enclosing = NULL;
+    loop->start = 0;
+    loop->exit_jump = 0;
+    loop->body = 0;
+    loop->scope_depth = 0;
+}
+
 typedef struct switch_t switch_t;
 
 typedef struct switch_t {
@@ -815,7 +823,11 @@ static void _patch_jumps(int from_location, OpCode patch_code) {
     int skip_size = 0;
     chunk_t *chunk = &_current->function->chunk;
 
+    int starti = i;
+    int loopstarti = 0;
+
     while ( i < chunk->count) {
+        loopstarti = i;
 
         // if a break op code is found
         if ( chunk->code[i] == patch_code ) {
@@ -839,6 +851,8 @@ static void _patch_jumps(int from_location, OpCode patch_code) {
 
             i += 1 + skip_size;
         }
+
+        
     }
 }
 
@@ -1084,6 +1098,7 @@ static void _for_statement() {
     }
     
     loop_t loop;
+    _loop_init(&loop);
     _loop_start(&loop);
     
     // Process the for loop exit condition
@@ -1313,6 +1328,7 @@ static void _return_statement() {
 
 static void _while_statement() {
     loop_t loop;
+    _loop_init(&loop);
     _loop_start(&loop);
 
     _expression();
