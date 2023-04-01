@@ -36,7 +36,7 @@ char* _read_file(const char* path) {
     return buffer;
 }
 
-bool _file_exists(const char* path) {
+bool l_file_exists(const char* path) {
     FILE* file = fopen(path, "rb");
     if (file == NULL) {
         return false;
@@ -81,7 +81,7 @@ int _deserialise_bytecode(vm_config_t config, const char* path, const char* sour
     // link the objects
     l_allocate_track_link_targets();
 
-     printf("linking complete\n");
+    printf("linking complete\n");
 
     // free tracking allocations
     l_allocate_track_free();
@@ -92,6 +92,19 @@ int _deserialise_bytecode(vm_config_t config, const char* path, const char* sour
 
     // free the reader serialiser
     l_serialise_del(serialiser);
+    
+    // run the vm
+    InterpretResult result = l_run();
+
+    //clean up
+    l_free_vm();
+
+    l_free_memory();
+
+    if (result == INTERPRET_COMPILE_ERROR)
+        return 65;
+    if (result == INTERPRET_RUNTIME_ERROR)
+        return 70;
 
     return 0;
 }
@@ -122,11 +135,54 @@ int _interpret_serialise_bytecode(vm_config_t config, const char* path, const ch
     l_serialise_flush(serialiser);
     l_serialise_del(serialiser);
 
-    // free the vm
+    // run the vm
+    result = l_run();
+
+    //clean up
+    l_free_vm();
+
+    l_free_memory();
+    
+    if (result == INTERPRET_COMPILE_ERROR)
+        return 65;
+
+    if (result == INTERPRET_RUNTIME_ERROR)
+        return 70;
+
+    return 0;
+}
+
+int _interpret_run(vm_config_t config, const char* source) {
+    
+    InterpretResult result;
+    
+    l_init_memory();
+
+    // start the VM and interpret the source
+    l_init_vm(config);
+
+    // interpret the source
+    result = l_interpret(source);
+
+    if (result == INTERPRET_COMPILE_ERROR) {
+        l_free_vm();
+        l_free_memory();
+        return 65;
+    }
+    
+    // run the vm
+    result = l_run();
+
+    //clean up
     l_free_vm();
 
     l_free_memory();
 
+    if (result == INTERPRET_COMPILE_ERROR)
+        return 65;
+    if (result == INTERPRET_RUNTIME_ERROR)
+        return 70;
+    
     return 0;
 }
 
@@ -170,59 +226,33 @@ int l_run_file(int argc, const char* argv[]) {
     vm_config_t config = {
         .suppress_print = suppress_print
     };
-
+    
     InterpretResult result;
 
     if (serialise == false) {
-        l_init_memory();
-
-        // start the VM and interpret the source
-        l_init_vm(config);
-
-        // interpret the source
-        result = l_interpret(source);
-
-        if (result == INTERPRET_COMPILE_ERROR) {
-            l_free_vm();
-            l_free_memory();
-            return 65;
-        }
+        result = _interpret_run(config, source);
 
     } else {
-       
-        if (0) {
-            if (_file_exists(path)) {
-                _deserialise_bytecode(config, path, source);
-            } else {
-                _interpret_serialise_bytecode(config, path, source);
-            }
+        char filename_bytecode[256];
+        sprintf(&filename_bytecode[0], "%s.sbc", path);
+        
+        if (l_file_exists(&filename_bytecode[0])) {
+            result = _deserialise_bytecode(config, path, source);
         } else {
-            // while testing the serialisation
-            // serialise and deserialise every run 
-            printf("Starting serialisation\n");
-            printf(">>>>>>>>>>>>>>>>>>>>>>\n");
-            _interpret_serialise_bytecode(config, path, source);
-
-            printf("\n\nstarting deserialisation\n");
-            printf("<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
-            _deserialise_bytecode(config, path, source);
+            result = _interpret_serialise_bytecode(config, path, source);
         }
+        
     }
-
+    
+    // clean up the source code
     free(source);
+    
+    return result;
+}
 
-    // run the vm
-    result = l_run();
-
-    //clean up
-    l_free_vm();
-
-    l_free_memory();
-
-    if (result == INTERPRET_COMPILE_ERROR) 
-        return 65;
-    if (result == INTERPRET_RUNTIME_ERROR) 
-        return 70;
-
-    return 0;
+bool l_file_delete(const char * path) {
+    if (l_file_exists(path) == false)
+        return false;
+        
+    return remove(path) == 0;
 }

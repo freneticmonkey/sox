@@ -1,7 +1,8 @@
 #include "chunk.h"
 #include "vm.h"
-#include "lib/debug.h"
 #include "serialise.h"
+#include "lib/debug.h"
+#include "lib/file.h"
 
 #include "test/serialise_test.h"
 
@@ -992,6 +993,56 @@ static MunitResult _serialise_vm(const MunitParameter params[], void *user_data)
     return MUNIT_OK;
 }
 
+// run each of the test scripts through serialisation and execute the deserialised VM
+static MunitResult _serialise_run_files(const MunitParameter params[], void *user_data)
+{
+	(void)user_data;
+	
+    static char* files[] = {
+        "src/test/scripts/super.sox",
+        "src/test/scripts/classes.sox",
+        "src/test/scripts/closure.sox",
+        "src/test/scripts/control.sox",
+        "src/test/scripts/funcs.sox",
+        "src/test/scripts/defer.sox",
+        "src/test/scripts/globals.sox",
+        "src/test/scripts/loops.sox",
+        "src/test/scripts/optional_semi.sox",
+        "src/test/scripts/main.sox",
+        "src/test/scripts/switch.sox",
+        "src/test/scripts/table.sox",
+        "src/test/scripts/hello.sox",
+        "src/test/scripts/syscall.sox",
+        NULL,
+    };
+
+    int count = 0;
+    char filename_bytecode[256];
+        
+    while (files[count] != NULL)
+    {
+        char* filename = &files[count][0];
+
+        munit_logf(MUNIT_LOG_WARNING , "running script: %s", filename);
+        int status = l_run_file(4, (const char *[]){
+                                    "sox",
+                                    filename,
+                                    "--suppress-print",
+                                    "--serialise",
+                                });
+
+        munit_assert_int(status, == , 0);
+
+        // cleanup written file
+        sprintf(&filename_bytecode[0], "%s.sbc", filename);
+        if (  l_file_exists(&filename_bytecode[0]) ) {
+            bool result = l_file_delete(&filename_bytecode[0]);
+            munit_assert_true(result);
+        }
+        count++;
+    }
+	return MUNIT_OK;
+}
 
 MunitSuite l_serialise_test_setup() {
 
@@ -1143,6 +1194,14 @@ MunitSuite l_serialise_test_setup() {
         {
             .name = (char *)"serialise_vm",
             .test = _serialise_vm,
+            .setup = NULL, 
+            .tear_down = NULL, 
+            .options = MUNIT_TEST_OPTION_NONE,
+            .parameters = NULL
+        },
+        {
+            .name = (char *)"serialise_run_files",
+            .test = _serialise_run_files,
             .setup = NULL, 
             .tear_down = NULL, 
             .options = MUNIT_TEST_OPTION_NONE,

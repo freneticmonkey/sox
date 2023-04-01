@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sys/errno.h>
 
 #include "serialise.h"
 #include "lib/memory.h"
@@ -401,12 +402,13 @@ serialiser_t * l_serialise_new(const char * filename_source, const char * source
     // if the filename and source isn't null, then setup the serialiser's file pointer
     // and process the serialisation header
     if ( filename_source != NULL && source != NULL) {
-        const char * file_mode = (serialiser->mode == SERIALISE_MODE_WRITE) ? "wb" : "rb";
+        const char * file_mode = (serialiser->mode == SERIALISE_MODE_WRITE) ? "w" : "r";
 
         FILE * file = fopen(&filename_bytecode[0], file_mode);
 
         if (file == NULL) {
-            fprintf(stderr, "Could not open a bytecode \"%s\" for writing.", filename_bytecode);
+
+            fprintf(stderr, "Could not open a bytecode \"%s\" for writing.\n", filename_bytecode);
             serialiser->error = SERIALISE_ERROR_FILE_NOT_FOUND;
             return serialiser;
         }
@@ -1298,7 +1300,9 @@ void l_serialise_vm(serialiser_t* serialiser) {
         obj = obj->next;
     }
 
+#if defined(SERIALISE_DEBUG)
     printf("serialised %d objects\n", objects_serialised);
+#endif
 
     // serialise the closure pointer on the top of the stack
     if ( vm.stack_top == vm.stack ) {
@@ -1307,8 +1311,9 @@ void l_serialise_vm(serialiser_t* serialiser) {
     } else {
         value_t * closure = vm.stack_top-1;
         _serialise_ptr(serialiser, AS_CLOSURE(*closure)->function);
-
+#if defined(SERIALISE_DEBUG)
         printf("serialisation complete.\n");
+#endif
     }
 
 #if defined(SERIALISE_DEBUG)
@@ -1343,7 +1348,9 @@ obj_closure_t * l_deserialise_vm(serialiser_t* serialiser) {
         objects_deserialised++;
     }
 
+#if defined(SERIALISE_DEBUG)
     printf("deserialised %d objects\n", objects_deserialised);
+#endif
 
     // push a the closure pointer onto the top of the stack
     obj_closure_t *closure = l_new_closure_empty(0);
