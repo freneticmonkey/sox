@@ -2,8 +2,10 @@
 #include <string.h>
 
 #include "object.h"
-#include "lib/memory.h"
 #include "value.h"
+
+#include "lib/memory.h"
+#include "lib/print.h"
 
 void l_init_value_array(value_array_t* array) {
     array->values = NULL;
@@ -31,19 +33,19 @@ void l_print_value(value_t value)
 {
     switch(value.type) {
         case VAL_NUMBER:
-            printf("%g", AS_NUMBER(value));
+            l_printf("%g", AS_NUMBER(value));
             break;
         case VAL_BOOL:
-            printf(AS_BOOL(value) ? "true" : "false");
+            l_printf(AS_BOOL(value) ? "true" : "false");
             break;
         case VAL_NIL:
-            printf("nil");
+            l_printf("nil");
             break;
         case VAL_OBJ: 
             l_print_object(value); 
             break;
         default:
-            printf("unknown value type");
+            l_printf("unknown value type");
     }
 }
 

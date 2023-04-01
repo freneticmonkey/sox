@@ -3,6 +3,8 @@
 #include "serialise.h"
 #include "lib/debug.h"
 #include "lib/file.h"
+#include "lib/print.h"
+#include "lib/string.h"
 
 #include "test/serialise_test.h"
 
@@ -999,20 +1001,21 @@ static MunitResult _serialise_run_files(const MunitParameter params[], void *use
 	(void)user_data;
 	
     static char* files[] = {
-        "src/test/scripts/super.sox",
+        "src/test/scripts/argtest.sox",
         "src/test/scripts/classes.sox",
         "src/test/scripts/closure.sox",
         "src/test/scripts/control.sox",
-        "src/test/scripts/funcs.sox",
         "src/test/scripts/defer.sox",
+        "src/test/scripts/funcs.sox",
         "src/test/scripts/globals.sox",
-        "src/test/scripts/loops.sox",
-        "src/test/scripts/optional_semi.sox",
-        "src/test/scripts/main.sox",
-        "src/test/scripts/switch.sox",
-        "src/test/scripts/table.sox",
         "src/test/scripts/hello.sox",
+        "src/test/scripts/loops.sox",
+        "src/test/scripts/main.sox",
+        "src/test/scripts/optional_semi.sox",
+        "src/test/scripts/super.sox",
+        "src/test/scripts/switch.sox",
         "src/test/scripts/syscall.sox",
+        "src/test/scripts/table.sox",
         NULL,
     };
 
@@ -1022,6 +1025,16 @@ static MunitResult _serialise_run_files(const MunitParameter params[], void *use
     while (files[count] != NULL)
     {
         char* filename = &files[count][0];
+
+        char* output = NULL;
+
+        // if an output capture file exists, then read it and enable output capture
+        char filename_capture[256];
+        sprintf(&filename_capture[0], "%s.out", filename);
+
+        if (l_file_exists(&filename_capture[0])) {
+            output = l_print_enable_capture();
+        }
 
         munit_logf(MUNIT_LOG_WARNING , "running script: %s", filename);
         int status = l_run_file(4, (const char *[]){
@@ -1039,6 +1052,27 @@ static MunitResult _serialise_run_files(const MunitParameter params[], void *use
             bool result = l_file_delete(&filename_bytecode[0]);
             munit_assert_true(result);
         }
+
+        if (output != NULL) {
+            char* expected = l_read_file(&filename_capture[0]);
+
+            size_t output_hash = l_hash_string(output, strlen(output));
+            size_t expected_hash = l_hash_string(expected, strlen(expected));
+
+            if (output_hash != expected_hash) {
+                munit_logf(MUNIT_LOG_WARNING , "file: %s", filename);
+                munit_logf(MUNIT_LOG_WARNING , "output: [%s] expected: [%s]", output, expected);
+            }
+            
+            munit_assert_llong(strlen(output), ==, strlen(expected));
+
+            munit_assert_llong(output_hash, == , expected_hash);
+            munit_assert_string_equal(output, expected);
+
+            free(expected);
+            free(output);       
+        }  
+        
         count++;
     }
 	return MUNIT_OK;

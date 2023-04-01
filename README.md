@@ -11,7 +11,7 @@ variation of the implementation of the sox interpreter as described on http://cr
 
 ### Tests TODO:
 - [x] Run each script in the scripts folder without errors
-- [ ] Script output validation
+- [x] Script output validation
 - [ ] Globals
 - [ ] Locals
 - [ ] String operations
@@ -48,7 +48,7 @@ variation of the implementation of the sox interpreter as described on http://cr
 - [ ] remove global variables
 - [ ] multi-line comment blocks
 - [ ] load multiple scripts / modules
-- [ ] Bytecode scripts
+- [x] Bytecode scripts
 
 ## Advanced language features
 - [ ] interfaces

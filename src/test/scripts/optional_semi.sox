@@ -3,6 +3,6 @@ fn hello() {
     usleep(100)
 }
 
-var start = clock()
+//var start = clock()
 hello()
-print clock() - start
+//print clock() - start

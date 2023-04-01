@@ -3,10 +3,11 @@
 #include <string.h>
 
 #include "lib/file.h"
+#include "lib/print.h"
 #include "serialise.h"
 #include "vm.h"
 
-char* _read_file(const char* path) {
+char* l_read_file(const char* path) {
     FILE* file = fopen(path, "rb");
     if (file == NULL) {
         fprintf(stderr, "Could not open file \"%s\".\n", path);
@@ -198,7 +199,7 @@ int l_run_file(int argc, const char* argv[]) {
         return 64;
     }
 
-    char* source = _read_file(path);
+    char* source = l_read_file(path);
 
     if (source == NULL) {
         printf("Could not read file: %s\n", path);
@@ -226,6 +227,10 @@ int l_run_file(int argc, const char* argv[]) {
     vm_config_t config = {
         .suppress_print = suppress_print
     };
+
+    if (config.suppress_print) {
+        l_print_enable_suppress();
+    }
     
     InterpretResult result;
 
@@ -253,6 +258,6 @@ int l_run_file(int argc, const char* argv[]) {
 bool l_file_delete(const char * path) {
     if (l_file_exists(path) == false)
         return false;
-        
+
     return remove(path) == 0;
 }

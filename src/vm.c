@@ -5,6 +5,7 @@
 #include "lib/debug.h"
 #include "lib/memory.h"
 #include "lib/native_api.h"
+#include "lib/print.h"
 #include "lib/table.h"
 #include "common.h"
 #include "compiler.h"
@@ -351,12 +352,8 @@ static InterpretResult _run() {
                 break;
             }
             case OP_PRINT: {
-                if (vm.config.suppress_print)
-                    l_pop();
-                else {
-                    l_print_value(l_pop());
-                    printf("\n");
-                }
+                l_print_value(l_pop());
+                l_printf("\n");
                 break;
             }
             case OP_JUMP: {
