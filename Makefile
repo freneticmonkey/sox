@@ -29,7 +29,7 @@ ifeq (${THIS_OS},darwin)
 	TOOL_PATH=./tools/bin/osx/x86
 	TOOL_PLATFORM=macosx
 	ifeq (${THIS_ARCH},arm64)
-		TOOL_PATH=./tools/osx/arm
+		TOOL_PATH=./tools/bin/osx/arm
 		TOOL_PLATFORM=macosxARM64
 	endif
 endif
