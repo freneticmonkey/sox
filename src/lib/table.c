@@ -132,7 +132,7 @@ void l_table_add_all(table_t* from, table_t* to) {
     }
 }
 
-obj_string_t* l_table_find_string(table_t* table, const char* chars, int length, uint32_t hash) {
+obj_string_t* l_table_find_string(table_t* table, const char* chars, size_t length, uint32_t hash) {
     if (table->count == 0) 
         return NULL;
 
