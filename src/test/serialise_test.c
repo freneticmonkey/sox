@@ -435,6 +435,9 @@ static MunitResult _serialise_test_string_linking(const MunitParameter params[],
 
     // now restart the the vm
     l_free_vm();
+    
+    // cleanup the tracking memory
+    l_allocate_track_free();
 
     // enable memory tracking so that the deserialised objects can be linked
     l_allocate_track_init();
@@ -600,6 +603,9 @@ static MunitResult _serialise_closure(const MunitParameter params[], void *user_
 
     // now restart the the vm
     l_free_vm();
+    
+    // cleanup the tracking memory
+    l_allocate_track_free();
 
     // enable memory tracking so that the deserialised objects can be linked
     l_allocate_track_init();
@@ -757,6 +763,9 @@ static MunitResult _serialise_class(const MunitParameter params[], void *user_da
 
     // now restart the the vm
     l_free_vm();
+    
+    // cleanup the tracking memory
+    l_allocate_track_free();
 
     // enable memory tracking so that the deserialised objects can be linked
     l_allocate_track_init();
@@ -813,6 +822,9 @@ static MunitResult _serialise_table(const MunitParameter params[], void *user_da
 
     // now restart the the vm
     l_free_vm();
+    
+    // cleanup the tracking memory
+    l_allocate_track_free();
 
     // enable memory tracking so that the deserialised objects can be linked
     l_allocate_track_init();
@@ -875,6 +887,9 @@ static MunitResult _serialise_table_pointer(const MunitParameter params[], void 
 
     // now restart the the vm
     l_free_vm();
+    
+    // cleanup the tracking memory
+    l_allocate_track_free();
 
     // enable memory tracking so that the deserialised objects can be linked
     l_allocate_track_init();
@@ -961,6 +976,9 @@ static MunitResult _serialise_vm(const MunitParameter params[], void *user_data)
 
     // now restart the the vm
     l_free_vm();
+    
+    // cleanup the tracking memory
+    l_allocate_track_free();
 
     // enable memory tracking so that the deserialised objects can be linked
     l_allocate_track_init();

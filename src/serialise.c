@@ -397,6 +397,7 @@ serialiser_t * l_serialise_new(const char * filename_source, const char * source
     serialiser->global_offset = 0;
     serialiser->string_offset = 0;
     serialiser->flush_offset = 0;
+    serialiser->file = NULL;
 
     // NOTE: NULL values are used in unit testing
     // if the filename and source isn't null, then setup the serialiser's file pointer
@@ -766,6 +767,7 @@ char * _serialise_buf_read_string_char(serialiser_buf_t* buffer) {
     // allocate a new string buffer
     char * copy_chars = ALLOCATE(char, length + 1);
     memcpy(copy_chars, chars, length);
+    copy_chars[length] = '\0';
 
     // return the pointer to the chars, up to the receiver to delete
     return copy_chars;
@@ -1128,9 +1130,10 @@ obj_t * _serialise_read_object(serialiser_t* serialiser) {
         case OBJ_NATIVE: {
             char * func_name = (char *)_serialise_buf_read_string_char(serialiser->buffer);
 
-            native_func_t * native_func = l_allocate_track_get_native_ptr(func_name);
+            _Alignas(void*) native_func_t * native_func = l_allocate_track_get_native_ptr(func_name);
             FREE(char, func_name);
-
+            
+            // FIXME: UBSAN issue: Load of misaligned address 0x0001000305fc for type 'native_func_t' (aka 'struct value_t (*)(int, struct value_t *)'), which requires 8 byte alignment
             obj_native_t * native = l_new_native(*native_func);
 
             result = (obj_t*)native;

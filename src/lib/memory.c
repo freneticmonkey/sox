@@ -682,14 +682,17 @@ void l_allocate_track_init() {
     // allocate the initial capacity for the native lookup
     track->native_lookup.capacity = 64;
     track->native_lookup.items = ALLOCATE(native_lookup_item_t, track->native_lookup.capacity);
+    track->native_lookup.count = 0;
 
     // allocate the initial capacity for the object lookup
     track->object_lookup.capacity = 64;
     track->object_lookup.items = ALLOCATE(object_lookup_item_t, track->object_lookup.capacity);
+    track->object_lookup.count = 0;
 
     // allocate the initial capacity for the string lookup
     track->string_lookup.capacity = 64;
     track->string_lookup.items = ALLOCATE(string_lookup_item_t, track->string_lookup.capacity);
+    track->string_lookup.count = 0;
 }
 
 // cleanup the allocation tracking data
@@ -705,19 +708,23 @@ void l_allocate_track_free() {
         object_lookup_item_t item = track->object_lookup.items[i];
         FREE_ARRAY(obj_t **, item.registered_targets, item.capacity);
     }
+    track->native_lookup.count = 0;
 
     FREE_ARRAY(object_lookup_item_t, track->object_lookup.items, track->object_lookup.capacity);
 
     for (int i = 0; i < track->string_lookup.count; i++) {
         string_lookup_item_t item = track->string_lookup.items[i];
         FREE_ARRAY(obj_t **, item.registered_targets, item.capacity);
+        item.count = 0;
     }
 
     FREE_ARRAY(string_lookup_item_t, track->string_lookup.items, track->string_lookup.capacity);
+    track->string_lookup.count = 0;
 }
 
 // register a native function pointer into the tracking structure
 void l_allocate_track_register_native(const char *name, void * ptr) {
+    
     mem_track_t * track = &_mem.track;
 
     if (track->native_lookup.count + 1 > track->native_lookup.capacity) {
@@ -731,8 +738,12 @@ void l_allocate_track_register_native(const char *name, void * ptr) {
         );
     }
 
+    // copy the input string and assign it the lookup item below
+    // this will be automatically cleaned up with the VM
+    obj_string_t * str = l_new_string(name);
+    
     track->native_lookup.items[track->native_lookup.count] = (native_lookup_item_t) {
-        .name = name,
+        .name = str->chars,
         .native = ptr
     };
 
@@ -804,7 +815,7 @@ object_lookup_item_t * _insert_or_get_object_lookup_item(uintptr_t id) {
 
 // insert a new allocation for tracking into the allocation lookup table
 void l_allocate_track_register(uintptr_t id, obj_t *address) {
-
+    
     object_lookup_item_t * item = _insert_or_get_object_lookup_item(id);
 
     // assign the new address
@@ -818,7 +829,7 @@ void l_allocate_track_register(uintptr_t id, obj_t *address) {
 
 // register interest in a target address
 void l_allocate_track_target_register(uintptr_t id, obj_t **target) {
-
+    
     // if the id doesn't in the lookup table, then we need to add it
     // this is because the target address may be set before the object is
     // allocated, so we need to register the target address before the object
