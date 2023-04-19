@@ -29,6 +29,7 @@ typedef struct {
 
     value_t  stack[STACK_MAX];
     value_t* stack_top;
+    size_t   stack_top_count;
     table_t  globals;
     table_t  strings;
     obj_upvalue_t* open_upvalues;
@@ -63,7 +64,7 @@ value_t l_pop();
 
 InterpretResult l_interpret(const char * source);
 void l_set_entry_point(obj_closure_t * entry_point);
-InterpretResult l_run(void);
+InterpretResult l_run(int argc, const char* argv[]);
 
 void l_vm_define_native(const char* name, native_func_t function);
 

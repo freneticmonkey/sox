@@ -1280,11 +1280,11 @@ void _serialise_read_header(serialiser_t* serialiser, const char * filename_sour
 
     // read the serialisation size
     serialiser->data_size = _serialise_buf_read_uint32(serialiser->buffer);
-    printf("serialisation size: %u\n", serialiser->data_size);
+    printf("serialisation size: %zu\n", serialiser->data_size);
 
     size_t serialisation_size = serialiser->buffer->count - serialiser->buffer->offset;
     if (serialiser->data_size != serialisation_size) {
-        fprintf(stderr, "Serialisation size mismatch. Expected %u, got %u\n", serialiser->data_size, serialisation_size);
+        fprintf(stderr, "Serialisation size mismatch. Expected %zu, got %zu\n", serialiser->data_size, serialisation_size);
         serialiser->error = SERIALISE_ERROR_INCORRECT_DATA_SIZE;
         return;
     }

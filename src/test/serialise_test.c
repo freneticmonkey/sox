@@ -1001,7 +1001,8 @@ static MunitResult _serialise_vm(const MunitParameter params[], void *user_data)
     l_deserialise_vm_set_init_state(serialiser, closure);
 
     // run the deserialised VM
-    result = l_run();
+    const char * args[] = {""};
+    result = l_run(0, args);
 
     munit_assert_int(result, != , INTERPRET_RUNTIME_ERROR);
 

@@ -46,7 +46,7 @@ bool l_file_exists(const char* path) {
     return true;
 }
 
-int _deserialise_bytecode(vm_config_t config, const char* path, const char* source) {
+int _deserialise_bytecode(vm_config_t config, const char* path, const char* source, int argc, const char* argv[]) {
 
     l_init_memory();
 
@@ -95,7 +95,7 @@ int _deserialise_bytecode(vm_config_t config, const char* path, const char* sour
     l_serialise_del(serialiser);
     
     // run the vm
-    InterpretResult result = l_run();
+    InterpretResult result = l_run(argc, argv);
 
     //clean up
     l_free_vm();
@@ -110,7 +110,7 @@ int _deserialise_bytecode(vm_config_t config, const char* path, const char* sour
     return 0;
 }
 
-int _interpret_serialise_bytecode(vm_config_t config, const char* path, const char* source) {
+int _interpret_serialise_bytecode(vm_config_t config, const char* path, const char* source, int argc, const char* argv[]) {
     // setup to serialise the interpreted bytecode
 
     l_init_memory();
@@ -139,7 +139,7 @@ int _interpret_serialise_bytecode(vm_config_t config, const char* path, const ch
     l_serialise_del(serialiser);
 
     // run the vm
-    result = l_run();
+    result = l_run(argc, argv);
 
     //clean up
     l_free_vm();
@@ -155,7 +155,7 @@ int _interpret_serialise_bytecode(vm_config_t config, const char* path, const ch
     return 0;
 }
 
-int _interpret_run(vm_config_t config, const char* source) {
+int _interpret_run(vm_config_t config, const char* source, int argc, const char* argv[]) {
     
     InterpretResult result;
     
@@ -174,7 +174,7 @@ int _interpret_run(vm_config_t config, const char* source) {
     }
     
     // run the vm
-    result = l_run();
+    result = l_run(argc, argv);
 
     //clean up
     l_free_vm();
@@ -237,16 +237,16 @@ int l_run_file(int argc, const char* argv[]) {
     InterpretResult result;
 
     if (serialise == false) {
-        result = _interpret_run(config, source);
+        result = _interpret_run(config, source, argc, argv);
 
     } else {
         char filename_bytecode[256];
         sprintf(&filename_bytecode[0], "%s.sbc", path);
         
         if (l_file_exists(&filename_bytecode[0])) {
-            result = _deserialise_bytecode(config, path, source);
+            result = _deserialise_bytecode(config, path, source, argc, argv);
         } else {
-            result = _interpret_serialise_bytecode(config, path, source);
+            result = _interpret_serialise_bytecode(config, path, source, argc, argv);
         }
         
     }

@@ -29,6 +29,7 @@ static void    _concatenate();
 
 static void _reset_stack() {
     vm.stack_top = vm.stack;
+    vm.stack_top_count = 0;
     vm.frame_count = 0;
     vm.open_upvalues = NULL;
 }
@@ -495,17 +496,44 @@ void l_set_entry_point(obj_closure_t * entry_point) {
     _call(entry_point, 0);
 }
 
-InterpretResult l_run() {
+InterpretResult l_run(int argc, const char* argv[]) {
+
+    // Set the value of argc and argv in the appropriate globals
+    l_table_set(
+        &vm.globals,
+        l_copy_string("argc", 4),
+        (value_t){
+            .type = VAL_NUMBER,
+            .as.number = argc,
+        }
+    );
+
+    l_table_set(
+        &vm.globals,
+        l_copy_string("argv", 4),
+        (value_t){
+            .type = VAL_OBJ,
+            // TODO: This is a hack. We should be able to pass a string array
+            .as.obj = (obj_t*)l_copy_string("params", 6),
+        }
+    );
+
     return _run();
 }
 
 void l_push(value_t value) {
     *vm.stack_top = value;
     vm.stack_top++;
+    vm.stack_top_count++;
 }
 
 value_t l_pop() {
     vm.stack_top--;
+    vm.stack_top_count--;
+    if ( vm.stack_top_count < 0){
+        l_vm_runtime_error("Stack underflow.");
+        return (value_t){0};
+    }
     return *vm.stack_top;
 }
 
@@ -667,7 +695,7 @@ static void _concatenate() {
     obj_string_t* b = AS_STRING(_peek(0));
     obj_string_t* a = AS_STRING(_peek(1));
 
-    int length = a->length + b->length;
+    size_t length = a->length + b->length;
     char* chars = ALLOCATE(char, length + 1);
     memcpy(chars, a->chars, a->length);
     memcpy(chars + a->length, b->chars, b->length);
