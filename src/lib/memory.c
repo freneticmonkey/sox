@@ -94,6 +94,19 @@ typedef struct {
 
 static mem_t _mem;
 
+size_t l_calculate_capacity_with_size(size_t current_capacity, size_t new_size) {
+    size_t new_capacity = current_capacity;
+    while (new_capacity < new_size) {
+        new_capacity = GROW_CAPACITY(new_capacity);
+        // check if new_capacity is unreasonably large
+        if (new_capacity > SIZE_MAX) {
+            printf("new_capacity is unreasonably large: %zu trying to expand to accommodate: %zu\n", new_capacity, new_size);
+            exit(1);
+        }
+    }
+    return new_capacity;
+}
+
 void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
 
     // deallocating

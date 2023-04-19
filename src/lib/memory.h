@@ -26,6 +26,8 @@
 
 void* reallocate(void* pointer, size_t oldSize, size_t newSize);
 
+size_t l_calculate_capacity_with_size(size_t current_capacity, size_t new_size);
+
 // Memory Initialisation
 //
 

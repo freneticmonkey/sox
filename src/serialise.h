@@ -19,6 +19,7 @@ typedef enum SerialiseErrorCode {
     SERIALISE_ERROR_SOURCE_FILENAME_MISMATCH,
     SERIALISE_ERROR_SOURCE_HASH_MISMATCH,
     SERIALISE_ERROR_UNKNOWN_OBJECT_TYPE,
+    SERIALISE_ERROR_INCORRECT_DATA_SIZE,
 
 } SerialiseErrorCode;
 
@@ -41,9 +42,18 @@ typedef struct {
     int global_offset;
     int string_offset;
     size_t flush_offset;
+
+    // header info
+    int      serialisation_version;
+    char *   sox_version;
+    char *   source_filename;
+    uint32_t source_hash;
+    size_t   data_size;
+    size_t   data_offset; // used to track buffer offset to update the data_size after serialisation
 } serialiser_t;
 
 serialiser_t * l_serialise_new(const char * filename_source, const char * source, SerialisationMode mode);
+void l_serialise_finalise(serialiser_t* serialiser);
 void l_serialise_del(serialiser_t* serialiser);
 
 void l_serialise_flush(serialiser_t* serialiser);

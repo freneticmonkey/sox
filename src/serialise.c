@@ -74,7 +74,7 @@ void _serialise_buf_free(serialiser_buf_t* buffer) {
 
 void _serialise_buf_write(serialiser_buf_t* buffer, const void* bytes, size_t count) {
     if (buffer->capacity < buffer->count + count) {
-        size_t new_capacity = GROW_CAPACITY(buffer->capacity);
+        size_t new_capacity = l_calculate_capacity_with_size(buffer->capacity, buffer->count + count);
         buffer->bytes = GROW_ARRAY(uint8_t, buffer->bytes, buffer->capacity, new_capacity);
         buffer->capacity = new_capacity;
     }
@@ -399,6 +399,12 @@ serialiser_t * l_serialise_new(const char * filename_source, const char * source
     serialiser->flush_offset = 0;
     serialiser->file = NULL;
 
+    // serialised header info
+    serialiser->sox_version = NULL;
+    serialiser->source_filename = NULL;
+    serialiser->source_hash = NULL;
+    serialiser->data_size = 0;
+
     // NOTE: NULL values are used in unit testing
     // if the filename and source isn't null, then setup the serialiser's file pointer
     // and process the serialisation header
@@ -435,6 +441,15 @@ serialiser_t * l_serialise_new(const char * filename_source, const char * source
     return serialiser;
 }
 
+void l_serialise_finalise(serialiser_t* serialiser) {
+    if (serialiser->mode == SERIALISE_MODE_WRITE) {
+        // update the serialiser header with the serialised data size
+        serialiser->data_size = serialiser->buffer->count;
+        serialiser->buffer->bytes[serialiser->data_offset] = serialiser->data_size;
+        memcpy(&serialiser->buffer->bytes[serialiser->data_offset], &serialiser->data_size, sizeof(int));
+    }
+}
+
 void l_serialise_del(serialiser_t* serialiser) {
     if (serialiser->buffer != NULL) {
         _serialise_buf_free(serialiser->buffer);
@@ -445,6 +460,15 @@ void l_serialise_del(serialiser_t* serialiser) {
         serialiser->error = SERIALISE_ERROR_FILE_NOT_CLOSED;
         return;
     }
+
+    if (serialiser->sox_version != NULL) {
+        FREE(char, serialiser->sox_version);
+    }
+
+    if (serialiser->source_filename != NULL) {
+        FREE(char, serialiser->source_filename);
+    }
+
     FREE(serialiser_t, serialiser);
 }
 
@@ -1192,9 +1216,12 @@ void _serialise_write_header(serialiser_t* serialiser, const char * filename_sou
     // source filename
     _serialise_buf_write_string_char(serialiser->buffer, filename_source);
     // source hash
-    uint32_t source_hash = l_hash_string(source, strlen(source));
-    _serialise_buf_write_uint32(serialiser->buffer, source_hash);
-    
+    serialiser->source_hash = l_hash_string(source, strlen(source));
+    _serialise_buf_write_uint32(serialiser->buffer, serialiser->source_hash);
+    // source length - placeholder will update after serialisation
+    serialiser->data_offset = serialiser->buffer->count + sizeof(int);
+    _serialise_buf_write_int(serialiser->buffer, 0);
+
 #if defined(SERIALISE_DEBUG)
     BLOCK_END();
 #endif
@@ -1210,45 +1237,55 @@ void _serialise_read_header(serialiser_t* serialiser, const char * filename_sour
 #endif
     
     // read the serialisation version
-    int serialisation_version = _serialise_buf_read_int(serialiser->buffer);
-    if (serialisation_version != SERIALISATION_VERSION) {
-        fprintf(stderr, "Serialisation version mismatch. Expected %d, got %d\n", SERIALISATION_VERSION, serialisation_version);
+    serialiser->serialisation_version = _serialise_buf_read_int(serialiser->buffer);
+    if (serialiser->serialisation_version != SERIALISATION_VERSION) {
+        fprintf(stderr, "Serialisation version mismatch. Expected %d, got %d\n", SERIALISATION_VERSION, serialiser->serialisation_version);
         serialiser->error = 1;
         return;
     }
 
     // read the sox version
-    char * sox_version = (char *)_serialise_buf_read_string_char(serialiser->buffer);
-    printf("sox version: %s\n", sox_version);
-    if (strcmp(sox_version, VERSION) != 0) {
-        fprintf(stderr, "Serialisation version mismatch. Expected %s, got %s\n", VERSION, sox_version);
+    serialiser->sox_version = (char *)_serialise_buf_read_string_char(serialiser->buffer);
+    printf("sox version: %s\n", serialiser->sox_version);
+    
+    if (strcmp(serialiser->sox_version, VERSION) != 0) {
+        fprintf(stderr, "Serialisation version mismatch. Expected %s, got %s\n", VERSION, serialiser->sox_version);
         serialiser->error = SERIALISE_ERROR_SOX_VERSION_MISMATCH;
-        FREE(char, sox_version);
+        FREE(char, serialiser->sox_version);
         return;
     }
-    FREE(char, sox_version);
 
     // read the source filename
-    char * source_filename = (char *)_serialise_buf_read_string_char(serialiser->buffer);
-    printf("source filename: %s\n", source_filename);
+    serialiser->source_filename = (char *)_serialise_buf_read_string_char(serialiser->buffer);
+    printf("source filename: %s\n", serialiser->source_filename);
 
-    if (strcmp(source_filename, filename_source) != 0) {
-        fprintf(stderr, "Serialisation source filename mismatch. Expected %s, got %s\n", filename_source, source_filename);
+    if (strcmp(serialiser->source_filename, filename_source) != 0) {
+        fprintf(stderr, "Serialisation source filename mismatch. Expected %s, got %s\n", filename_source, serialiser->source_filename);
         serialiser->error = SERIALISE_ERROR_SOURCE_FILENAME_MISMATCH;
-        FREE(char, source_filename);
+        FREE(char, serialiser->source_filename);
         return;
     }
-    FREE(char, source_filename);
 
     // read the source hash
-    uint32_t source_hash = _serialise_buf_read_uint32(serialiser->buffer);
-    printf("source hash: %u\n", source_hash);
+    serialiser->source_hash = _serialise_buf_read_uint32(serialiser->buffer);
+    printf("source hash: %u\n", serialiser->source_hash);
 
     uint32_t source_hash_expected = l_hash_string(source, strlen(source));
 
-    if (source_hash != source_hash_expected) {
-        fprintf(stderr, "Serialisation source hash mismatch. Expected %u, got %u\n", source_hash_expected, source_hash);
+    if (serialiser->source_hash != source_hash_expected) {
+        fprintf(stderr, "Serialisation source hash mismatch. Expected %u, got %u\n", source_hash_expected, serialiser->source_hash);
         serialiser->error = SERIALISE_ERROR_SOURCE_HASH_MISMATCH;
+        return;
+    }
+
+    // read the serialisation size
+    serialiser->data_size = _serialise_buf_read_uint32(serialiser->buffer);
+    printf("serialisation size: %u\n", serialiser->data_size);
+
+    size_t serialisation_size = serialiser->buffer->count - serialiser->buffer->offset;
+    if (serialiser->data_size != serialisation_size) {
+        fprintf(stderr, "Serialisation size mismatch. Expected %u, got %u\n", serialiser->data_size, serialisation_size);
+        serialiser->error = SERIALISE_ERROR_INCORRECT_DATA_SIZE;
         return;
     }
 

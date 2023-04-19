@@ -134,6 +134,8 @@ int _interpret_serialise_bytecode(vm_config_t config, const char* path, const ch
 
     // flush to the file and free the serialiser
     l_serialise_flush(serialiser);
+    l_serialise_finalise(serialiser);
+    
     l_serialise_del(serialiser);
 
     // run the vm
