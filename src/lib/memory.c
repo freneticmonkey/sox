@@ -1,7 +1,8 @@
 #include <stdlib.h>
+#include <string.h>
 
 #include "lib/memory.h"
-#include "vm.h"
+// #include "vm.h"
 
 #ifdef DEBUG_LOG_GC
 #include <stdio.h>
@@ -14,45 +15,149 @@ static size_t _internal_alloc = 0;
 static size_t _internal_dealloc = 0;
 static size_t _internal_vm_alloc_max = 0;
 
+
+// native_lookup_t
+// the following structure tracks a const char * native function name to a obj_native_t pointer
+// this is used to resolve the native function pointer when a function is deserialised
+typedef struct {
+    const char *name;
+    obj_native_t *native;
+} native_lookup_item_t;
+
+typedef struct native_lookup_t {
+    native_lookup_item_t *items;
+    size_t count;
+    size_t capacity;
+} native_lookup_t;
+
+// object_lookup_t
+// the following structure maps uintptr_t ids to obj_t pointers and stores an array of pointers
+// which are resolved at the end of deserialisation
+
+typedef struct {
+    uintptr_t id;
+    size_t count;
+    size_t capacity;
+    obj_t *address;
+    obj_t * **registered_targets;
+} object_lookup_item_t;
+
+typedef struct object_lookup_t {
+    size_t count;
+    size_t capacity;
+    object_lookup_item_t *items;
+} object_lookup_t;
+
+typedef struct string_lookup_item_t {
+    uint32_t hash;
+    size_t count;
+    size_t capacity;
+    obj_string_t *address;
+    obj_string_t * **registered_targets;
+} string_lookup_item_t;
+
+typedef struct string_lookup_t {
+    size_t count;
+    size_t capacity;
+    string_lookup_item_t *items;
+} string_lookup_t;
+
+typedef struct mem_track {
+    // memory tracking
+    bool track_allocations;
+    size_t bytes_allocated;
+    native_lookup_t native_lookup;
+    object_lookup_t object_lookup;
+    string_lookup_t string_lookup;
+} mem_track_t;
+
+typedef struct {
+    // garbage collection
+    size_t bytes_allocated;
+    size_t next_gc;
+    int    gray_count;
+    int    gray_capacity;
+    obj_t** gray_stack;
+    obj_t* objects;
+
+    int          roots_cb_count;
+    int          roots_cb_capacity;
+    l_mark_roots_callback *roots_cb;
+
+    int gc_cb_count;
+    int gc_cb_capacity;
+    l_gc_callback *gc_cb;
+
+    // memory tracking
+    mem_track_t track;    
+} mem_t;
+
+static mem_t _mem;
+
+size_t l_calculate_capacity_with_size(size_t current_capacity, size_t new_size) {
+    size_t new_capacity = current_capacity;
+    while (new_capacity < new_size) {
+        new_capacity = GROW_CAPACITY(new_capacity);
+        // check if new_capacity is unreasonably large
+        if (new_capacity > SIZE_MAX) {
+            printf("new_capacity is unreasonably large: %zu trying to expand to accommodate: %zu\n", new_capacity, new_size);
+            exit(1);
+        }
+    }
+    return new_capacity;
+}
+
 void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
 
     // deallocating
     size_t alloc_size = newSize - oldSize;
 #ifdef DEBUG_LOG_GC
-    size_t vm_bytes = vm.bytes_allocated;
+    size_t vm_bytes = _mem.bytes_allocated;
 #endif
-
-    if ( (newSize < oldSize) && ( (SIZE_MAX - alloc_size + 1) > vm.bytes_allocated ) ) {
+    size_t dealloc_readable = (SIZE_MAX - alloc_size + 1);
+    if ( (newSize < oldSize) && ( dealloc_readable > _mem.bytes_allocated ) ) {
+        
         printf("detected untracked vm memory. vm bytes: %zu. dealloc bytes: %zu\n", 
-                vm.bytes_allocated, 
-                (SIZE_MAX - alloc_size + 1)
+                _mem.bytes_allocated, 
+                dealloc_readable
         );
         printf("internal tracking. alloc bytes: %zu. dealloc bytes: %zu vm max alloc: %zu\n", 
                 _internal_alloc, 
                 _internal_dealloc,
                 _internal_vm_alloc_max
         );
+
+        printf("internal tracking. %p %s: %zu alloc bytes: %zu. dealloc bytes: %zu vm alloc: %zu\n", 
+                pointer,
+                (newSize > oldSize) ? "ALLOC" : "DEALLOC",
+                (newSize > oldSize) ? alloc_size : dealloc_readable,
+                _internal_alloc, 
+                _internal_dealloc,
+                _mem.bytes_allocated
+            );
+        
         exit(1);
     }
 
     if (newSize > oldSize) {
         _internal_alloc += alloc_size;
     } else {
-        _internal_dealloc += (SIZE_MAX - alloc_size + 1);
+        _internal_dealloc += dealloc_readable;
     }   
 
-    if ( vm.bytes_allocated > _internal_vm_alloc_max ) {
-        _internal_vm_alloc_max = vm.bytes_allocated;
+    if ( _mem.bytes_allocated > _internal_vm_alloc_max ) {
+        _internal_vm_alloc_max = _mem.bytes_allocated;
     }
 
-    vm.bytes_allocated += alloc_size;
+    _mem.bytes_allocated += alloc_size;
+
     if (newSize > oldSize) {
 #ifdef DEBUG_STRESS_GC
         l_collect_garbage();
 #endif
     }
 
-    if (vm.bytes_allocated > vm.next_gc) {
+    if (_mem.bytes_allocated > _mem.next_gc) {
         l_collect_garbage();
     }
 
@@ -62,7 +167,7 @@ void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
     if (pointer == NULL) {
         printf("[free] <(nil)            vm bytes: %zu->%zu.\t dealloc bytes:-%zu\n",
                 vm_bytes,
-                vm.bytes_allocated,
+                _mem.bytes_allocated,
                 (SIZE_MAX - alloc_size + 1)
         );
 
@@ -70,17 +175,47 @@ void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
         printf("[free] <%p\t vm bytes: %zu->%zu.\t dealloc bytes:-%zu\n",
                 pointer,
                 vm_bytes,
-                vm.bytes_allocated,
+                _mem.bytes_allocated,
                 (SIZE_MAX - alloc_size + 1)
         );
     }
     
 #endif
+
+#if defined(DEBUG_LOG_ALLOC)
+    printf("internal tracking. %p %s: %zu alloc bytes: %zu. dealloc bytes: %zu vm alloc: %zu\n", 
+                pointer,
+                "DEALLOC <<",
+                dealloc_readable,
+                _internal_alloc, 
+                _internal_dealloc,
+                _mem.bytes_allocated
+            );
+#endif
+
         free(pointer);
         return NULL;
     }
 
     void* result = realloc(pointer, newSize);
+
+#if defined(DEBUG_LOG_ALLOC)
+    printf("internal tracking. %p %s: %zu alloc bytes: %zu. dealloc bytes: %zu vm alloc: %zu\n", 
+                result,
+                "  ALLOC >>",
+                alloc_size,
+                _internal_alloc, 
+                _internal_dealloc,
+                _mem.bytes_allocated
+            );
+    if (alloc_size == 40 && 
+        _internal_alloc == 64179 &&
+        _internal_dealloc == 49805 &&
+        _mem.bytes_allocated == 543
+        ) {
+            printf("alloc break\n");
+        }
+#endif
 
     if (result == NULL)
         exit(1);
@@ -89,7 +224,7 @@ void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
     printf("[new]  >%p\t vm bytes: %zu->%zu.\t alloc bytes: %zu\n",
             result,
             vm_bytes,
-            vm.bytes_allocated, 
+            _mem.bytes_allocated, 
             alloc_size
     );
 #endif
@@ -97,6 +232,106 @@ void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
     return result;
 }
 
+// initialise the memory management system
+void l_init_memory() {
+
+    _mem = (mem_t) {
+        .bytes_allocated = 0,
+        .next_gc = 1024 * 1024,
+
+        .gray_count = 0,
+        .gray_capacity = 0,
+        .gray_stack = NULL,
+        
+        .objects = NULL,
+        
+        .roots_cb_count = 0,
+        .roots_cb_capacity = 0,
+        .roots_cb = NULL,
+        
+        .gc_cb_count = 0,
+        .gc_cb_capacity = 0,
+        .gc_cb = NULL,
+        
+        .track = (mem_track_t){
+            .track_allocations = false,
+            .bytes_allocated = 0,
+            .native_lookup = {
+                .items = NULL,
+                .count = 0,
+                .capacity = 0
+            },
+            .object_lookup = {
+                .items = NULL,
+                .count = 0,
+                .capacity = 0
+            },
+        },
+    };
+
+    // // setup mark roots callback values
+    _mem.roots_cb_capacity = 8;
+    _mem.roots_cb = (l_mark_roots_callback*)malloc(sizeof(l_mark_roots_callback) * _mem.roots_cb_capacity);
+    
+    // setup the garbage collect callback values
+    _mem.gc_cb_capacity = 8;
+    _mem.gc_cb = (l_gc_callback*)malloc(sizeof(l_gc_callback) * _mem.gc_cb_capacity);
+}
+// cleanup the memory management system
+void _free_objects();
+void _free_object();
+
+void l_free_memory() {
+
+    // free all internal memory
+    free(_mem.gray_stack);
+    free(_mem.gc_cb);
+    free(_mem.roots_cb);
+
+    _free_objects();
+
+    _mem = (mem_t) {
+        .bytes_allocated = 0,
+        .next_gc = 1024 * 1024,
+
+        .gray_count = 0,
+        .gray_capacity = 0,
+        .gray_stack = NULL,
+        
+        .objects = NULL,
+        
+        .roots_cb_count = 0,
+        .roots_cb_capacity = 0,
+        .roots_cb = NULL,
+        
+        .gc_cb_count = 0,
+        .gc_cb_capacity = 0,
+        .gc_cb = NULL,
+        
+        .track = (mem_track_t){
+            .track_allocations = false,
+            .bytes_allocated = 0,
+            .native_lookup = {
+                .items = NULL,
+                .count = 0,
+                .capacity = 0
+            },
+            .object_lookup = {
+                .items = NULL,
+                .count = 0,
+                .capacity = 0
+            },
+            .string_lookup = {
+                .items = NULL,
+                .count = 0,
+                .capacity = 0
+            },
+        },
+    };
+
+}
+
+// garbage collection
 void l_mark_object(obj_t* object) {
     if (object == NULL) 
         return;
@@ -112,15 +347,15 @@ void l_mark_object(obj_t* object) {
 
     object->is_marked = true;
 
-    if (vm.gray_capacity < vm.gray_count + 1) {
-        vm.gray_capacity = GROW_CAPACITY(vm.gray_capacity);
-        vm.gray_stack = (obj_t**)realloc(vm.gray_stack, sizeof(obj_t*) * vm.gray_capacity);
+    if (_mem.gray_capacity < _mem.gray_count + 1) {
+        _mem.gray_capacity = GROW_CAPACITY(_mem.gray_capacity);
+        _mem.gray_stack = (obj_t**)realloc(_mem.gray_stack, sizeof(obj_t*) * _mem.gray_capacity);
 
-        if (vm.gray_stack == NULL) 
+        if (_mem.gray_stack == NULL) 
             exit(1);
     }
 
-    vm.gray_stack[vm.gray_count++] = object;
+    _mem.gray_stack[_mem.gray_count++] = object;
 }
 
 void l_mark_value(value_t value) {
@@ -199,7 +434,18 @@ static void _blacken_object(obj_t* object) {
     }
 }
 
-static void _free_object(obj_t* object) {
+void _free_objects() {
+    obj_t* object = _mem.objects;
+    while (object != NULL) {
+        obj_t* next = object->next;
+        _free_object(object);
+        object = next;
+    }
+
+    free(_mem.gray_stack);
+}
+
+void _free_object(obj_t* object) {
 
     if (object == NULL) {
         return;
@@ -314,46 +560,73 @@ static void _free_object(obj_t* object) {
 }
 
 // Garbage Collection
-static void _mark_roots() {
-    
-    // mark the stack
-    for (value_t* slot = vm.stack; slot < vm.stack_top; slot++) {
-        l_mark_value(*slot);
-    }
 
-    // mark the call stack frames
-    for (int i = 0; i < vm.frame_count; i++) {
-        l_mark_object(
-            (obj_t*)vm.frames[i].closure
+void l_register_mark_roots_cb(l_mark_roots_callback fn) { 
+    if (_mem.roots_cb_count == _mem.roots_cb_capacity) {
+        _mem.roots_cb_capacity *= 2;
+        _mem.roots_cb = realloc(
+            _mem.roots_cb,
+            sizeof(l_mark_roots_callback) * _mem.roots_cb_capacity
         );
     }
+    _mem.roots_cb[_mem.roots_cb_count++] = fn;
+}
 
-    // mark any upvalues
-    for (obj_upvalue_t* upvalue = vm.open_upvalues;
-                                  upvalue != NULL;
-                                  upvalue = upvalue->next) {
-        l_mark_object((obj_t*)upvalue);
+// remove the callback from the list
+void l_unregister_mark_roots_cb(l_mark_roots_callback fn) {
+    for (int i = 0; i < _mem.roots_cb_count; i++) {
+        if (_mem.roots_cb[i] == fn) {
+            _mem.roots_cb[i] = _mem.roots_cb[_mem.roots_cb_count - 1];
+            _mem.roots_cb_count--;
+            break;
+        }
     }
+}
 
-    // mark any globals
-    l_mark_table(&vm.globals);
+void l_register_garbage_collect_cb(l_gc_callback fn) {
+    if (_mem.gc_cb_count == _mem.gc_cb_capacity) {
+        _mem.gc_cb_capacity *= 2;
+        _mem.gc_cb = realloc(
+            _mem.gc_cb,
+            sizeof(l_gc_callback) * _mem.gc_cb_capacity
+        );
+    }
+    _mem.gc_cb[_mem.gc_cb_count++] = fn;
+}
 
-    // ensure that compiler owned memory is also tracked
-    l_mark_compiler_roots();
+// remove the garbage collection callback from the list
+void l_unregister_garbage_collect_cb(l_gc_callback fn) {
+    for (int i = 0; i < _mem.gc_cb_count; i++) {
+        if (_mem.gc_cb[i] == fn) {
+            _mem.gc_cb[i] = _mem.gc_cb[_mem.gc_cb_count - 1];
+            _mem.gc_cb_count--;
+            break;
+        }
+    }
+}
 
-    l_mark_object((obj_t*)vm.init_string);
+void _call_mark_roots() {
+    for (int i = 0; i < _mem.roots_cb_count; i++) {
+        _mem.roots_cb[i]();
+    }
+}
+
+void _call_garbage_collect() {
+    for (int i = 0; i < _mem.gc_cb_count; i++) {
+        _mem.gc_cb[i]();
+    }
 }
 
 static void _trace_references() {
-    while (vm.gray_count > 0) {
-        obj_t* object = vm.gray_stack[--vm.gray_count];
+    while (_mem.gray_count > 0) {
+        obj_t* object = _mem.gray_stack[--_mem.gray_count];
         _blacken_object(object);
     }
 }
 
 static void _sweep() {
     obj_t* previous = NULL;
-    obj_t* object = vm.objects;
+    obj_t* object = _mem.objects;
     while (object != NULL) {
         if (object->is_marked) {
             object->is_marked = false;
@@ -366,7 +639,7 @@ static void _sweep() {
             if (previous != NULL) {
                 previous->next = object;
             } else {
-                vm.objects = object;
+                _mem.objects = object;
             }
 
             _free_object(unreached);
@@ -378,35 +651,371 @@ static void _sweep() {
 void  l_collect_garbage() {
 #ifdef DEBUG_LOG_GC
     printf("-- gc begin\n");
-    size_t before = vm.bytes_allocated;
+    size_t before = _mem.bytes_allocated;
 #endif
 
-    _mark_roots();
+    _call_mark_roots();
 
     _trace_references();
 
-    l_table_remove_white(&vm.strings);
+    _call_garbage_collect();
 
     _sweep();
 
-    vm.next_gc = vm.bytes_allocated * GC_HEAP_GROW_FACTOR;
+    _mem.next_gc = _mem.bytes_allocated * GC_HEAP_GROW_FACTOR;
 
 #ifdef DEBUG_LOG_GC
     printf("-- gc end\n");
     printf("   collected %zu bytes (from %zu to %zu) next at %zu\n",
-         before - vm.bytes_allocated, before, vm.bytes_allocated,
-         vm.next_gc);
+         before - _mem.bytes_allocated, before, _mem.bytes_allocated,
+         _mem.next_gc);
 #endif
 
 }
 
-void l_free_objects() {
-    obj_t* object = vm.objects;
-    while (object != NULL) {
-        obj_t* next = object->next;
-        _free_object(object);
-        object = next;
+void l_add_object(obj_t* object) {
+    object->next = _mem.objects;
+    _mem.objects = object;
+}
+
+obj_t* l_get_objects() {
+    return _mem.objects;
+}
+
+// bytecode deserialisation
+
+
+// initialise the bytecode deserialisation allocation tracking
+void l_allocate_track_init() {
+
+    mem_track_t * track = &_mem.track;
+
+    track->track_allocations = true;
+
+    // allocate the initial capacity for the native lookup
+    track->native_lookup.capacity = 64;
+    track->native_lookup.items = ALLOCATE(native_lookup_item_t, track->native_lookup.capacity);
+    track->native_lookup.count = 0;
+
+    // allocate the initial capacity for the object lookup
+    track->object_lookup.capacity = 64;
+    track->object_lookup.items = ALLOCATE(object_lookup_item_t, track->object_lookup.capacity);
+    track->object_lookup.count = 0;
+
+    // allocate the initial capacity for the string lookup
+    track->string_lookup.capacity = 64;
+    track->string_lookup.items = ALLOCATE(string_lookup_item_t, track->string_lookup.capacity);
+    track->string_lookup.count = 0;
+}
+
+// cleanup the allocation tracking data
+void l_allocate_track_free() {
+
+    mem_track_t * track = &_mem.track;
+
+    track->track_allocations = false;
+
+    FREE_ARRAY(native_lookup_item_t, track->native_lookup.items, track->native_lookup.capacity);
+
+    for (int i = 0; i < track->object_lookup.count; i++) {
+        object_lookup_item_t item = track->object_lookup.items[i];
+        FREE_ARRAY(obj_t **, item.registered_targets, item.capacity);
+    }
+    track->native_lookup.count = 0;
+
+    FREE_ARRAY(object_lookup_item_t, track->object_lookup.items, track->object_lookup.capacity);
+
+    for (int i = 0; i < track->string_lookup.count; i++) {
+        string_lookup_item_t item = track->string_lookup.items[i];
+        FREE_ARRAY(obj_t **, item.registered_targets, item.capacity);
+        item.count = 0;
     }
 
-    free(vm.gray_stack);
+    FREE_ARRAY(string_lookup_item_t, track->string_lookup.items, track->string_lookup.capacity);
+    track->string_lookup.count = 0;
 }
+
+// register a native function pointer into the tracking structure
+void l_allocate_track_register_native(const char *name, void * ptr) {
+    
+    mem_track_t * track = &_mem.track;
+
+    if (track->native_lookup.count + 1 > track->native_lookup.capacity) {
+        size_t old_capacity = track->native_lookup.capacity;
+        track->native_lookup.capacity = GROW_CAPACITY(old_capacity);
+        track->native_lookup.items = GROW_ARRAY(
+            native_lookup_item_t,
+            track->native_lookup.items,
+            old_capacity,
+            track->native_lookup.capacity
+        );
+    }
+
+    // copy the input string and assign it the lookup item below
+    // this will be automatically cleaned up with the VM
+    obj_string_t * str = l_new_string(name);
+    
+    track->native_lookup.items[track->native_lookup.count] = (native_lookup_item_t) {
+        .name = str->chars,
+        .native = ptr
+    };
+
+    track->native_lookup.count++;
+}
+
+// get a native function pointer
+void * l_allocate_track_get_native_ptr(const char *name) {
+
+    mem_track_t * track = &_mem.track;
+
+    for (int i = 0; i < track->native_lookup.count; i++) {
+        native_lookup_item_t * item = &track->native_lookup.items[i];
+        if (item->name != NULL && strcmp(item->name, name) == 0) {
+            return item->native;
+        }
+    }
+
+    return NULL;
+}
+
+// get a native function name
+const char * l_allocate_track_get_native_name(void * ptr) {
+    mem_track_t * track = &_mem.track;
+
+    for (int i = 0; i < track->native_lookup.count; i++) {
+        native_lookup_item_t * item = &track->native_lookup.items[i];
+        if (item->native != NULL && item->native == ptr) {
+            return item->name;
+        }
+    }
+
+    return NULL;
+}
+
+// insert a new allocation for tracking into the allocation lookup table
+object_lookup_item_t * _insert_or_get_object_lookup_item(uintptr_t id) {
+
+    mem_track_t * track = &_mem.track;
+
+    // Check if the item already exists, and return if found
+    for (int i = 0; i < track->object_lookup.count; i++) {
+        if (track->object_lookup.items[i].id == id) {
+            return &track->object_lookup.items[i];
+        }
+    }
+
+    // otherwise, insert a new item
+    if (track->object_lookup.count + 1 > track->object_lookup.capacity) {
+        size_t old_capacity = track->object_lookup.capacity;
+        track->object_lookup.capacity = GROW_CAPACITY(old_capacity);
+        track->object_lookup.items = GROW_ARRAY(
+            object_lookup_item_t,
+            track->object_lookup.items,
+            old_capacity,
+            track->object_lookup.capacity
+        );
+    }
+
+    track->object_lookup.items[track->object_lookup.count++] = (object_lookup_item_t) {
+        .id = id,
+        .address = NULL,
+        .registered_targets = NULL,
+    };
+
+    // return the newly inserted item
+    return &track->object_lookup.items[track->object_lookup.count - 1];
+}
+
+// insert a new allocation for tracking into the allocation lookup table
+void l_allocate_track_register(uintptr_t id, obj_t *address) {
+    
+    object_lookup_item_t * item = _insert_or_get_object_lookup_item(id);
+
+    // assign the new address
+    item->address = address;
+#if defined(LINK_DEBUGGING)
+    // display the registered id
+    printf("Registered allocation id: %lu -> %p\n", id, item->address);
+#endif
+
+}
+
+// register interest in a target address
+void l_allocate_track_target_register(uintptr_t id, obj_t **target) {
+    
+    // if the id doesn't in the lookup table, then we need to add it
+    // this is because the target address may be set before the object is
+    // allocated, so we need to register the target address before the object
+
+    object_lookup_item_t * item = _insert_or_get_object_lookup_item(id);
+
+    // check if the target is already registered, ignore the second registration
+    for (size_t i = 0; i < item->count; i++) {
+        if (item->registered_targets[i] == (obj_t **)target) {
+            return;
+        }
+    }
+
+    // otherwise, insert a new target
+    if (item->count + 1 > item->capacity) {
+        size_t old_capacity = item->capacity;
+        item->capacity = GROW_CAPACITY(old_capacity);
+        item->registered_targets = GROW_ARRAY(
+            obj_t **,
+            item->registered_targets,
+            old_capacity,
+            item->capacity
+        );
+        for (size_t i = item->count; i < item->capacity; i++) {
+            item->registered_targets[i] = NULL;
+        }
+    }
+
+    // register a new interest in the target address
+    item->registered_targets[item->count] = (obj_t **)target;
+    // ensure that the target is NULL'd
+    *item->registered_targets[item->count] = NULL;
+#if defined(LINK_DEBUGGING)
+    printf("Registering interest in id: %lu -> %p\n", id, *target);
+#endif
+    item->count++;
+}
+
+
+string_lookup_item_t * _insert_or_get_string_lookup_item(uint32_t hash) {
+
+    string_lookup_t * lookup = &_mem.track.string_lookup;
+
+    // Check if the item already exists, and return if found
+    for (size_t i = 0; i < lookup->count; i++) {
+        if (lookup->items[i].hash == hash) {
+            return &lookup->items[i];
+        }
+    }
+
+    // otherwise, insert a new item
+    if (lookup->count + 1 > lookup->capacity) {
+        size_t old_capacity = lookup->capacity;
+        lookup->capacity = GROW_CAPACITY(old_capacity);
+        lookup->items = GROW_ARRAY(
+            string_lookup_item_t,
+            lookup->items,
+            old_capacity,
+            lookup->capacity
+        );
+    }
+
+    lookup->items[lookup->count++] = (string_lookup_item_t) {
+        .hash = hash,
+        .registered_targets = NULL,
+    };
+
+    // return the newly inserted item
+    return &lookup->items[lookup->count - 1];
+}
+
+// insert a new string for tracking into the allocation lookup table
+void l_allocate_track_string_register(uint32_t hash, obj_string_t *address) {
+    
+    string_lookup_item_t * item = _insert_or_get_string_lookup_item(hash);
+
+    // assign the new address
+    item->address = address;
+
+#if defined(LINK_DEBUGGING)
+    // display the registered id
+    printf("Registered string hash: %lu -> %s [%d]\n", hash, item->address->chars, item->count);
+#endif
+}
+
+// register interest in a string by hash
+void l_allocate_track_string_target_register(uint32_t hash, obj_string_t **target) {
+
+    string_lookup_item_t * item = _insert_or_get_string_lookup_item(hash);
+
+    // check if the target is already registered, ignore the second registration
+    for (size_t i = 0; i < item->count; i++) {
+        if ((obj_t**)(item->registered_targets[i]) == (obj_t **)target) {
+            return;
+        }
+    }
+
+    // otherwise, insert a new target
+    if (item->count + 1 > item->capacity) {
+        size_t old_capacity = item->capacity;
+        item->capacity = GROW_CAPACITY(old_capacity);
+        item->registered_targets = GROW_ARRAY(
+            obj_string_t **,
+            item->registered_targets,
+            old_capacity,
+            item->capacity
+        );
+        for (size_t i = item->count; i < item->capacity; i++) {
+            item->registered_targets[i] = NULL;
+        }
+    }
+
+    // register a new interest in the string
+    item->registered_targets[item->count] = (obj_string_t **)target;
+    // ensure that the target is NULL'd
+    *item->registered_targets[item->count] = NULL;
+#if defined(LINK_DEBUGGING)
+    printf("Registering interest in string hash: %lu -> %p\n", hash, target);
+#endif
+    item->count++;
+}
+
+// link the registered targets to the allocated addresses for those targets
+void l_allocate_track_link_targets() {
+    mem_track_t * track = &_mem.track;
+
+#if defined(LINK_DEBUGGING)
+    printf("linking:\n");
+#endif
+
+    // link objects
+#if defined(LINK_DEBUGGING)
+        printf("linking: pointers\n");
+#endif
+
+    for (size_t i = 0; i < track->object_lookup.count; i++) {
+        object_lookup_item_t * item = &track->object_lookup.items[i];
+        
+        if (item->address == NULL) {
+            continue;
+        }
+        for (size_t j = 0; j < item->count; j++) {
+            // print the target address and the linked address
+            obj_t **target = item->registered_targets[j];
+#if defined(LINK_DEBUGGING)
+            printf("\tlinking alloc: %lu: p: %p -> target:%p\n", item->id, item->address, *target);
+#endif
+            *target = item->address;
+        }
+    }
+
+    // link strings
+#if defined(LINK_DEBUGGING)
+        printf("linking: strings\n");
+#endif
+    for (size_t i = 0; i < track->string_lookup.count; i++) {
+        string_lookup_item_t * item = &track->string_lookup.items[i];
+
+#if defined(LINK_DEBUGGING)
+            printf("\tfor string: %lu: %s\n", item->hash, (item->address == NULL) ? "NULL: skipping" : item->address->chars );
+#endif   
+
+        if (item->address == NULL)
+            continue;
+
+        for (int j = 0; j < item->count; j++) {
+            // set the string pointer into the registered targets
+            obj_string_t **target = item->registered_targets[j];
+#if defined(LINK_DEBUGGING)
+            printf("\t\tlinking string: %lu: p: %p -> target:%p\n", item->hash, item->address, *target);
+#endif
+            *target = item->address;
+        }
+    }
+}
+

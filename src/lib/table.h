@@ -24,7 +24,10 @@ bool l_table_set(table_t* table, obj_string_t* key, value_t value);
 bool l_table_delete(table_t* table, obj_string_t* key);
 void l_table_add_all(table_t* from, table_t* to);
 
-obj_string_t* l_table_find_string(table_t* table, const char* chars, int length, uint32_t hash);
+obj_string_t* l_table_find_string(table_t* table, const char* chars, size_t length, uint32_t hash);
+
+// deserialisation helper
+entry_t * l_table_set_entry(table_t * table, obj_string_t * key);
 
 // garbage collection
 void l_mark_table(table_t* table);

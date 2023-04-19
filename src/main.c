@@ -25,7 +25,6 @@ static void _repl() {
 }
 
 int main(int argc, const char* argv[]) {
-    l_init_vm();
 
     if (argc == 1) {
         printf("Starting sox %s ...\ncommit: %s\nbranch: %s\n", 
@@ -33,7 +32,15 @@ int main(int argc, const char* argv[]) {
             COMMIT,
             BRANCH
         );
+         vm_config_t config = {
+            .suppress_print = false
+        };
+
+        l_init_memory();
+        l_init_vm(config);
         _repl();
+        l_free_vm();
+        l_free_memory();
     } else if (argc >= 2) {
         if ( argc == 2 && (
             (strncmp(argv[1], "help", 4) == 0) || 
@@ -54,7 +61,6 @@ int main(int argc, const char* argv[]) {
             exit(status);
     }
 
-    l_free_vm();
     
     printf("Exiting sox ...\n");
     return 0;

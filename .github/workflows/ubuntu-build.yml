@@ -27,10 +27,12 @@ jobs:
 
       - name: Run Build
         run: |
+          make build-tools
           make build
 
       - name: Run Tests
         run: |
+          make build-tools
           make test
 
       - run: echo "🍏 This job's status is ${{ job.status }}."

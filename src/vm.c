@@ -1,12 +1,11 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
-#include <unistd.h>
 
 #include "lib/debug.h"
 #include "lib/memory.h"
 #include "lib/native_api.h"
+#include "lib/print.h"
 #include "lib/table.h"
 #include "common.h"
 #include "compiler.h"
@@ -14,43 +13,6 @@
 
 vm_t vm;
 
-static value_t _clock_native(int argCount, value_t* args) {
-    return NUMBER_VAL((double)clock() / CLOCKS_PER_SEC);
-}
-
-static value_t _usleep_native(int argCount, value_t* args) {
-    if ( argCount == 1 && IS_NUMBER(args[0]) ) {
-        return NUMBER_VAL(usleep((unsigned int)AS_NUMBER(args[0])));
-    }
-    return NUMBER_VAL(-1);
-}
-
-static value_t _type(int argCount, value_t* args) {
-    if ( argCount == 1 ) {
-        const char* type = NULL;
-        switch (args[0].type) {
-            case VAL_BOOL:
-                type = "<bool>";
-                break;
-            case VAL_NIL:
-                type = "<nil>";
-                break;
-            case VAL_NUMBER:
-                type = "<number>";
-                break;
-            case VAL_OBJ: {
-                obj_t* obj = AS_OBJ(args[0]);
-                type = obj_type_to_string[obj->type];
-                break;
-            }
-        }
-        return OBJ_VAL(l_copy_string(type, strlen(type)));
-    }
-    const char* message = "type(): invalid argument(s)";
-    l_vm_runtime_error(message);
-    obj_string_t* msg = l_copy_string(message, strlen(message));
-    return OBJ_VAL(l_new_error(msg, NULL));
-}
 
 static value_t _peek(int distance);
 static bool    _call(obj_closure_t* closure, int argCount);
@@ -72,8 +34,12 @@ static void _reset_stack() {
 }
 
 void l_vm_define_native(const char* name, native_func_t function) {
-    l_push(OBJ_VAL(l_copy_string(name, (int)strlen(name))));
+    l_push(OBJ_VAL(l_copy_string(name, strlen(name))));
     l_push(OBJ_VAL(l_new_native(function)));
+    
+    // register the new native call object in the memory tracking system
+    l_allocate_track_register_native(name, AS_NATIVE(vm.stack[1]));
+
     l_table_set(&vm.globals, AS_STRING(vm.stack[0]), vm.stack[1]);
     l_pop();
     l_pop();
@@ -105,44 +71,72 @@ void l_vm_runtime_error(const char* format, ...) {
     _reset_stack();
 }
 
-void l_init_vm() {
-    _reset_stack();
-    vm.objects = NULL;
+void _mark_roots() {
+    
+    // mark the stack
+    for (value_t* slot = vm.stack; slot < vm.stack_top; slot++) {
+        l_mark_value(*slot);
+    }
 
-    // garbage collection
-    vm.bytes_allocated = 0;
-    vm.next_gc = 1024 * 1024;
-    vm.gray_count = 0;
-    vm.gray_capacity = 0;
-    vm.gray_stack = NULL;
+    // mark the call stack frames
+    for (int i = 0; i < vm.frame_count; i++) {
+        l_mark_object(
+            (obj_t*)vm.frames[i].closure
+        );
+    }
+
+    // mark any upvalues
+    for (obj_upvalue_t* upvalue = vm.open_upvalues;
+                                  upvalue != NULL;
+                                  upvalue = upvalue->next) {
+        l_mark_object((obj_t*)upvalue);
+    }
+
+    // mark any globals
+    l_mark_table(&vm.globals);
+
+    // ensure that compiler owned memory is also tracked
+    l_mark_compiler_roots();
+
+    l_mark_object((obj_t*)vm.init_string);
+}
+
+void _garbage_collect() {
+    l_table_remove_white(&vm.strings);
+}
+
+void l_init_vm(vm_config_t config) {
+
+    vm.config = config;
+
+    _reset_stack();
+
+    l_register_mark_roots_cb(_mark_roots);
+    l_register_garbage_collect_cb(_garbage_collect);
 
     l_init_table(&vm.globals);
     l_init_table(&vm.strings);
 
     vm.init_string = NULL;
-    vm.init_string = l_copy_string("init", 4);
+    vm.init_string = l_new_string("init");
 
     // native lib functions
     l_table_add_native();
-
-    l_vm_define_native("type", _type);
-
-
-    // native functions
-    l_vm_define_native("clock", _clock_native);
-    l_vm_define_native("usleep", _usleep_native);
 }
 
 void l_free_vm() {
     l_free_table(&vm.strings);
     l_free_table(&vm.globals);
+
     vm.init_string = NULL;
-    l_free_objects();
+
+    l_unregister_mark_roots_cb(_mark_roots);
+    l_register_garbage_collect_cb(_garbage_collect);
 }
 
 static InterpretResult _run() {
 #ifdef DEBUG_TRACE_EXECUTION
-    printf(" == VM START ==  ");
+    printf(" == VM START ==  \n");
 #endif
     callframe_t* frame = &vm.frames[vm.frame_count - 1];
 
@@ -359,7 +353,7 @@ static InterpretResult _run() {
             }
             case OP_PRINT: {
                 l_print_value(l_pop());
-                printf("\n");
+                l_printf("\n");
                 break;
             }
             case OP_JUMP: {
@@ -483,9 +477,6 @@ static InterpretResult _run() {
 }
 
 InterpretResult l_interpret(const char* source) {
-    chunk_t chunk;
-    l_init_chunk(&chunk);
-
     obj_function_t* function = l_compile(source);
     if (function == NULL) {
         return INTERPRET_COMPILE_ERROR;
@@ -494,9 +485,17 @@ InterpretResult l_interpret(const char* source) {
     l_push(OBJ_VAL(function));
     obj_closure_t* closure = l_new_closure(function);
     l_pop();
-    l_push(OBJ_VAL(closure));
-    _call(closure, 0);
+    l_set_entry_point(closure);
 
+    return INTERPRET_OK;
+}
+
+void l_set_entry_point(obj_closure_t * entry_point) {
+    l_push(OBJ_VAL(entry_point));
+    _call(entry_point, 0);
+}
+
+InterpretResult l_run() {
     return _run();
 }
 

@@ -25,6 +25,9 @@
         "tuple": "cpp",
         "type_traits": "cpp",
         "vector": "cpp",
-        "__locale": "c"
+        "__locale": "c",
+        "common.h": "c",
+        "memory.h": "c",
+        "serialise.h": "c"
     }
 }

@@ -15,6 +15,6 @@ fn hello(name) {
     usleep(100);
 }
 
-var start = clock();
+//var start = clock();
 hello("world");
-print clock() - start;
+//print clock() - start;

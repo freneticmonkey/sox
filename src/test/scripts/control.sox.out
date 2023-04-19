@@ -1,0 +1,9 @@
+Testing If Statements
+true_val is true
+true_val != false
+true_val and false_val. Success
+true_val and true_val. Success!
+true_val or false_val. Success
+false_val or false_val. Success!
+true_val is true. Success
+else Success.
