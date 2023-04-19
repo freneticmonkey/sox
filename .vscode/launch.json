@@ -125,7 +125,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/test",
-            "args": ["--no-fork","--iterations","10","sox/serialisation/serialise_memory_cleanup"],
+            "args": ["--no-fork","sox/serialisation/serialise_run_files"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
