@@ -45,6 +45,7 @@ typedef enum OpCode {
     OP_INHERIT,
     OP_METHOD,
     OP_ARRAY_EMPTY,
+    OP_ARRAY_PUSH,
     // VM NO-OP
     OP_BREAK,
     OP_CASE_FALLTHROUGH,

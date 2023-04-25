@@ -155,6 +155,8 @@ int l_disassemble_instruction(chunk_t* chunk, int offset) {
             return _constant_instruction("OP_METHOD", chunk, offset);
         case OP_ARRAY_EMPTY:
             return _byte_instruction("OP_ARRAY_EMPTY", chunk, offset);
+        case OP_ARRAY_PUSH:
+            return _byte_instruction("OP_ARRAY_PUSH", chunk, offset);
 
         // NO_OP codes that the VM shouldn't ever see
         case OP_BREAK:

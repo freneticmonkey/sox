@@ -24,6 +24,21 @@ void l_write_value_array(value_array_t* array, value_t value) {
     array->count++;
 }
 
+void l_write_value_array_front(value_array_t* array, value_t value) {
+    // expand the capacity of the array if needed
+    if (array->capacity < array->count + 1) {
+        int oldCapacity = array->capacity;
+        array->capacity = GROW_CAPACITY(oldCapacity);
+        array->values = GROW_ARRAY(value_t, array->values, oldCapacity, array->capacity);
+    }
+
+    // move the array contents to the right
+    memmove(array->values + 1, array->values, array->count * sizeof(value_t));
+    // insert the new value at the front of the array
+    array->values[0] = value;
+    array->count++;
+}
+
 void l_free_value_array(value_array_t* array) {
     FREE_ARRAY(value_t, array->values, array->capacity);
     l_init_value_array(array);

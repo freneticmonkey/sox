@@ -194,6 +194,11 @@ obj_array_t* l_push_array(obj_array_t* array, value_t value) {
     return array;
 }
 
+obj_array_t* l_push_array_front(obj_array_t* array, value_t value) {
+    l_write_value_array_front(&array->values, value);
+    return array;
+}
+
 value_t l_pop_array(obj_array_t* array) {
     if (array->values.count == 0) {
         return NIL_VAL;

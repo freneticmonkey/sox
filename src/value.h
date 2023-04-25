@@ -44,6 +44,8 @@ typedef struct {
 
 void l_init_value_array(value_array_t* array);
 void l_write_value_array(value_array_t* array, value_t value);
+void l_write_value_array_front(value_array_t* array, value_t value);
+
 void l_free_value_array(value_array_t* array);
 
 bool l_values_equal(value_t a, value_t b);

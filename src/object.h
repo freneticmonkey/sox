@@ -158,6 +158,7 @@ obj_error_t*        l_new_error(obj_string_t* msg, obj_error_t* enclosed);
 obj_array_t*        l_new_array();
 obj_array_t*        l_copy_array(obj_array_t* array, int start, int end);
 obj_array_t*        l_push_array(obj_array_t* array, value_t value);
+obj_array_t*        l_push_array_front(obj_array_t* array, value_t value);
 value_t             l_pop_array(obj_array_t* array);
 
 void l_print_object(value_t value);

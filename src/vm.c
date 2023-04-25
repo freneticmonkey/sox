@@ -501,12 +501,23 @@ static InterpretResult _run() {
                 l_push(OBJ_VAL(l_new_array()));
                 break;
             }
-            // case OP_ARRAY_PUSH: {
-            //     value_t value = l_pop();
-            //     obj_array_t* array = AS_ARRAY(_peek(0));
-            //     l_push_array(array, value);
-            //     break;
-            // }
+            case OP_ARRAY_PUSH: {
+                value_t count = l_pop();
+
+                if (!IS_NUMBER(count)) {
+                    l_vm_runtime_error("Array push expects count number .");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                int array_stack_offset = (int)count.as.number;
+                obj_array_t* array = AS_ARRAY(_peek(array_stack_offset));
+
+                // now ingest all of the array values
+                for (int i = 0; i < array_stack_offset; i++) {
+                    l_push_array_front(array, l_pop());
+                }
+                break;
+            }
             // case OP_ARRAY_POP: {
             //     obj_array_t* array = AS_ARRAY(_peek(0));
             //     l_push(l_pop_array(array));
