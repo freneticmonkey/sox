@@ -518,63 +518,30 @@ static InterpretResult _run() {
                 }
                 break;
             }
-            // case OP_ARRAY_POP: {
-            //     obj_array_t* array = AS_ARRAY(_peek(0));
-            //     l_push(l_pop_array(array));
-            //     break;
-            // }
-            // case OP_GET_ARRAY_INDEX: {
-            //     value_t set_value = l_pop();
-            //     value_t index_value = l_pop();
+            case OP_ARRAY_RANGE: {
+                value_t end = l_pop();
+                value_t start = l_pop();
 
-            //     if ( !IS_NUMBER(index_value) ) {
-            //         l_vm_runtime_error("Index value must be a number. type=(%s)", obj_type_to_string[index_value.type]);
-            //         return INTERPRET_RUNTIME_ERROR;
-            //     }
+                if (( !IS_NUMBER(start) && !IS_NIL(start) ) || 
+                     (!IS_NUMBER(end)   && !IS_NIL(end))  ) {
+                    l_vm_runtime_error("Invalid array range definition.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
 
-            //     if ( !IS_ARRAY(_peek(0)) ) {
-            //         l_vm_runtime_error("cannot slice index non-slice types.");
-            //         return INTERPRET_RUNTIME_ERROR;
-            //     }
+                if ( !IS_ARRAY(_peek(0)) ) {
+                    l_vm_runtime_error("Array range expects array.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
 
-            //     obj_array_t* array = AS_ARRAY(l_pop());
-            //     int index = (int)index_value.as.number;
-
-            //     if ( index < 0 || index >= array->values.count ) {
-            //         l_vm_runtime_error("Index value out of range. index=(%d) count=(%d)", index, array->values.count);
-            //         return INTERPRET_RUNTIME_ERROR;
-            //     }
-            //     // push the value to the stack
-            //     l_push(array->values.values[index]);
-
-            //     break;
-            // }
-            // case OP_SET_ARRAY_INDEX: {
-            //     value_t set_value = l_pop();
-            //     value_t index_value = l_pop();
-
-            //     if ( !IS_NUMBER(index_value) ) {
-            //         l_vm_runtime_error("Index value must be a number. type=(%s)", obj_type_to_string[index_value.type]);
-            //         return INTERPRET_RUNTIME_ERROR;
-            //     }
-
-            //     if ( !IS_ARRAY(_peek(0)) ) {
-            //         l_vm_runtime_error("cannot array index non-array types.");
-            //         return INTERPRET_RUNTIME_ERROR;
-            //     }
-
-            //     obj_array_t* array = AS_ARRAY(l_pop());
-            //     int index = (int)index_value.as.number;
-
-            //     if ( index < 0 || index >= array->values.count ) {
-            //         l_vm_runtime_error("Index value out of range. index=(%d) count=(%d)", index, array->values.count);
-            //         return INTERPRET_RUNTIME_ERROR;
-            //     }
-            //     // set the value into the array
-            //     array->values.values[index] = set_value;
-
-            //     break;
-            // }
+                obj_array_t* array = AS_ARRAY(l_pop());
+                
+                // calculate the range values - nil values indicate the start or end of the array
+                int start_index = IS_NIL(start) ? 0 : (int)start.as.number;
+                int end_index = IS_NIL(end) ? array->values.count-1 : (int)end.as.number;
+                
+                l_push(OBJ_VAL(l_copy_array(array, start_index, end_index)));
+                break;
+            }
 
             // NO-OP Codes
             case OP_BREAK: {

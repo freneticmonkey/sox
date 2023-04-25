@@ -168,15 +168,16 @@ obj_array_t* l_copy_array(obj_array_t* array, int start, int end) {
     }
 
     // validate the size source array with the start + end parameters
-    if ( (array->end < start) || (start < array->start) || 
-         (array->end < end) || (end < array->start) ) {
+    // TODO: update this to support ranges, which are immutable references to arrays?
+    if ( (array->values.count < start) || (start < 0) || 
+         (array->values.count < end)   || (end < 0) ) {
         return NULL;
     }
     
     obj_array_t* copy_array = ALLOCATE_OBJ(obj_array_t, OBJ_ARRAY);
     
     // setup the array size
-    int size = end - start;
+    int size = (end - start) + 1;
     size_t new_capacity = l_calculate_capacity_with_size(copy_array->values.capacity, copy_array->values.count + size);
     copy_array->values.values = GROW_ARRAY(value_t, copy_array->values.values, copy_array->values.capacity, new_capacity);
     copy_array->values.capacity = new_capacity;

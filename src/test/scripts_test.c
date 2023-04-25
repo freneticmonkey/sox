@@ -54,6 +54,7 @@ MunitSuite l_scripts_test_setup() {
 
     static char* files[] = {
         "src/test/scripts/argtest.sox",
+        "src/test/scripts/array.sox",
         "src/test/scripts/classes.sox",
         "src/test/scripts/closure.sox",
         "src/test/scripts/control.sox",

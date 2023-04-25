@@ -238,6 +238,7 @@ token_t l_scan_token() {
         case '[': return _make_token(TOKEN_LEFT_BRACKET);
         case ']': return _make_token(TOKEN_RIGHT_BRACKET);
         case ';': return _make_token(TOKEN_SEMICOLON);
+        case ':': return _make_token(TOKEN_COLON);
         case ',': return _make_token(TOKEN_COMMA);
         case '.': return _make_token(TOKEN_DOT);
         case '-': return _make_token(TOKEN_MINUS);

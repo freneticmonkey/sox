@@ -1,23 +1,24 @@
-// var array[]
-// print(array)
-// 
-// var a = push(array, 1)
-// print(array)
-// print(a)
-// 
-// array[0] = 2
-// print(array)
-// 
-// var value = array[0]
-// print(value)
-// 
-// var v = pop(array)
-// print(v)
-// print(array)
+var array[]
+print(array)
+
+var a = push(array, 1)
+print(array)
+print(a)
+
+array[0] = 2
+print(array)
+
+var value = array[0]
+print(value)
+
+var v = pop(array)
+print(v)
+print(array)
 
 var array_values[] = {0,1,2}
-print(array_values)
-// 
-// print(array_values[0:])
-// print(array_values[0:1])
-// print(array_values[:1])
+print(array_values) // [0,1,2]
+
+print(array_values[0:])  // [0,1,2]
+print(array_values[0:1]) // [0,1]
+print(array_values[:1])  // [0,1]
+print(array_values[1:])  // [1,2]

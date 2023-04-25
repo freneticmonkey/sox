@@ -636,8 +636,8 @@ static void _array_grouping(bool canAssign) {
     length += 1;
 
     // var array[] = {1,2,3}
-    //                  ^
-    // read the middle array items
+    //                  ^ ^
+    // read the rest of the array items
     if (_parser.current.type == TOKEN_COMMA) {
 
         while (_parser.current.type == TOKEN_COMMA) {
@@ -646,13 +646,7 @@ static void _array_grouping(bool canAssign) {
             length += 1;
         }
 
-        // TODO: Add support for trailing commas
-
-        // var array[] = {1,2,3}
-        //                    ^
-        // read the last array item
-        // _expression();
-        // length += 1;
+        // TODO: Add support for trailing commas by adding an or TOKEN_RIGHT_BRACE
     }
     
     
@@ -754,7 +748,50 @@ static void _this_(bool canAssign) {
 }
 
 static void _index(bool canAssign) {
+
+    // check if the index is a range
+    if (_check(TOKEN_COLON)) {
+        _consume(TOKEN_COLON, "Expect ':' in range index.");
+
+        // check for [:]
+
+        if (_match(TOKEN_RIGHT_BRACKET)) {
+            // two op nil to represent [:]
+            _emit_byte(OP_NIL);
+            _emit_byte(OP_NIL);
+        } else {
+            // handling [:x]
+            _emit_byte(OP_NIL);
+            _expression();
+            _consume(TOKEN_RIGHT_BRACKET, "Expect ']' after range.");
+        }
+        _emit_byte(OP_ARRAY_RANGE);
+        return;
+
+    }
+
+    // read the indexing value
     _expression();
+
+    // if the next token is a colon, we're indexing using a range
+    if ( _check(TOKEN_COLON) ) {
+        // handle [x:y] or [x:]
+        _consume(TOKEN_COLON, "Expect ':' in range index.");
+        
+        // handling [x:]
+        if (_match(TOKEN_RIGHT_BRACKET)) {
+            _emit_byte(OP_NIL);
+        } else {
+            // handling [x:y]
+            _expression();
+            _consume(TOKEN_RIGHT_BRACKET, "Expect ']' after range.");
+        }
+
+        _emit_byte(OP_ARRAY_RANGE);
+        return;
+    }
+
+    // otherwise this is a regular index into an array or table
     _consume(TOKEN_RIGHT_BRACKET, "Expect ']' after indexing expression.");
 
     if (canAssign && _match(TOKEN_EQUAL)) {
