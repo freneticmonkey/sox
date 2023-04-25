@@ -33,7 +33,10 @@ static value_t _len(int argCount, value_t* args) {
                     obj_table_t* table = AS_TABLE(args[0]);
                     return NUMBER_VAL(table->table.count);
                 }
-                // TODO: OBJ_LIST support in future
+                case OBJ_ARRAY: {
+                    obj_array_t* array = AS_ARRAY(args[0]);
+                    return NUMBER_VAL(array->values.count);
+                }
                 case OBJ_BOUND_METHOD:
                 case OBJ_CLASS:
                 case OBJ_CLOSURE:
@@ -52,6 +55,40 @@ static value_t _len(int argCount, value_t* args) {
             break;
     }
     return OBJ_VAL(_native_error("len(): invalid parameter type"));
+}
+
+static value_t _push(int argCount, value_t* args) {
+    if (argCount != 2) {
+        return OBJ_VAL(_native_error("push(): invalid parameter count"));
+    }
+    if (args[0].type != VAL_OBJ) {
+        return OBJ_VAL(_native_error("push(): invalid parameter type"));
+    }
+    obj_t* obj = AS_OBJ(args[0]);
+    if (obj->type != OBJ_ARRAY) {
+        return OBJ_VAL(_native_error("push(): invalid parameter type"));
+    }
+    obj_array_t* array = AS_ARRAY(args[0]);
+    l_push_array(array, args[1]);
+    return args[0];
+}
+
+static value_t _pop(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("pop(): invalid parameter count"));
+    }
+    if (args[0].type != VAL_OBJ) {
+        return OBJ_VAL(_native_error("pop(): invalid parameter type"));
+    }
+    obj_t* obj = AS_OBJ(args[0]);
+    if (obj->type != OBJ_ARRAY) {
+        return OBJ_VAL(_native_error("pop(): invalid parameter type"));
+    }
+    obj_array_t* array = AS_ARRAY(args[0]);
+    if (array->values.count == 0) {
+        return OBJ_VAL(_native_error("pop(): array is empty"));
+    }
+    return l_pop_array(array);
 }
 
 static value_t _clock_native(int argCount, value_t* args) {
@@ -106,6 +143,10 @@ void l_table_add_native() {
     // get()
     // set()
     // range()
+
+    // array functions
+    l_vm_define_native("push", _push);
+    l_vm_define_native("pop", _pop);
 
     l_vm_define_native("type", _type);
 

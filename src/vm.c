@@ -278,22 +278,44 @@ static InterpretResult _run() {
             case OP_GET_INDEX: {
                 value_t i = l_pop();
 
-                if ( !IS_STRING(i) ) {
-                    l_vm_runtime_error("Index value must be a string. type=(%s)", obj_type_to_string[i.type]);
+                if ( IS_TABLE(_peek(0)) ) {
+                    if ( !IS_STRING(i) ) {
+                        l_vm_runtime_error("Index value must be a string for tables. type=(%s)", obj_type_to_string[i.type]);
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+                    
+                    // if ( !IS_TABLE(_peek(0)) ) {
+                    //     l_vm_runtime_error("cannot index non-table types.");
+                    //     return INTERPRET_RUNTIME_ERROR;
+                    // }
+
+                    obj_table_t* table = AS_TABLE(l_pop());
+                    
+                    value_t value;
+                    if ( l_table_get(&table->table, AS_STRING(i), &value) )
+                        l_push(value);
+                    else
+                        l_push(NIL_VAL);
+
+                } else if (IS_ARRAY(_peek(0))) {
+
+                    if ( !IS_NUMBER(i) ) {
+                        l_vm_runtime_error("Index value must be a number for arrays. type=(%s)", obj_type_to_string[i.type]);
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+
+                    obj_array_t* array = AS_ARRAY(l_pop());
+                    int index = (int)AS_NUMBER(i);
+                    if ( index < 0 || index >= array->values.count ) {
+                        l_vm_runtime_error("Index out of bounds. index=(%d) count=(%d)", index, array->values.count);
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+                    l_push(array->values.values[index]);
+
+                } else {
+                    l_vm_runtime_error("cannot index non-table or array types.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
-                
-                if ( !IS_TABLE(_peek(0)) ) {
-                    l_vm_runtime_error("cannot index non-table types.");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                obj_table_t* table = AS_TABLE(l_pop());
-                
-                value_t value;
-                if ( l_table_get(&table->table, AS_STRING(i), &value) )
-                    l_push(value);
-                else
-                    l_push(NIL_VAL);
 
                 break;
             }
@@ -302,18 +324,41 @@ static InterpretResult _run() {
                 value_t set_value = l_pop();
                 value_t index_value = l_pop();
 
-                if ( !IS_STRING(index_value) ) {
-                    l_vm_runtime_error("Index value must be a string. type=(%s)", obj_type_to_string[index_value.type]);
+                if ( IS_TABLE(_peek(0)) ) {
+                    if ( !IS_STRING(index_value) ) {
+                        l_vm_runtime_error("Index value must be a string. type=(%s)", obj_type_to_string[index_value.type]);
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+
+                    // if ( !IS_TABLE(_peek(0)) ) {
+                    //     l_vm_runtime_error("cannot index non-table types.");
+                    //     return INTERPRET_RUNTIME_ERROR;
+                    // }
+
+                    obj_table_t* table = AS_TABLE(l_pop());
+                    l_table_set(&table->table, AS_STRING(index_value), set_value);
+                    l_push(set_value);
+                } else if ( IS_ARRAY(_peek(0)) ) {
+
+                    if ( !IS_NUMBER(index_value) ) {
+                        l_vm_runtime_error("Index value must be a number. type=(%s)", obj_type_to_string[index_value.type]);
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+
+                    obj_array_t* array = AS_ARRAY(l_pop());
+                    int index = (int)AS_NUMBER(index_value);
+                    if ( index < 0 || index >= array->values.count ) {
+                        l_vm_runtime_error("Index out of bounds. index=(%d) count=(%d)", index, array->values.count);
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+                    array->values.values[index] = set_value;
+                    l_push(set_value);
+
+                } else {
+                    l_vm_runtime_error("cannot index non-table or array types.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
                 
-                if ( !IS_TABLE(_peek(0)) ) {
-                    l_vm_runtime_error("cannot index non-table types.");
-                    return INTERPRET_RUNTIME_ERROR;
-                }
-                obj_table_t* table = AS_TABLE(l_pop());
-                l_table_set(&table->table, AS_STRING(index_value), set_value);
-                l_push(set_value);
                 break;
             }
             case OP_EQUAL: {
@@ -451,6 +496,74 @@ static InterpretResult _run() {
             case OP_METHOD:
                 _define_method(READ_STRING());
                 break;
+
+            case OP_ARRAY_EMPTY: {
+                l_push(OBJ_VAL(l_new_array()));
+                break;
+            }
+            // case OP_ARRAY_PUSH: {
+            //     value_t value = l_pop();
+            //     obj_array_t* array = AS_ARRAY(_peek(0));
+            //     l_push_array(array, value);
+            //     break;
+            // }
+            // case OP_ARRAY_POP: {
+            //     obj_array_t* array = AS_ARRAY(_peek(0));
+            //     l_push(l_pop_array(array));
+            //     break;
+            // }
+            // case OP_GET_ARRAY_INDEX: {
+            //     value_t set_value = l_pop();
+            //     value_t index_value = l_pop();
+
+            //     if ( !IS_NUMBER(index_value) ) {
+            //         l_vm_runtime_error("Index value must be a number. type=(%s)", obj_type_to_string[index_value.type]);
+            //         return INTERPRET_RUNTIME_ERROR;
+            //     }
+
+            //     if ( !IS_ARRAY(_peek(0)) ) {
+            //         l_vm_runtime_error("cannot slice index non-slice types.");
+            //         return INTERPRET_RUNTIME_ERROR;
+            //     }
+
+            //     obj_array_t* array = AS_ARRAY(l_pop());
+            //     int index = (int)index_value.as.number;
+
+            //     if ( index < 0 || index >= array->values.count ) {
+            //         l_vm_runtime_error("Index value out of range. index=(%d) count=(%d)", index, array->values.count);
+            //         return INTERPRET_RUNTIME_ERROR;
+            //     }
+            //     // push the value to the stack
+            //     l_push(array->values.values[index]);
+
+            //     break;
+            // }
+            // case OP_SET_ARRAY_INDEX: {
+            //     value_t set_value = l_pop();
+            //     value_t index_value = l_pop();
+
+            //     if ( !IS_NUMBER(index_value) ) {
+            //         l_vm_runtime_error("Index value must be a number. type=(%s)", obj_type_to_string[index_value.type]);
+            //         return INTERPRET_RUNTIME_ERROR;
+            //     }
+
+            //     if ( !IS_ARRAY(_peek(0)) ) {
+            //         l_vm_runtime_error("cannot array index non-array types.");
+            //         return INTERPRET_RUNTIME_ERROR;
+            //     }
+
+            //     obj_array_t* array = AS_ARRAY(l_pop());
+            //     int index = (int)index_value.as.number;
+
+            //     if ( index < 0 || index >= array->values.count ) {
+            //         l_vm_runtime_error("Index value out of range. index=(%d) count=(%d)", index, array->values.count);
+            //         return INTERPRET_RUNTIME_ERROR;
+            //     }
+            //     // set the value into the array
+            //     array->values.values[index] = set_value;
+
+            //     break;
+            // }
 
             // NO-OP Codes
             case OP_BREAK: {

@@ -93,7 +93,7 @@ int l_disassemble_instruction(chunk_t* chunk, int offset) {
         case OP_GET_INDEX:
             return _byte_instruction("OP_GET_INDEX", chunk, offset); // FIXME: Is this what I need?
         case OP_SET_INDEX:
-            return _byte_instruction("OP_SET_INDEX", chunk, offset); // FIXME: Is this what I need?
+            return _byte_instruction("OP_SET_INDEX", chunk, offset); // FIXME: Is this what I need?v
         case OP_EQUAL:
             return _simple_instruction("OP_EQUAL", offset);
         case OP_GREATER:
@@ -153,6 +153,8 @@ int l_disassemble_instruction(chunk_t* chunk, int offset) {
             return _simple_instruction("OP_INHERIT", offset);
         case OP_METHOD:
             return _constant_instruction("OP_METHOD", chunk, offset);
+        case OP_ARRAY_EMPTY:
+            return _byte_instruction("OP_ARRAY_EMPTY", chunk, offset);
 
         // NO_OP codes that the VM shouldn't ever see
         case OP_BREAK:

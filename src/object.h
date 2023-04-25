@@ -17,6 +17,7 @@
 #define IS_STRING(value)       l_is_obj_type(value, OBJ_STRING)
 #define IS_TABLE(value)        l_is_obj_type(value, OBJ_TABLE)
 #define IS_ERROR(value)        l_is_obj_type(value, OBJ_ERROR)
+#define IS_ARRAY(value)        l_is_obj_type(value, OBJ_ARRAY)
 
 #define AS_BOUND_METHOD(value) ((obj_bound_method_t*)AS_OBJ(value))
 #define AS_CLASS(value)        ((obj_class_t*)AS_OBJ(value))
@@ -28,6 +29,7 @@
 #define AS_CSTRING(value)      (((obj_string_t*)AS_OBJ(value))->chars)
 #define AS_TABLE(value)        ((obj_table_t*)AS_OBJ(value))
 #define AS_ERROR(value)        ((obj_error_t*)AS_OBJ(value))
+#define AS_ARRAY(value)        ((obj_array_t*)AS_OBJ(value))
 
 typedef enum {
     OBJ_BOUND_METHOD,
@@ -39,6 +41,7 @@ typedef enum {
     OBJ_STRING,
     OBJ_UPVALUE,
     OBJ_TABLE,
+    OBJ_ARRAY,
     OBJ_ERROR,
 } ObjType;
 
@@ -52,6 +55,7 @@ static char* obj_type_to_string[] = {
     "String",
     "Upvalue",
     "Table",
+    "Array"
     "Error"
 };
 
@@ -87,6 +91,13 @@ typedef struct obj_table_t {
     obj_t   obj;
     table_t table;
 } obj_table_t;
+
+typedef struct obj_array_t {
+    obj_t   obj;
+    int     start;
+    int     end;
+    value_array_t values;
+} obj_array_t;
 
 typedef struct obj_error_t obj_error_t;
 typedef struct obj_error_t {
@@ -135,12 +146,19 @@ obj_closure_t*      l_new_closure_empty();
 obj_function_t*     l_new_function();
 obj_instance_t*     l_new_instance(obj_class_t* klass);
 obj_native_t*       l_new_native(native_func_t function);
+
 obj_string_t*       l_take_string(char* chars, size_t length);
 obj_string_t*       l_copy_string(const char* chars, size_t length);
 obj_string_t*       l_new_string(const char* chars);
+
 obj_upvalue_t*      l_new_upvalue(value_t* slot);
 obj_table_t*        l_new_table();
 obj_error_t*        l_new_error(obj_string_t* msg, obj_error_t* enclosed);
+
+obj_array_t*        l_new_array();
+obj_array_t*        l_copy_array(obj_array_t* array, int start, int end);
+obj_array_t*        l_push_array(obj_array_t* array, value_t value);
+value_t             l_pop_array(obj_array_t* array);
 
 void l_print_object(value_t value);
 

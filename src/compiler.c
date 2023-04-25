@@ -823,7 +823,6 @@ static void _patch_jumps(int from_location, OpCode patch_code) {
     int skip_size = 0;
     chunk_t *chunk = &_current->function->chunk;
 
-    int starti = i;
     int loopstarti = 0;
 
     while ( i < chunk->count) {
@@ -1066,11 +1065,35 @@ static void _fun_declaration() {
 
 }
 
+static void _array() {
+    if (_match(TOKEN_RIGHT_BRACKET)) {
+        //
+        
+        // create an empty array
+        _emit_byte(OP_ARRAY_EMPTY);
+
+        // Check for array assignment
+        if (_match(TOKEN_EQUAL)) {
+            _expression();
+        }
+
+    } 
+    // else {
+    //     // indexing into an array
+    //     _expression();
+    //     _consume(TOKEN_RIGHT_BRACKET, "Expect ']' after array declaration.");
+        
+    //     _emit_byte(OP_GET_ARRAY_INDEX);
+    // }
+}
+
 static void _var_declaration() {
     uint8_t global = _parse_variable("Expect variable name.");
 
     if (_match(TOKEN_EQUAL)) {
         _expression();
+    } else if (_match(TOKEN_LEFT_BRACKET)) {
+        _array();
     } else {
         _emit_byte(OP_NIL);
     }

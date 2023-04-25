@@ -402,7 +402,7 @@ serialiser_t * l_serialise_new(const char * filename_source, const char * source
     // serialised header info
     serialiser->sox_version = NULL;
     serialiser->source_filename = NULL;
-    serialiser->source_hash = NULL;
+    serialiser->source_hash = 0;
     serialiser->data_size = 0;
 
     // NOTE: NULL values are used in unit testing
@@ -1280,11 +1280,11 @@ void _serialise_read_header(serialiser_t* serialiser, const char * filename_sour
 
     // read the serialisation size
     serialiser->data_size = _serialise_buf_read_uint32(serialiser->buffer);
-    printf("serialisation size: %zu\n", serialiser->data_size);
+    printf("serialisation size: %lu\n", serialiser->data_size);
 
     size_t serialisation_size = serialiser->buffer->count - serialiser->buffer->offset;
     if (serialiser->data_size != serialisation_size) {
-        fprintf(stderr, "Serialisation size mismatch. Expected %zu, got %zu\n", serialiser->data_size, serialisation_size);
+        fprintf(stderr, "Serialisation size mismatch. Expected %lu, got %lu\n", serialiser->data_size, serialisation_size);
         serialiser->error = SERIALISE_ERROR_INCORRECT_DATA_SIZE;
         return;
     }

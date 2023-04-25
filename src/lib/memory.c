@@ -428,6 +428,11 @@ static void _blacken_object(obj_t* object) {
             l_mark_object((obj_t*)error->msg);
             l_mark_object((obj_t*)error);
         }
+        case OBJ_ARRAY: {
+            obj_array_t* array = (obj_array_t*)object;
+            l_mark_object((obj_t*)array);
+            l_mark_array(&array->values);
+        }
         case OBJ_NATIVE:
         case OBJ_STRING:
         break;

@@ -148,6 +148,75 @@ obj_error_t* l_new_error(obj_string_t* msg, obj_error_t* enclosed) {
     return error;
 }
 
+obj_array_t* l_new_array() {
+    obj_array_t* array = ALLOCATE_OBJ(obj_array_t, OBJ_ARRAY);
+
+    l_init_value_array(&array->values);
+    array->start = 0;
+    array->end = 0;
+
+    return array;
+}
+
+obj_array_t* l_copy_array(obj_array_t* array, int start, int end) {
+    
+    // TODO: Figure out how to drop errors
+
+    // validate the array parameters
+    if ( start >= end ) {
+        return NULL;
+    }
+
+    // validate the size source array with the start + end parameters
+    if ( (array->end < start) || (start < array->start) || 
+         (array->end < end) || (end < array->start) ) {
+        return NULL;
+    }
+    
+    obj_array_t* copy_array = ALLOCATE_OBJ(obj_array_t, OBJ_ARRAY);
+    
+    // setup the array size
+    int size = end - start;
+    size_t new_capacity = l_calculate_capacity_with_size(copy_array->values.capacity, copy_array->values.count + size);
+    copy_array->values.values = GROW_ARRAY(value_t, copy_array->values.values, copy_array->values.capacity, new_capacity);
+    copy_array->values.capacity = new_capacity;
+
+    // copy the array contents to the new array
+    memcpy(copy_array->values.values, array->values.values + start, size * sizeof(value_t));
+    copy_array->values.count = size;
+
+    return copy_array;
+}
+
+obj_array_t* l_push_array(obj_array_t* array, value_t value) {
+
+    l_write_value_array(&array->values, value);
+    return array;
+}
+
+value_t l_pop_array(obj_array_t* array) {
+    if (array->values.count == 0) {
+        return NIL_VAL;
+    }
+
+    value_t value = array->values.values[array->values.count - 1];
+    array->values.count--;
+    return value;
+}
+
+void _print_array(obj_array_t* array) {
+    value_t *values = array->values.values;
+
+    l_printf("[");
+
+    for (size_t i = 0; i < array->values.count; i++) {
+        l_print_value(values[i]);
+        if (i < array->values.count-1)
+            l_printf(",");
+    }
+    l_printf("]");
+}
+
 void l_print_table(obj_table_t* table) {
     // TODO: For each entry in table print <key> : var -> l_print_object
     table_t* t = &table->table;
@@ -223,6 +292,9 @@ void l_print_object(value_t value) {
             break;
         case OBJ_ERROR:
             l_print_error(AS_ERROR(value));
+            break;
+        case OBJ_ARRAY:
+            _print_array(AS_ARRAY(value));
             break;
     }
 }
