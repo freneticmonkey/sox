@@ -106,7 +106,7 @@ void _garbage_collect() {
     l_table_remove_white(&vm.strings);
 }
 
-void l_init_vm(vm_config_t config) {
+void l_init_vm(vm_config_t *config) {
 
     vm.config = config;
 
@@ -587,7 +587,7 @@ void l_set_entry_point(obj_closure_t * entry_point) {
     _call(entry_point, 0);
 }
 
-InterpretResult l_run(int argc, const char* argv[]) {
+InterpretResult l_run() {
 
     // Set the value of argc and argv in the appropriate globals
     l_table_set(
@@ -595,18 +595,30 @@ InterpretResult l_run(int argc, const char* argv[]) {
         l_copy_string("argc", 4),
         (value_t){
             .type = VAL_NUMBER,
-            .as.number = argc,
+            .as.number = vm.config->args.argc,
         }
     );
 
+    // create a new array for the args
+    l_push(OBJ_VAL(l_new_array()));
+
+    // insert each arg into the array
+    for (int i = 0; i < vm.config->args.argc; i++) {
+
+        l_push(OBJ_VAL(
+            l_copy_string(
+                vm.config->args.argv[i], 
+                strlen(vm.config->args.argv[i])
+            )
+        ));
+        l_push_array(AS_ARRAY(_peek(1)), l_pop());
+    }
+
+    // pop the new array into the argv global
     l_table_set(
         &vm.globals,
         l_copy_string("argv", 4),
-        (value_t){
-            .type = VAL_OBJ,
-            // TODO: This is a hack. We should be able to pass a string array
-            .as.obj = (obj_t*)l_copy_string("params", 6),
-        }
+        l_pop()
     );
 
     return _run();

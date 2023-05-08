@@ -28,7 +28,7 @@ static MunitResult _serialise_memory_cleanup(const MunitParameter params[], void
         .suppress_print = true
     };
     l_init_memory();
-    l_init_vm(config);
+    l_init_vm(&config);
 
     // printf("\nSerialiser init\n");
 
@@ -39,7 +39,7 @@ static MunitResult _serialise_memory_cleanup(const MunitParameter params[], void
     // now restart the the vm
     l_free_vm();
 
-    l_init_vm(config);
+    l_init_vm(&config);
     
     // printf("Serialiser cleanup\n");
     // cleanup the serialiser
@@ -418,7 +418,7 @@ static MunitResult _serialise_test_string_linking(const MunitParameter params[],
         .suppress_print = true
     };
     l_init_memory();
-    l_init_vm(config);
+    l_init_vm(&config);
 
     obj_class_t * class = l_new_class(l_new_string("test_class"));
 
@@ -443,7 +443,7 @@ static MunitResult _serialise_test_string_linking(const MunitParameter params[],
     l_allocate_track_init();
 
     // re-initialise the vm
-    l_init_vm(config);
+    l_init_vm(&config);
 
     // rewrind the buffer and start deserialising
     l_serialise_rewind(serialiser);
@@ -487,7 +487,7 @@ static MunitResult _serialise_function(const MunitParameter params[], void *user
         .suppress_print = true
     };
     l_init_memory();
-    l_init_vm(config);
+    l_init_vm(&config);
 
     obj_function_t * func = l_new_function();
     func->name = l_new_string("test_func");
@@ -517,7 +517,7 @@ static MunitResult _serialise_function(const MunitParameter params[], void *user
 
     // now restart the the vm
     l_free_vm();
-    l_init_vm(config);
+    l_init_vm(&config);
 
     // rewrind the buffer and start deserialising
     l_serialise_rewind(serialiser);
@@ -560,7 +560,7 @@ static MunitResult _serialise_closure(const MunitParameter params[], void *user_
     };
 
     l_init_memory();
-    l_init_vm(config);
+    l_init_vm(&config);
 
     obj_function_t * func = l_new_function();
     func->name = l_new_string("test_func");
@@ -610,7 +610,7 @@ static MunitResult _serialise_closure(const MunitParameter params[], void *user_
     // enable memory tracking so that the deserialised objects can be linked
     l_allocate_track_init();
 
-    l_init_vm(config);
+    l_init_vm(&config);
 
     // rewrind the buffer and start deserialising
     l_serialise_rewind(serialiser);
@@ -677,7 +677,7 @@ static MunitResult _serialise_instance(const MunitParameter params[], void *user
     };
 
     l_init_memory();
-    l_init_vm(config);
+    l_init_vm(&config);
 
     obj_class_t * klass = l_new_class(l_new_string("test_class"));
 
@@ -701,7 +701,7 @@ static MunitResult _serialise_instance(const MunitParameter params[], void *user
     // enable memory tracking so that the deserialised objects can be linked
     l_allocate_track_init();
 
-    l_init_vm(config);
+    l_init_vm(&config);
 
     // rewrind the buffer and start deserialising
     l_serialise_rewind(serialiser);
@@ -748,7 +748,7 @@ static MunitResult _serialise_class(const MunitParameter params[], void *user_da
     };
 
     l_init_memory();
-    l_init_vm(config);
+    l_init_vm(&config);
 
     obj_class_t * klass = l_new_class(l_new_string("test_class"));
 
@@ -770,7 +770,7 @@ static MunitResult _serialise_class(const MunitParameter params[], void *user_da
     // enable memory tracking so that the deserialised objects can be linked
     l_allocate_track_init();
 
-    l_init_vm(config);
+    l_init_vm(&config);
 
     // rewrind the buffer and start deserialising
     l_serialise_rewind(serialiser);
@@ -812,7 +812,7 @@ static MunitResult _serialise_table(const MunitParameter params[], void *user_da
     };
 
     l_init_memory();
-    l_init_vm(config);
+    l_init_vm(&config);
 
     // init the serialiser
     serialiser_t * serialiser = l_serialise_new(NULL, NULL, SERIALISE_MODE_WRITE);
@@ -829,7 +829,7 @@ static MunitResult _serialise_table(const MunitParameter params[], void *user_da
     // enable memory tracking so that the deserialised objects can be linked
     l_allocate_track_init();
 
-    l_init_vm(config);
+    l_init_vm(&config);
 
     // rewrind the buffer and start deserialising
     l_serialise_rewind(serialiser);
@@ -862,7 +862,7 @@ static MunitResult _serialise_table_pointer(const MunitParameter params[], void 
     };
 
     l_init_memory();
-    l_init_vm(config);
+    l_init_vm(&config);
 
     table_t table;
     l_init_table(&table);
@@ -894,7 +894,7 @@ static MunitResult _serialise_table_pointer(const MunitParameter params[], void 
     // enable memory tracking so that the deserialised objects can be linked
     l_allocate_track_init();
 
-    l_init_vm(config);
+    l_init_vm(&config);
 
     // rewrind the buffer and start deserialising
     l_serialise_rewind(serialiser);
@@ -957,7 +957,7 @@ static MunitResult _serialise_vm(const MunitParameter params[], void *user_data)
     };
 
     l_init_memory();
-    l_init_vm(config);
+    l_init_vm(&config);
 
     // init the serialiser
     serialiser_t * serialiser = l_serialise_new(NULL, NULL, SERIALISE_MODE_WRITE);
@@ -983,7 +983,7 @@ static MunitResult _serialise_vm(const MunitParameter params[], void *user_data)
     // enable memory tracking so that the deserialised objects can be linked
     l_allocate_track_init();
 
-    l_init_vm(config);
+    l_init_vm(&config);
 
     // rewrind the buffer and start deserialising
     l_serialise_rewind(serialiser);
@@ -1020,21 +1020,21 @@ static MunitResult _serialise_run_files(const MunitParameter params[], void *use
 	(void)user_data;
 	
     static char* files[] = {
-        "src/test/scripts/argtest.sox",
-        "src/test/scripts/classes.sox",
-        "src/test/scripts/closure.sox",
-        "src/test/scripts/control.sox",
-        "src/test/scripts/defer.sox",
-        "src/test/scripts/funcs.sox",
-        "src/test/scripts/globals.sox",
-        "src/test/scripts/hello.sox",
-        "src/test/scripts/loops.sox",
-        "src/test/scripts/main.sox",
-        "src/test/scripts/optional_semi.sox",
-        "src/test/scripts/super.sox",
-        "src/test/scripts/switch.sox",
-        "src/test/scripts/syscall.sox",
-        "src/test/scripts/table.sox",
+        "src/test/scripts/argtest.sox\0",
+        "src/test/scripts/classes.sox\0",
+        "src/test/scripts/closure.sox\0",
+        "src/test/scripts/control.sox\0",
+        "src/test/scripts/defer.sox\0",
+        "src/test/scripts/funcs.sox\0",
+        "src/test/scripts/globals.sox\0",
+        "src/test/scripts/hello.sox\0",
+        "src/test/scripts/loops.sox\0",
+        "src/test/scripts/main.sox\0",
+        "src/test/scripts/optional_semi.sox\0",
+        "src/test/scripts/super.sox\0",
+        "src/test/scripts/switch.sox\0",
+        "src/test/scripts/syscall.sox\0",
+        "src/test/scripts/table.sox\0",
         NULL,
     };
 
@@ -1056,18 +1056,34 @@ static MunitResult _serialise_run_files(const MunitParameter params[], void *use
         }
 
         munit_logf(MUNIT_LOG_WARNING , "running script: %s", filename);
-        int status = l_run_file(4, (const char *[]){
-                                    "sox",
-                                    filename,
-                                    "--suppress-print",
-                                    "--serialise",
-                                });
+        
+        vm_args_t args = l_parse_args(
+                2, 
+                (const char *[]){
+                    "sox",
+                    filename,
+                }
+            );
+
+        vm_config_t config = {
+            .enable_serialisation = true,
+            .suppress_print = false,
+            .args = args,
+        };
+        int status = l_run_file(
+            &config
+        );
+
+
+        if (status != 0) {
+            munit_logf(MUNIT_LOG_WARNING , "failed to run script: %s", filename);
+        }
 
         munit_assert_int(status, == , 0);
 
         // cleanup written file
         sprintf(&filename_bytecode[0], "%s.sbc", filename);
-        if (  l_file_exists(&filename_bytecode[0]) ) {
+        if ( l_file_exists(&filename_bytecode[0]) ) {
             bool result = l_file_delete(&filename_bytecode[0]);
             munit_assert_true(result);
         }

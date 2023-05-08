@@ -24,7 +24,7 @@ static MunitResult _run_vm(const MunitParameter params[], void *user_data)
     };
 
     l_init_memory();
-    l_init_vm(config);
+    l_init_vm(&config);
 
     
     l_free_vm();
@@ -42,13 +42,13 @@ static MunitResult _run_vm_multiple_times(const MunitParameter params[], void *u
     };
 
     l_init_memory();
-    l_init_vm(config);
+    l_init_vm(&config);
     
     l_free_vm();
     l_free_memory();
 
     l_init_memory();
-    l_init_vm(config);
+    l_init_vm(&config);
     
     l_free_vm();
     l_free_memory();

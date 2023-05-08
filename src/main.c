@@ -32,15 +32,19 @@ int main(int argc, const char* argv[]) {
             COMMIT,
             BRANCH
         );
-         vm_config_t config = {
-            .suppress_print = false
-        };
+        //  vm_config_t config = {
+        //     .suppress_print = false
+        // };
+
+        vm_config_t config;
+        l_init_vmconfig(&config, argc, argv);
 
         l_init_memory();
-        l_init_vm(config);
+        l_init_vm(&config);
         _repl();
         l_free_vm();
         l_free_memory();
+        
     } else if (argc >= 2) {
         if ( argc == 2 && (
             (strncmp(argv[1], "help", 4) == 0) || 
@@ -56,7 +60,13 @@ int main(int argc, const char* argv[]) {
             exit(64);
         }
 
-        int status = l_run_file(argc, argv);
+        vm_config_t config;
+        l_init_vmconfig(&config, argc, argv);
+
+        int status = l_run_file(&config);
+
+        l_free_vmconfig(&config);
+
         if (status != 0)
             exit(status);
     }

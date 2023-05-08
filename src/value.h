@@ -37,8 +37,8 @@ typedef struct value_t {
 #define IS_OBJ(value)     ((value).type == VAL_OBJ)
 
 typedef struct {
-    int capacity;
-    int count;
+    size_t capacity;
+    size_t count;
     value_t* values;
 } value_array_t;
 

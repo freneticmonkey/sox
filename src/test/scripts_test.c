@@ -30,12 +30,20 @@ static MunitResult _run_file(const MunitParameter params[], void *user_data)
         output = l_print_enable_capture();
     }
 
-    munit_logf(MUNIT_LOG_WARNING , "running script: %s", filename);
-    int status = l_run_file(3, (const char *[]){
-                                "sox",
-                                filename,
-                                "--suppress-print"
-                            });
+    munit_logf(MUNIT_LOG_INFO , "running script: %s", filename);
+    vm_config_t config = {
+        .enable_serialisation = false,
+        .suppress_print = true,
+        .args = l_parse_args(
+            2, 
+            (const char *[]){
+                "sox",
+                filename
+            }
+        )
+    };
+
+    int status = l_run_file(&config);
 
     munit_assert_int(status, == , 0);
 

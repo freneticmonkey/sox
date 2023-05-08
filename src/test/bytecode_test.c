@@ -23,7 +23,7 @@ static MunitResult _chunk_compare(const MunitParameter params[], void *user_data
     };
 
     l_init_memory();
-    l_init_vm(config);
+    l_init_vm(&config);
 
     chunk_t chunk;
     l_init_chunk(&chunk);

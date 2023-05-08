@@ -554,6 +554,12 @@ void _free_object(obj_t* object) {
             FREE(obj_table_t, table);
             break;
         }
+        case OBJ_ARRAY: {
+            obj_array_t* array = (obj_array_t *)object;
+            l_free_value_array(&array->values);
+            FREE(obj_array_t, array);
+            break;
+        }
         case OBJ_ERROR: {
             obj_error_t* error = (obj_error_t *)object;
             _free_object((obj_t*)error->enclosed);

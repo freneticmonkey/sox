@@ -46,7 +46,7 @@ bool l_file_exists(const char* path) {
     return true;
 }
 
-int _deserialise_bytecode(vm_config_t config, const char* path, const char* source, int argc, const char* argv[]) {
+int _deserialise_bytecode(vm_config_t *config, const char* path, const char* source) {
 
     l_init_memory();
 
@@ -95,7 +95,7 @@ int _deserialise_bytecode(vm_config_t config, const char* path, const char* sour
     l_serialise_del(serialiser);
     
     // run the vm
-    InterpretResult result = l_run(argc, argv);
+    InterpretResult result = l_run();
 
     //clean up
     l_free_vm();
@@ -110,7 +110,7 @@ int _deserialise_bytecode(vm_config_t config, const char* path, const char* sour
     return 0;
 }
 
-int _interpret_serialise_bytecode(vm_config_t config, const char* path, const char* source, int argc, const char* argv[]) {
+int _interpret_serialise_bytecode(vm_config_t *config, const char* path, const char* source) {
     // setup to serialise the interpreted bytecode
 
     l_init_memory();
@@ -139,7 +139,7 @@ int _interpret_serialise_bytecode(vm_config_t config, const char* path, const ch
     l_serialise_del(serialiser);
 
     // run the vm
-    result = l_run(argc, argv);
+    result = l_run();
 
     //clean up
     l_free_vm();
@@ -155,7 +155,7 @@ int _interpret_serialise_bytecode(vm_config_t config, const char* path, const ch
     return 0;
 }
 
-int _interpret_run(vm_config_t config, const char* source, int argc, const char* argv[]) {
+int _interpret_run(vm_config_t *config, const char* source) {
     
     InterpretResult result;
     
@@ -174,7 +174,7 @@ int _interpret_run(vm_config_t config, const char* source, int argc, const char*
     }
     
     // run the vm
-    result = l_run(argc, argv);
+    result = l_run();
 
     //clean up
     l_free_vm();
@@ -189,14 +189,14 @@ int _interpret_run(vm_config_t config, const char* source, int argc, const char*
     return 0;
 }
 
-int l_run_file(int argc, const char* argv[]) {
-    if (argc < 2) {
+int l_run_file(vm_config_t *config) {
+    if (config->args.argc < 2) {
         fprintf(stderr, "Usage: sox [path] [optional: --serialise]\n");
         return 64;
     }
-    const char* path = argv[1];
+    const char* path = config->args.argv[1];
 
-    if (path == NULL || (strcmp(path, "--serialise") == 0)) {
+    if (path == NULL) {
         fprintf(stderr, "Usage: sox [path] [optional: --serialise]\n");
         return 64;
     }
@@ -208,45 +208,26 @@ int l_run_file(int argc, const char* argv[]) {
         return 74;
     }
 
-    // check if serialisation has been enabled
-    bool serialise = false;
-    bool suppress_print = false;
-    
-    if (argc > 2) {
-        for (int i = 2; i < argc; i++) {
-            if (strcmp(argv[i], "--serialise") == 0) {
-                serialise = true;
-            }
-            if (strcmp(argv[i], "--suppress-print") == 0) {
-                suppress_print = true;
-            }
-        }
-    }
-
     if ( source == NULL )
         return 74;
 
-    vm_config_t config = {
-        .suppress_print = suppress_print
-    };
-
-    if (config.suppress_print) {
+    if (config->suppress_print) {
         l_print_enable_suppress();
     }
     
     InterpretResult result;
 
-    if (serialise == false) {
-        result = _interpret_run(config, source, argc, argv);
+    if (config->enable_serialisation == false) {
+        result = _interpret_run(config, source);
 
     } else {
         char filename_bytecode[256];
         sprintf(&filename_bytecode[0], "%s.sbc", path);
         
         if (l_file_exists(&filename_bytecode[0])) {
-            result = _deserialise_bytecode(config, path, source, argc, argv);
+            result = _deserialise_bytecode(config, path, source);
         } else {
-            result = _interpret_serialise_bytecode(config, path, source, argc, argv);
+            result = _interpret_serialise_bytecode(config, path, source);
         }
         
     }

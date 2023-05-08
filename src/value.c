@@ -15,7 +15,7 @@ void l_init_value_array(value_array_t* array) {
 
 void l_write_value_array(value_array_t* array, value_t value) {
     if (array->capacity < array->count + 1) {
-        int oldCapacity = array->capacity;
+        size_t oldCapacity = array->capacity;
         array->capacity = GROW_CAPACITY(oldCapacity);
         array->values = GROW_ARRAY(value_t, array->values, oldCapacity, array->capacity);
     }
@@ -27,7 +27,7 @@ void l_write_value_array(value_array_t* array, value_t value) {
 void l_write_value_array_front(value_array_t* array, value_t value) {
     // expand the capacity of the array if needed
     if (array->capacity < array->count + 1) {
-        int oldCapacity = array->capacity;
+        size_t oldCapacity = array->capacity;
         array->capacity = GROW_CAPACITY(oldCapacity);
         array->values = GROW_ARRAY(value_t, array->values, oldCapacity, array->capacity);
     }

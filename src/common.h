@@ -16,7 +16,7 @@
 // #define LINK_DEBUGGING 1
 // #define DEBUG_LOG_ALLOC 1
 
-// #define SERIALISE_DEBUG 1
+#define SERIALISE_DEBUG 1
 
 #define UINT8_COUNT (UINT8_MAX + 1)
 
