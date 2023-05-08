@@ -1015,12 +1015,12 @@ static MunitResult _serialise_vm(const MunitParameter params[], void *user_data)
 }
 
 // run each of the test scripts through serialisation and execute the deserialised VM
-static MunitResult _serialise_run_files(const MunitParameter params[], void *user_data)
+static MunitResult _serialise_run_files(const MunitParameter params[], void *fixture)
 {
-	(void)user_data;
-	
-    int count = 0;
-    char filename_bytecode[256];
+	int count = 0;
+
+    // get the filename of the bytecode file, if we need it
+    char * filename_bytecode = (char *)fixture;
 
     char* filename = params[0].value;
 
@@ -1058,13 +1058,6 @@ static MunitResult _serialise_run_files(const MunitParameter params[], void *use
 
     munit_assert_int(status, == , 0);
 
-    // cleanup written file
-    sprintf(&filename_bytecode[0], "%s.sbc", filename);
-    if ( l_file_exists(&filename_bytecode[0]) ) {
-        bool result = l_file_delete(&filename_bytecode[0]);
-        munit_assert_true(result);
-    }
-
     if (output != NULL) {
         char* expected = l_read_file(&filename_capture[0]);
 
@@ -1091,10 +1084,47 @@ static MunitResult _serialise_run_files(const MunitParameter params[], void *use
 	return MUNIT_OK;
 }
 
+static void * _serialise_run_files_setup(const MunitParameter params[], void * user_data) {
+
+    char* filename = params[0].value;
+    char filename_bytecode[256];
+
+    // cleanup serialisation file first
+    sprintf(&filename_bytecode[0], "%s.sbc", filename);
+    if ( l_file_exists(&filename_bytecode[0]) ) {
+        bool result = l_file_delete(&filename_bytecode[0]);
+        munit_assert_true(result);
+    }
+
+    // allocate a temporary char * for the serialisation filename and return it
+    char * filename_serialise = malloc(256);
+    sprintf(filename_serialise, "%s.sbc", filename);
+
+    return filename_serialise;
+}
+
+static void _serialise_run_files_tear_down(void * fixture) {
+
+    char * filename_bytecode = (char *)fixture;
+    
+    if (filename_bytecode != NULL) {
+
+        // cleanup serialisation file
+        if ( l_file_exists(&filename_bytecode[0]) ) {
+            bool result = l_file_delete(&filename_bytecode[0]);
+            munit_assert_true(result);
+        }
+        free(filename_bytecode);
+    } else {
+        munit_log(MUNIT_LOG_WARNING , "filename_bytecode is NULL");
+    }
+}
+
 MunitSuite l_serialise_test_setup() {
 
     static char* files[] = {
         "src/test/scripts/argtest.sox",
+        "src/test/scripts/array.sox",
         "src/test/scripts/classes.sox",
         "src/test/scripts/closure.sox",
         "src/test/scripts/control.sox",
@@ -1273,8 +1303,8 @@ MunitSuite l_serialise_test_setup() {
         {
             .name = (char *)"serialise_run_files",
             .test = _serialise_run_files,
-            .setup = NULL, 
-            .tear_down = NULL, 
+            .setup = _serialise_run_files_setup, 
+            .tear_down = _serialise_run_files_tear_down, 
             .options = MUNIT_TEST_OPTION_NONE,
             .parameters = params,
         },

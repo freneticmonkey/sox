@@ -174,7 +174,7 @@ obj_array_t* l_copy_array(obj_array_t* array, int start, int end) {
         return NULL;
     }
     
-    obj_array_t* copy_array = ALLOCATE_OBJ(obj_array_t, OBJ_ARRAY);
+    obj_array_t* copy_array = l_new_array();
     
     // setup the array size
     int size = (end - start) + 1;
