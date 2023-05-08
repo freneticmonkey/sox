@@ -24,9 +24,12 @@ vm_args_t l_parse_args(int argc, const char *argv[]) {
         // copy the args into the result
         for (int i = 0; i < argc; i++) {
             // memcpy the each arg string
-            result.argv[i] = ALLOCATE(char, sizeof(argv[i]));
-            size_t length = strlen(argv[i]) * sizeof(char);
-            memccpy(result.argv[i], argv[i], 0, length);
+            size_t length = strlen(argv[i]);
+            result.argv[i] = ALLOCATE(char, length+1);
+            memset(result.argv[i], 0, length+1);
+
+            size_t bytes = length * sizeof(char);
+            memccpy(result.argv[i], argv[i], 0, bytes);
         }
     }
 

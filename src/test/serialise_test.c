@@ -1019,101 +1019,103 @@ static MunitResult _serialise_run_files(const MunitParameter params[], void *use
 {
 	(void)user_data;
 	
-    static char* files[] = {
-        "src/test/scripts/argtest.sox\0",
-        "src/test/scripts/classes.sox\0",
-        "src/test/scripts/closure.sox\0",
-        "src/test/scripts/control.sox\0",
-        "src/test/scripts/defer.sox\0",
-        "src/test/scripts/funcs.sox\0",
-        "src/test/scripts/globals.sox\0",
-        "src/test/scripts/hello.sox\0",
-        "src/test/scripts/loops.sox\0",
-        "src/test/scripts/main.sox\0",
-        "src/test/scripts/optional_semi.sox\0",
-        "src/test/scripts/super.sox\0",
-        "src/test/scripts/switch.sox\0",
-        "src/test/scripts/syscall.sox\0",
-        "src/test/scripts/table.sox\0",
-        NULL,
-    };
-
     int count = 0;
     char filename_bytecode[256];
-        
-    while (files[count] != NULL)
-    {
-        char* filename = &files[count][0];
 
-        char* output = NULL;
+    char* filename = params[0].value;
 
-        // if an output capture file exists, then read it and enable output capture
-        char filename_capture[256];
-        sprintf(&filename_capture[0], "%s.out", filename);
+    char* output = NULL;
 
-        if (l_file_exists(&filename_capture[0])) {
-            output = l_print_enable_capture();
-        }
+    // if an output capture file exists, then read it and enable output capture
+    char filename_capture[256];
+    sprintf(&filename_capture[0], "%s.out", filename);
 
-        munit_logf(MUNIT_LOG_WARNING , "running script: %s", filename);
-        
-        vm_args_t args = l_parse_args(
-                2, 
-                (const char *[]){
-                    "sox",
-                    filename,
-                }
-            );
-
-        vm_config_t config = {
-            .enable_serialisation = true,
-            .suppress_print = false,
-            .args = args,
-        };
-        int status = l_run_file(
-            &config
-        );
-
-
-        if (status != 0) {
-            munit_logf(MUNIT_LOG_WARNING , "failed to run script: %s", filename);
-        }
-
-        munit_assert_int(status, == , 0);
-
-        // cleanup written file
-        sprintf(&filename_bytecode[0], "%s.sbc", filename);
-        if ( l_file_exists(&filename_bytecode[0]) ) {
-            bool result = l_file_delete(&filename_bytecode[0]);
-            munit_assert_true(result);
-        }
-
-        if (output != NULL) {
-            char* expected = l_read_file(&filename_capture[0]);
-
-            size_t output_hash = l_hash_string(output, strlen(output));
-            size_t expected_hash = l_hash_string(expected, strlen(expected));
-
-            if (output_hash != expected_hash) {
-                munit_logf(MUNIT_LOG_WARNING , "file: %s", filename);
-                munit_logf(MUNIT_LOG_WARNING , "output: [%s] expected: [%s]", output, expected);
-            }
-            
-            munit_assert_llong(strlen(output), ==, strlen(expected));
-
-            munit_assert_llong(output_hash, == , expected_hash);
-            munit_assert_string_equal(output, expected);
-
-            free(expected);
-            free(output);       
-        }  
-        
-        count++;
+    if (l_file_exists(&filename_capture[0])) {
+        output = l_print_enable_capture();
     }
+
+    munit_logf(MUNIT_LOG_WARNING , "running script: %s", filename);
+    
+    vm_config_t config = {
+        .enable_serialisation = true,
+        .suppress_print = true,
+        .args = l_parse_args(
+            2, 
+            (const char *[]){
+                "sox",
+                filename,
+            }
+        )
+    };
+    int status = l_run_file(
+        &config
+    );
+
+
+    if (status != 0) {
+        munit_logf(MUNIT_LOG_WARNING , "failed to run script: %s", filename);
+    }
+
+    munit_assert_int(status, == , 0);
+
+    // cleanup written file
+    sprintf(&filename_bytecode[0], "%s.sbc", filename);
+    if ( l_file_exists(&filename_bytecode[0]) ) {
+        bool result = l_file_delete(&filename_bytecode[0]);
+        munit_assert_true(result);
+    }
+
+    if (output != NULL) {
+        char* expected = l_read_file(&filename_capture[0]);
+
+        size_t output_hash = l_hash_string(output, strlen(output));
+        size_t expected_hash = l_hash_string(expected, strlen(expected));
+
+        if (output_hash != expected_hash) {
+            munit_logf(MUNIT_LOG_WARNING , "file: %s", filename);
+            munit_logf(MUNIT_LOG_WARNING , "output: [%s] expected: [%s]", output, expected);
+        }
+        
+        munit_assert_llong(strlen(output), ==, strlen(expected));
+
+        munit_assert_llong(output_hash, == , expected_hash);
+        munit_assert_string_equal(output, expected);
+
+        free(expected);
+        free(output);       
+    }  
+    
+    count++;
+        
+
 	return MUNIT_OK;
 }
 
 MunitSuite l_serialise_test_setup() {
+
+    static char* files[] = {
+        "src/test/scripts/argtest.sox",
+        "src/test/scripts/classes.sox",
+        "src/test/scripts/closure.sox",
+        "src/test/scripts/control.sox",
+        "src/test/scripts/defer.sox",
+        "src/test/scripts/funcs.sox",
+        "src/test/scripts/globals.sox",
+        "src/test/scripts/hello.sox",
+        "src/test/scripts/loops.sox",
+        "src/test/scripts/main.sox",
+        "src/test/scripts/optional_semi.sox",
+        "src/test/scripts/super.sox",
+        "src/test/scripts/switch.sox",
+        "src/test/scripts/syscall.sox",
+        "src/test/scripts/table.sox",
+        NULL,
+    };
+
+    static MunitParameterEnum params[] = {
+        {"files", files},
+        NULL,
+    };
 
     static MunitTest serialisation_suite_tests[] = {
         {
@@ -1274,7 +1276,7 @@ MunitSuite l_serialise_test_setup() {
             .setup = NULL, 
             .tear_down = NULL, 
             .options = MUNIT_TEST_OPTION_NONE,
-            .parameters = NULL
+            .parameters = params,
         },
 
         // END

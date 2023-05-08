@@ -611,7 +611,8 @@ InterpretResult l_run() {
                 strlen(vm.config->args.argv[i])
             )
         ));
-        l_push_array(AS_ARRAY(_peek(1)), l_pop());
+        obj_array_t *arr = AS_ARRAY(_peek(1));
+        l_push_array(arr, l_pop());
     }
 
     // pop the new array into the argv global

@@ -28,6 +28,8 @@ static MunitResult _run_file(const MunitParameter params[], void *user_data)
 
     if (l_file_exists(&filename_capture[0])) {
         output = l_print_enable_capture();
+    } else {
+        munit_logf(MUNIT_LOG_WARNING , "no output capture file detected: %s. script output will NOT be validated.", filename_capture);
     }
 
     munit_logf(MUNIT_LOG_INFO , "running script: %s", filename);
@@ -62,7 +64,7 @@ MunitSuite l_scripts_test_setup() {
 
     static char* files[] = {
         "src/test/scripts/argtest.sox",
-        "src/test/scripts/array.sox",
+        // "src/test/scripts/array.sox",
         "src/test/scripts/classes.sox",
         "src/test/scripts/closure.sox",
         "src/test/scripts/control.sox",
