@@ -1,6 +1,7 @@
-#include "vm_config.h"
-
 #include <string.h>
+#include <stdlib.h>
+
+#include "vm_config.h"
 
 #include "lib/memory.h"
 
@@ -20,12 +21,12 @@ vm_args_t l_parse_args(int argc, const char *argv[]) {
 
     // if there are arguments to parse
     if ( argc > 0 ) {
-
         // copy the args into the result
         for (int i = 0; i < argc; i++) {
             // memcpy the each arg string
             size_t length = strlen(argv[i]);
-            result.argv[i] = ALLOCATE(char, length+1);
+            
+            result.argv[i] = malloc(sizeof(char) * length+1);
             memset(result.argv[i], 0, length+1);
 
             size_t bytes = length * sizeof(char);
@@ -39,7 +40,7 @@ vm_args_t l_parse_args(int argc, const char *argv[]) {
 void l_free_args(vm_args_t *args) {
     if ( args->argc > 0 ) {
         for (int i = 0; i < args->argc; i++) {
-            FREE(char, args->argv[i]);
+            free(args->argv[i]);
         }
     }
 }

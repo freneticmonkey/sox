@@ -9,22 +9,22 @@
 // 
 
 #define ALLOCATE(type, count) \
-    (type*)reallocate(NULL, 0, sizeof(type) * (count))
+    (type*)reallocate(NULL, 0, sizeof(type) * (count), __FILE__, __LINE__)
 
 
-#define FREE(type, pointer) reallocate(pointer, sizeof(type), 0)
+#define FREE(type, pointer) reallocate(pointer, sizeof(type), 0, __FILE__, __LINE__)
 
 #define GROW_CAPACITY(capacity) \
     ((capacity) < 8 ? 8 : (capacity) * 2)
 
 #define GROW_ARRAY(type, pointer, oldCount, newCount) \
     (type*)reallocate(pointer, sizeof(type) * (oldCount), \
-        sizeof(type) * (newCount))
+        sizeof(type) * (newCount), __FILE__, __LINE__)
 
 #define FREE_ARRAY(type, pointer, oldCount) \
-    reallocate(pointer, sizeof(type) * (oldCount), 0)
+    reallocate(pointer, sizeof(type) * (oldCount), 0, __FILE__, __LINE__)
 
-void* reallocate(void* pointer, size_t oldSize, size_t newSize);
+void* reallocate(void* pointer, size_t oldSize, size_t newSize, const char * filename, int line);
 
 size_t l_calculate_capacity_with_size(size_t current_capacity, size_t new_size);
 

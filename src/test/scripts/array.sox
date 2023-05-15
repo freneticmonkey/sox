@@ -18,6 +18,8 @@ print(array)
 var array_values[] = {0,1,2}
 print(array_values) // [0,1,2]
 
+print(len(array_values))
+
 print(array_values[0:])  // [0,1,2]
 print(array_values[0:1]) // [0,1]
 print(array_values[:1])  // [0,1]

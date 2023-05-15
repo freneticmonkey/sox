@@ -4,9 +4,131 @@
 #include "lib/memory.h"
 // #include "vm.h"
 
-#ifdef DEBUG_LOG_GC
+// allow separately controlled debug allocation tracking
+#if defined(DEBUG_LOG_ALLOC)
+    #define DEBUG_ALLOCATIONS 1
+#endif
+
+#if defined(DEBUG_LOG_GC)
 #include <stdio.h>
 #include "debug.h"
+#endif
+
+#if defined(DEBUG_LOG_ALLOC)
+
+#if defined(DEBUG_ALLOCATIONS)
+typedef struct alloc_t alloc_t;
+typedef struct alloc_t {
+    void       *address;
+    size_t      size;
+    const char *file;
+    int         line;
+    alloc_t    *next;
+    bool        freed;
+} alloc_t;
+
+// Create a new allocation record
+static alloc_t *_alloc_record(alloc_t *head, size_t size, void *address, const char *file, int line) {
+    alloc_t *alloc = malloc(sizeof(alloc_t));
+    alloc->size = size;
+    alloc->address = address;
+    alloc->file = file;
+    alloc->line = line;
+    alloc->next = head;
+    alloc->freed = false;
+    
+    return alloc;
+}
+
+// clean up allocation records linked list
+static void _alloc_free_records(alloc_t *head) {
+    alloc_t *alloc = head;
+    while (alloc != NULL) {
+        alloc_t *next = alloc->next;
+        free(alloc);
+        alloc = next;
+    }
+}
+
+// mark allocation record as freed
+static alloc_t *_alloc_mark_freed(alloc_t *head, void *address) {
+    alloc_t *alloc = head;
+    while (alloc != NULL) {
+        if (alloc->address == address) {
+            // if already freed, display error
+            if (alloc->freed) {
+                printf("ERROR: Double free of %p in %s:%d\n", alloc->address, alloc->file, alloc->line);
+                return head;
+            }
+            alloc->freed = true;
+            return alloc;
+        }
+        alloc = alloc->next;
+    }
+    return NULL;
+}
+
+// clean up specific allocation record
+static alloc_t *_alloc_free(alloc_t *head, void *address) {
+    alloc_t *alloc = head;
+    alloc_t *prev = NULL;
+    while (alloc != NULL) {
+        if (alloc->address == address) {
+            if (prev == NULL) {
+                head = alloc->next;
+            } else {
+                prev->next = alloc->next;
+            }
+            free(alloc);
+            return head;
+        }
+        prev = alloc;
+        alloc = alloc->next;
+    }
+    return head;
+}
+
+// find allocation for size
+static alloc_t *_alloc_find_size(alloc_t *head, size_t size) {
+    alloc_t *alloc = head;
+    while (alloc != NULL) {
+        if (alloc->size == size) {
+            return alloc;
+        }
+        alloc = alloc->next;
+    }
+    return NULL;
+}
+
+// print allocation record
+static void _alloc_print(alloc_t *alloc) {
+    printf("Allocated %zu bytes at %p in %s:%d\n", alloc->size, alloc->address, alloc->file, alloc->line);
+}
+
+// print allocation records linked list
+static void _alloc_print_records(alloc_t *head) {
+    alloc_t *alloc = head;
+    printf("Allocation Tracking\n");
+    printf("-------------------\n");
+    while (alloc != NULL) {
+        _alloc_print(alloc);
+        alloc = alloc->next;
+    }
+    printf("-------------------\n");
+}
+
+// find allocation record for address
+static alloc_t *_alloc_find(alloc_t *head, void *address) {
+    alloc_t *alloc = head;
+    while (alloc != NULL) {
+        if (alloc->address == address) {
+            return alloc;
+        }
+        alloc = alloc->next;
+    }
+    return NULL;
+}
+#endif
 #endif
 
 #define GC_HEAP_GROW_FACTOR 2
@@ -69,6 +191,9 @@ typedef struct mem_track {
     native_lookup_t native_lookup;
     object_lookup_t object_lookup;
     string_lookup_t string_lookup;
+#if defined(DEBUG_ALLOCATIONS)
+    alloc_t *allocations;
+#endif
 } mem_track_t;
 
 typedef struct {
@@ -107,19 +232,21 @@ size_t l_calculate_capacity_with_size(size_t current_capacity, size_t new_size) 
     return new_capacity;
 }
 
-void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
+void* reallocate(void* pointer, size_t oldSize, size_t newSize, const char * filename, int line) {
 
     // deallocating
     size_t alloc_size = newSize - oldSize;
-#ifdef DEBUG_LOG_GC
+#if defined(DEBUG_LOG_GC)
     size_t vm_bytes = _mem.bytes_allocated;
 #endif
     size_t dealloc_readable = (SIZE_MAX - alloc_size + 1);
     if ( (newSize < oldSize) && ( dealloc_readable > _mem.bytes_allocated ) ) {
         
-        printf("detected untracked vm memory. vm bytes: %zu. dealloc bytes: %zu\n", 
+        printf("detected untracked vm memory. vm alloc bytes: %zu. dealloc bytes: %zu location: (%s:%d)\n", 
                 _mem.bytes_allocated, 
-                dealloc_readable
+                dealloc_readable,
+                filename,
+                line
         );
         printf("internal tracking. alloc bytes: %zu. dealloc bytes: %zu vm max alloc: %zu\n", 
                 _internal_alloc, 
@@ -152,7 +279,7 @@ void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
     _mem.bytes_allocated += alloc_size;
 
     if (newSize > oldSize) {
-#ifdef DEBUG_STRESS_GC
+#if defined(DEBUG_STRESS_GC)
         l_collect_garbage();
 #endif
     }
@@ -161,9 +288,22 @@ void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
         l_collect_garbage();
     }
 
+#if defined(DEBUG_LOG_GC)
+    if (newSize != 0 && oldSize != 0) {
+        printf("internal tracking. %p %s: %zu alloc bytes: %zu. dealloc bytes: %zu vm alloc: %zu\n", 
+                pointer,
+                "REALLOC SIZE CHANGE <<",
+                dealloc_readable,
+                _internal_alloc, 
+                _internal_dealloc,
+                _mem.bytes_allocated
+            );
+    }
+#endif
+
     if (newSize == 0) {
 
-#ifdef DEBUG_LOG_GC
+#if defined(DEBUG_LOG_GC)
     if (pointer == NULL) {
         printf("[free] <(nil)            vm bytes: %zu->%zu.\t dealloc bytes:-%zu\n",
                 vm_bytes,
@@ -183,14 +323,42 @@ void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
 #endif
 
 #if defined(DEBUG_LOG_ALLOC)
-    printf("internal tracking. %p %s: %zu alloc bytes: %zu. dealloc bytes: %zu vm alloc: %zu\n", 
-                pointer,
-                "DEALLOC <<",
-                dealloc_readable,
-                _internal_alloc, 
-                _internal_dealloc,
-                _mem.bytes_allocated
-            );
+
+#if defined(DEBUG_ALLOCATIONS)
+    alloc_t *alloc = _alloc_find(_mem.track.allocations, pointer);
+
+    if ( alloc != NULL ) {
+        printf("internal tracking. %p %s: %zu alloc bytes: %zu. dealloc bytes: %zu vm alloc: %zu original location: (%s:%d)\n", 
+                    pointer,
+                    "DEALLOC <<",
+                    dealloc_readable,
+                    _internal_alloc, 
+                    _internal_dealloc,
+                    _mem.bytes_allocated,
+                    alloc->file,
+                    alloc->line
+                );
+    } else {
+#endif
+        printf("internal tracking. %p %s: %zu alloc bytes: %zu. dealloc bytes: %zu vm alloc: %zu location: (%s:%d)\n", 
+                    pointer,
+                    "DEALLOC <<",
+                    dealloc_readable,
+                    _internal_alloc, 
+                    _internal_dealloc,
+                    _mem.bytes_allocated,
+                    filename,
+                    line
+                );
+    
+#if defined(DEBUG_ALLOCATIONS)
+    }
+
+    
+    // record the deallocation into the tracking system
+    _alloc_mark_freed(_mem.track.allocations, pointer);
+#endif
+
 #endif
 
         free(pointer);
@@ -200,27 +368,31 @@ void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
     void* result = realloc(pointer, newSize);
 
 #if defined(DEBUG_LOG_ALLOC)
-    printf("internal tracking. %p %s: %zu alloc bytes: %zu. dealloc bytes: %zu vm alloc: %zu\n", 
+    printf("internal tracking. %p %s: %zu alloc bytes: %zu. dealloc bytes: %zu vm alloc: %zu location: (%s:%d)\n", 
                 result,
                 "  ALLOC >>",
                 alloc_size,
                 _internal_alloc, 
                 _internal_dealloc,
-                _mem.bytes_allocated
+                _mem.bytes_allocated,
+                filename,
+                line
             );
-    if (alloc_size == 40 && 
-        _internal_alloc == 64179 &&
-        _internal_dealloc == 49805 &&
-        _mem.bytes_allocated == 543
-        ) {
-            printf("alloc break\n");
-        }
+#if defined(DEBUG_ALLOCATIONS)
+    // record the allocation into the tracking system
+    alloc_t * alloc = _alloc_record(_mem.track.allocations, newSize, result, filename, line );
+
+    if (alloc != NULL) {
+        _mem.track.allocations = alloc;
+    }
+#endif
 #endif
 
-    if (result == NULL)
+    if (result == NULL) {
         exit(1);
+    }
 
-#ifdef DEBUG_LOG_GC
+#if defined(DEBUG_LOG_GC)
     printf("[new]  >%p\t vm bytes: %zu->%zu.\t alloc bytes: %zu\n",
             result,
             vm_bytes,
@@ -265,7 +437,10 @@ void l_init_memory() {
                 .items = NULL,
                 .count = 0,
                 .capacity = 0
-            },
+            }
+#if defined(DEBUG_ALLOCATIONS)
+            , .allocations = NULL,
+#endif
         },
     };
 
@@ -289,6 +464,16 @@ void l_free_memory() {
     free(_mem.roots_cb);
 
     _free_objects();
+
+#if defined(DEBUG_LOG_ALLOC)
+
+#if defined(DEBUG_ALLOCATIONS)
+    if (_mem.track.allocations != NULL) {
+        _alloc_free_records(_mem.track.allocations);
+    }
+#endif
+
+#endif
 
     _mem = (mem_t) {
         .bytes_allocated = 0,
@@ -325,7 +510,10 @@ void l_free_memory() {
                 .items = NULL,
                 .count = 0,
                 .capacity = 0
-            },
+            }
+#if defined(DEBUG_ALLOCATIONS)
+            , .allocations = NULL,
+#endif
         },
     };
 
@@ -339,7 +527,7 @@ void l_mark_object(obj_t* object) {
     if (object->is_marked) 
         return;
     
-#ifdef DEBUG_LOG_GC
+#if defined(DEBUG_LOG_GC)
     printf("%p mark ", (void*)object);
     l_print_value(OBJ_VAL(object));
     printf("\n");
@@ -374,7 +562,7 @@ static void _blacken_object(obj_t* object) {
         return;
     }
 
-#ifdef DEBUG_LOG_GC
+#if defined(DEBUG_LOG_GC)
     printf("%p blacken ", (void*)object);
     l_print_value(OBJ_VAL(object));
     printf("\n");
@@ -456,7 +644,7 @@ void _free_object(obj_t* object) {
         return;
     }
 
-#ifdef DEBUG_LOG_GC
+#if defined(DEBUG_LOG_GC)
 
     size_t free_size = 0;
 
@@ -660,7 +848,7 @@ static void _sweep() {
 
 
 void  l_collect_garbage() {
-#ifdef DEBUG_LOG_GC
+#if defined(DEBUG_LOG_GC)
     printf("-- gc begin\n");
     size_t before = _mem.bytes_allocated;
 #endif
@@ -675,7 +863,7 @@ void  l_collect_garbage() {
 
     _mem.next_gc = _mem.bytes_allocated * GC_HEAP_GROW_FACTOR;
 
-#ifdef DEBUG_LOG_GC
+#if defined(DEBUG_LOG_GC)
     printf("-- gc end\n");
     printf("   collected %zu bytes (from %zu to %zu) next at %zu\n",
          before - _mem.bytes_allocated, before, _mem.bytes_allocated,

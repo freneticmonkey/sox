@@ -31,16 +31,16 @@ variation of the implementation of the sox interpreter as described on http://cr
 - [x] Switch statements
 - [x] impl break
 - [x] impl continue
-- [ ] argc / argv parameters to main
+- [x] argc / argv parameters to main
 - [ ] unit test functions
     - [ ] assert keyword + functionality
     - [ ] benchmark option
 - [ ] native container implementations
     - [x] table
-    - [ ] list / slice
+    - [x] list / slice
     - [ ] helper functions
-        - [ ] append
-        - [/] len
+        - [x] pop/push
+        - [x] len
         - [ ] range -> for in range
 - [ ] for-in container iteration
 - [ ] run scripts from repl

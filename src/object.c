@@ -12,7 +12,7 @@
     (type*)_allocate_object(sizeof(type), objectType)
 
 static obj_t* _allocate_object(size_t size, ObjType type) {
-    obj_t* object = (obj_t*)reallocate(NULL, 0, size);
+    obj_t* object = (obj_t*)reallocate(NULL, 0, size, __FILE__, __LINE__);
     object->type = type;
     object->is_marked = false;
     l_add_object(object);
@@ -54,7 +54,7 @@ obj_closure_t* l_new_closure(obj_function_t* function) {
     closure->function = function;
     closure->upvalues = upvalues;
     closure->upvalue_count = function->upvalue_count;
-
+    
     return closure;
 }
 

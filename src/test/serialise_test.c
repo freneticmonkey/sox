@@ -1097,7 +1097,7 @@ static void * _serialise_run_files_setup(const MunitParameter params[], void * u
     }
 
     // allocate a temporary char * for the serialisation filename and return it
-    char * filename_serialise = malloc(256);
+    char * filename_serialise = malloc(sizeof(char) * 256);
     sprintf(filename_serialise, "%s.sbc", filename);
 
     return filename_serialise;
