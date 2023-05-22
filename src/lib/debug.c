@@ -160,6 +160,15 @@ int l_disassemble_instruction(chunk_t* chunk, int offset) {
         case OP_ARRAY_RANGE:
             return _byte_instruction("OP_ARRAY_RANGE", chunk, offset);
 
+        
+        // ITERATORS
+        case OP_TEST_ITERATOR:
+            return _simple_instruction("OP_TEST_ITERATOR", offset);
+        case OP_GET_ITERATOR:
+            return _simple_instruction("OP_GET_ITERATOR", offset);
+        case OP_NEXT_ITERATOR:
+            return _simple_instruction("OP_NEXT_ITERATOR", offset);
+
         // NO_OP codes that the VM shouldn't ever see
         case OP_BREAK:
             printf("OP_BREAK: Compiler Error. The VM should never see this\n");

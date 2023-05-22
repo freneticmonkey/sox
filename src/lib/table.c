@@ -132,6 +132,52 @@ void l_table_add_all(table_t* from, table_t* to) {
     }
 }
 
+// iterator implementations
+
+iterator_next_t _table_it_next(container *data, iterator_next_t last) {
+    table_t *table = (table_t *)data;
+    if (table->count == 0) {
+        return l_iterator_next_null();
+    }
+
+    // find the next entry
+    entry_t *entry = NULL;
+    int found = 0;
+    for (found = last.next_index; found < table->capacity; found++) {
+        entry = &table->entries[found];
+        if (entry->key != NULL) {
+            break;
+        }
+    }
+
+    // if we didn't find an entry, return NULL
+    if (entry == NULL)
+        return l_iterator_next_null();
+
+    // otherwise, return the next entry
+    return (iterator_next_t){
+        .type = ITERATOR_NEXT_TYPE_KEY,
+        .key = entry->key,
+        .value = &entry->value,
+        .index = found,
+        .next_index = found+1
+    };
+}
+
+int _table_it_count(container *data) {
+    table_t *table = (table_t *)data;
+    return table->count;
+}
+
+void l_table_get_iterator(table_t * table, iterator_t *it) {
+    l_init_iterator(
+        it, 
+        table,
+        _table_it_next, 
+        _table_it_count
+    );
+}
+
 obj_string_t* l_table_find_string(table_t* table, const char* chars, size_t length, uint32_t hash) {
     if (table->count == 0) 
         return NULL;

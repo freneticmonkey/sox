@@ -3,6 +3,7 @@
 
 #include "common.h"
 #include "chunk.h"
+#include "lib/iterator.h"
 #include "lib/table.h"
 #include "value.h"
 
@@ -16,8 +17,9 @@
 #define IS_NATIVE(value)       l_is_obj_type(value, OBJ_NATIVE)
 #define IS_STRING(value)       l_is_obj_type(value, OBJ_STRING)
 #define IS_TABLE(value)        l_is_obj_type(value, OBJ_TABLE)
-#define IS_ERROR(value)        l_is_obj_type(value, OBJ_ERROR)
 #define IS_ARRAY(value)        l_is_obj_type(value, OBJ_ARRAY)
+#define IS_ITERATOR(value)     l_is_obj_type(value, OBJ_ITERATOR)
+#define IS_ERROR(value)        l_is_obj_type(value, OBJ_ERROR)
 
 #define AS_BOUND_METHOD(value) ((obj_bound_method_t*)AS_OBJ(value))
 #define AS_CLASS(value)        ((obj_class_t*)AS_OBJ(value))
@@ -28,8 +30,9 @@
 #define AS_STRING(value)       ((obj_string_t*)AS_OBJ(value))
 #define AS_CSTRING(value)      (((obj_string_t*)AS_OBJ(value))->chars)
 #define AS_TABLE(value)        ((obj_table_t*)AS_OBJ(value))
-#define AS_ERROR(value)        ((obj_error_t*)AS_OBJ(value))
 #define AS_ARRAY(value)        ((obj_array_t*)AS_OBJ(value))
+#define AS_ITERATOR(value)     ((obj_iterator_t*)AS_OBJ(value))
+#define AS_ERROR(value)        ((obj_error_t*)AS_OBJ(value))
 
 typedef enum {
     OBJ_BOUND_METHOD,
@@ -42,6 +45,7 @@ typedef enum {
     OBJ_UPVALUE,
     OBJ_TABLE,
     OBJ_ARRAY,
+    OBJ_ITERATOR,
     OBJ_ERROR,
 } ObjType;
 
@@ -55,7 +59,8 @@ static char* obj_type_to_string[] = {
     "String",
     "Upvalue",
     "Table",
-    "Array"
+    "Array",
+    "Iterator",
     "Error"
 };
 
@@ -98,6 +103,13 @@ typedef struct obj_array_t {
     int     end;
     value_array_t values;
 } obj_array_t;
+
+typedef struct obj_iterator_t {
+    obj_t obj;
+    int index;
+    int value;
+    iterator_t it;
+} obj_iterator_t;
 
 typedef struct obj_error_t obj_error_t;
 typedef struct obj_error_t {
@@ -160,6 +172,10 @@ obj_array_t*        l_copy_array(obj_array_t* array, int start, int end);
 obj_array_t*        l_push_array(obj_array_t* array, value_t value);
 obj_array_t*        l_push_array_front(obj_array_t* array, value_t value);
 value_t             l_pop_array(obj_array_t* array);
+
+obj_iterator_t*     l_get_iterator(value_t value);
+obj_iterator_t*     l_get_iterator_array(obj_array_t* array);
+obj_iterator_t*     l_get_iterator_table(obj_table_t* table);
 
 void l_print_object(value_t value);
 

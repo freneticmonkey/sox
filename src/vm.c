@@ -542,7 +542,75 @@ static InterpretResult _run() {
                 l_push(OBJ_VAL(l_copy_array(array, start_index, end_index)));
                 break;
             }
+            case OP_GET_ITERATOR: {
+                value_t container = _peek(0);
 
+                if ( !IS_ARRAY(container) && !IS_TABLE(container)) {
+                    l_vm_runtime_error("Get Iterator expects a container.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                // read the iterator local slot
+                int iter = READ_BYTE();
+                // read the index and value local slots
+                int index = READ_BYTE();
+                int value = READ_BYTE();
+
+                obj_iterator_t *it = l_get_iterator(container);
+
+                // push the iterator into the local
+                frame->slots[iter] = OBJ_VAL(it);
+
+                // set the index and value locals
+                frame->slots[index] = NUMBER_VAL(l_iterator_index(&it->it));
+                frame->slots[value] = *l_iterator_value(&it->it);
+                break;
+            }
+            case OP_TEST_ITERATOR: {
+                // read the iterator local slot
+                int iter = READ_BYTE();
+
+                // get the iterator local
+                value_t iterator = frame->slots[iter];
+
+                if (!IS_ITERATOR(iterator)) {
+                    l_vm_runtime_error("Index Iterator expects an iterator.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                obj_iterator_t *it = AS_ITERATOR(iterator);
+
+                // read the index and value locals
+                l_push(NUMBER_VAL(l_iterator_index(&it->it)));
+                l_push(NUMBER_VAL(l_iterator_count(&it->it)));
+                BINARY_OP(BOOL_VAL, <);
+                break;
+            }
+            case OP_NEXT_ITERATOR: {
+                // read the iterator local slot
+                int iter = READ_BYTE();
+
+                // get the iterator local
+                value_t iterator = frame->slots[iter];
+
+                if (!IS_ITERATOR(iterator)) {
+                    l_vm_runtime_error("Index Iterator expects an iterator.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                obj_iterator_t *it = AS_ITERATOR(iterator);
+
+                // increment the iterator
+                iterator_next_t next = l_iterator_next(&it->it);
+
+                // Update the local index and value variables
+                if (l_iterator_has_next(next)) {
+                    frame->slots[it->index] = NUMBER_VAL(l_iterator_index(&it->it));
+                    frame->slots[it->value] = *l_iterator_value(&it->it);
+                }
+                
+                break;
+            }
             // NO-OP Codes
             case OP_BREAK: {
                 l_vm_runtime_error("Compiler Error. Break op-code shouldn't be used in the VM.");

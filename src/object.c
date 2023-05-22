@@ -210,6 +210,60 @@ value_t l_pop_array(obj_array_t* array) {
     return value;
 }
 
+// iterator functions
+
+// get next array value
+iterator_next_t _array_it_next(container *data, iterator_next_t last) {
+    obj_array_t* array = (obj_array_t*)data;
+    if (array->values.count == 0) {
+        return l_iterator_next_null();
+    }
+
+    int index = last.next_index;
+    if (index >= array->values.count) {
+        return l_iterator_next_null();
+    }
+
+    return (iterator_next_t){ 
+        .type = ITERATOR_NEXT_TYPE_INDEX,
+        .value = &array->values.values[index],
+        .index = index,
+        .next_index = index + 1,
+    };
+}
+
+// get array count
+int _array_it_count(container *data) {
+    obj_array_t* array = (obj_array_t*)data;
+    return (int)array->values.count;
+}
+
+obj_iterator_t* l_get_iterator(value_t value) {
+    switch (OBJ_TYPE(value)) {
+        case OBJ_ARRAY: return l_get_iterator_array(AS_ARRAY(value));
+        case OBJ_TABLE: return l_get_iterator_table(AS_TABLE(value));
+        default: return NULL;
+    }
+}
+
+obj_iterator_t * l_get_iterator_array(obj_array_t* array) {
+    obj_iterator_t * it = ALLOCATE_OBJ(obj_iterator_t, OBJ_ITERATOR);
+    l_init_iterator(
+        &it->it,
+        array, 
+        _array_it_next,
+        _array_it_count
+    );
+    return it;
+}
+
+obj_iterator_t * l_get_iterator_table(obj_table_t* table) {
+    obj_iterator_t * it = ALLOCATE_OBJ(obj_iterator_t, OBJ_ITERATOR);
+    l_table_get_iterator(&table->table, &it->it);
+    return it;
+}
+
+
 void _print_array(obj_array_t* array) {
     value_t *values = array->values.values;
 
@@ -302,5 +356,13 @@ void l_print_object(value_t value) {
         case OBJ_ARRAY:
             _print_array(AS_ARRAY(value));
             break;
+        case OBJ_ITERATOR: {
+            obj_iterator_t * it = AS_ITERATOR(value);
+            l_printf("<iterator>");
+            // l_printf("<iterator(%d:",l_iterator_index(&it->it));
+            // l_print_value(*l_iterator_value(&it->it));
+            // l_printf(")>");
+            break;
+        }
     }
 }

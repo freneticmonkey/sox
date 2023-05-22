@@ -1,0 +1,14 @@
+
+var array_values[] = {0,1,2}
+
+foreach var i, val in array_values {
+    print(value)
+}
+
+//for var val in array_values {
+//print(val)
+//}
+//
+//for var i, val in array_values {
+//print(i + ": " + val)
+//}
