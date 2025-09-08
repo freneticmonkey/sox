@@ -56,7 +56,12 @@ int main(int argc, const char* argv[]) {
                 BRANCH,
                 BUILD_TIME
             );
-            fprintf(stderr, "Usage: sox [path]\n");
+            fprintf(stderr, "Usage: sox [path] [options]\n");
+            fprintf(stderr, "Options:\n");
+            fprintf(stderr, "  --serialise     Enable bytecode serialization\n");
+            fprintf(stderr, "  --suppress-print Suppress print output (for testing)\n");
+            fprintf(stderr, "  --wasm          Generate WebAssembly binary (.wasm)\n");
+            fprintf(stderr, "  --wat           Generate WebAssembly text (.wat)\n");
             exit(64);
         }
 

@@ -49,6 +49,8 @@ vm_config_t l_default_vmconfig() {
     return (vm_config_t){
         .enable_serialisation = false,
         .suppress_print = false,
+        .enable_wasm_output = false,
+        .enable_wat_output = false,
         .args = l_default_args(),
     };
 }
@@ -57,6 +59,8 @@ void l_init_vmconfig(vm_config_t *config, int argc, const char *argv[]) {
     
     config->enable_serialisation = false;
     config->suppress_print = false;
+    config->enable_wasm_output = false;
+    config->enable_wat_output = false;
     config->args = l_parse_args(argc, argv);
 
     // check the args for flags
@@ -73,6 +77,12 @@ void l_init_vmconfig(vm_config_t *config, int argc, const char *argv[]) {
         }
         if (strcmp(config->args.argv[i], "--suppress-print") == 0) {
             config->suppress_print = true;
+        }
+        if (strcmp(config->args.argv[i], "--wasm") == 0) {
+            config->enable_wasm_output = true;
+        }
+        if (strcmp(config->args.argv[i], "--wat") == 0) {
+            config->enable_wat_output = true;
         }
     }
 }
