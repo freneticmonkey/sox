@@ -49,6 +49,8 @@ variation of the implementation of the sox interpreter as described on http://cr
 - [ ] multi-line comment blocks
 - [ ] load multiple scripts / modules
 - [x] Bytecode scripts
+- [x] WebAssembly (WASM) bytecode generation
+- [x] WebAssembly Text (WAT) format generation
 
 ## Advanced language features
 - [ ] interfaces
