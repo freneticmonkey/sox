@@ -164,6 +164,54 @@ static WatErrorCode _wat_generate_instruction(wat_generator_t* generator, chunk_
         case OP_FALSE:
             _wat_append(generator, "    f64.const 0.0\n");
             break;
+        case OP_POP:
+            _wat_append(generator, "    drop\n");
+            break;
+        case OP_GET_LOCAL:
+            (*ip)++;
+            _wat_append(generator, "    local.get ");
+            _wat_append_int(generator, chunk->code[*ip]);
+            _wat_append(generator, "\n");
+            break;
+        case OP_SET_LOCAL:
+            (*ip)++;
+            _wat_append(generator, "    local.set ");
+            _wat_append_int(generator, chunk->code[*ip]);
+            _wat_append(generator, "\n");
+            break;
+        case OP_GET_GLOBAL:
+            (*ip)++;
+            _wat_append(generator, "    global.get $g");
+            _wat_append_int(generator, chunk->code[*ip]);
+            _wat_append(generator, "\n");
+            break;
+        case OP_SET_GLOBAL:
+            (*ip)++;
+            _wat_append(generator, "    global.set $g");
+            _wat_append_int(generator, chunk->code[*ip]);
+            _wat_append(generator, "\n");
+            break;
+        case OP_GET_UPVALUE:
+            (*ip)++;
+            _wat_append(generator, "    ;; upvalue ");
+            _wat_append_int(generator, chunk->code[*ip]);
+            _wat_append(generator, " (not yet implemented)\n");
+            break;
+        case OP_SET_UPVALUE:
+            (*ip)++;
+            _wat_append(generator, "    ;; set upvalue ");
+            _wat_append_int(generator, chunk->code[*ip]);
+            _wat_append(generator, " (not yet implemented)\n");
+            break;
+        case OP_EQUAL:
+            _wat_append(generator, "    f64.eq\n");
+            break;
+        case OP_GREATER:
+            _wat_append(generator, "    f64.gt\n");
+            break;
+        case OP_LESS:
+            _wat_append(generator, "    f64.lt\n");
+            break;
         case OP_ADD:
             _wat_append(generator, "    f64.add\n");
             break;
@@ -179,14 +227,71 @@ static WatErrorCode _wat_generate_instruction(wat_generator_t* generator, chunk_
         case OP_NEGATE:
             _wat_append(generator, "    f64.neg\n");
             break;
+        case OP_NOT:
+            _wat_append(generator, "    i32.eqz\n");
+            break;
         case OP_PRINT:
             _wat_append(generator, "    call $print_f64\n");
             break;
-        case OP_POP:
-            _wat_append(generator, "    drop\n");
+        case OP_JUMP:
+            (*ip)++;
+            _wat_append(generator, "    ;; jump target ");
+            _wat_append_int(generator, (chunk->code[*ip] << 8) | chunk->code[*ip + 1]);
+            _wat_append(generator, " (not yet implemented)\n");
+            (*ip)++;
+            break;
+        case OP_JUMP_IF_FALSE:
+            (*ip)++;
+            _wat_append(generator, "    ;; conditional jump target ");
+            _wat_append_int(generator, (chunk->code[*ip] << 8) | chunk->code[*ip + 1]);
+            _wat_append(generator, " (not yet implemented)\n");
+            (*ip)++;
+            break;
+        case OP_LOOP:
+            (*ip)++;
+            _wat_append(generator, "    ;; loop target ");
+            _wat_append_int(generator, (chunk->code[*ip] << 8) | chunk->code[*ip + 1]);
+            _wat_append(generator, " (not yet implemented)\n");
+            (*ip)++;
+            break;
+        case OP_CALL:
+            (*ip)++;
+            _wat_append(generator, "    ;; call function ");
+            _wat_append_int(generator, chunk->code[*ip]);
+            _wat_append(generator, " (not yet implemented)\n");
+            break;
+        case OP_INVOKE:
+            (*ip)++;
+            _wat_append(generator, "    ;; invoke method (not yet implemented)\n");
+            break;
+        case OP_SUPER_INVOKE:
+            (*ip)++;
+            _wat_append(generator, "    ;; super invoke (not yet implemented)\n");
+            break;
+        case OP_CLOSURE:
+            (*ip)++;
+            _wat_append(generator, "    ;; closure (not yet implemented)\n");
+            break;
+        case OP_CLOSE_UPVALUE:
+            _wat_append(generator, "    ;; close upvalue (not yet implemented)\n");
+            break;
+        case OP_ARRAY_EMPTY:
+            _wat_append(generator, "    ;; empty array (not yet implemented)\n");
+            break;
+        case OP_ARRAY_PUSH:
+            _wat_append(generator, "    ;; array push (not yet implemented)\n");
+            break;
+        case OP_ARRAY_RANGE:
+            (*ip)++;
+            _wat_append(generator, "    ;; array range (not yet implemented)\n");
             break;
         case OP_RETURN:
             _wat_append(generator, "    return\n");
+            break;
+        case OP_BREAK:
+        case OP_CONTINUE:
+        case OP_CASE_FALLTHROUGH:
+            _wat_append(generator, "    ;; no-op\n");
             break;
         default:
             generator->error = WAT_ERROR_UNSUPPORTED_OPCODE;
