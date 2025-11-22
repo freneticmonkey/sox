@@ -31,47 +31,66 @@ const char * l_wat_get_error_string(WatErrorCode error) {
 static void _wat_append(wat_generator_t* generator, const char* text) {
     size_t text_len = strlen(text);
     size_t needed_capacity = generator->buffer_size + text_len + 1;
-    
+
     if (needed_capacity > generator->buffer_capacity) {
         generator->buffer_capacity = needed_capacity * 2;
         generator->output_buffer = (char*)realloc(generator->output_buffer, generator->buffer_capacity);
     }
-    
-    strcat(generator->output_buffer + generator->buffer_size, text);
+
+    // Use memcpy instead of strcat for safety - buffer may not be null-terminated at offset
+    memcpy(generator->output_buffer + generator->buffer_size, text, text_len);
     generator->buffer_size += text_len;
+    // Ensure null termination for file write
+    generator->output_buffer[generator->buffer_size] = '\0';
 }
 
 static void _wat_append_int(wat_generator_t* generator, int value) {
     char buffer[32];
-    sprintf(buffer, "%d", value);
+    snprintf(buffer, sizeof(buffer), "%d", value);
     _wat_append(generator, buffer);
 }
 
 static void _wat_append_double(wat_generator_t* generator, double value) {
     char buffer[64];
-    sprintf(buffer, "%.6f", value);
+    snprintf(buffer, sizeof(buffer), "%.6f", value);
     _wat_append(generator, buffer);
 }
 
 wat_generator_t * l_wat_new(const char * filename_source) {
     wat_generator_t* generator = (wat_generator_t*)malloc(sizeof(wat_generator_t));
-    
+
     // Create WAT filename from source filename
     size_t source_len = strlen(filename_source);
     generator->filename_source = (char*)malloc(source_len + 1);
+    if (generator->filename_source == NULL) {
+        free(generator);
+        return NULL;
+    }
     strcpy(generator->filename_source, filename_source);
-    
-    generator->filename_wat = (char*)malloc(source_len + 5); // +4 for ".wat" +1 for null terminator
-    strcpy(generator->filename_wat, filename_source);
-    strcat(generator->filename_wat, ".wat");
-    
+
+    // Use snprintf to prevent buffer overflow when creating .wat filename
+    size_t wat_filename_size = source_len + 5; // +4 for ".wat" +1 for null terminator
+    generator->filename_wat = (char*)malloc(wat_filename_size);
+    if (generator->filename_wat == NULL) {
+        free(generator->filename_source);
+        free(generator);
+        return NULL;
+    }
+    snprintf(generator->filename_wat, wat_filename_size, "%s.wat", filename_source);
+
     // Initialize output buffer
     generator->buffer_capacity = 1024;
     generator->output_buffer = (char*)malloc(generator->buffer_capacity);
+    if (generator->output_buffer == NULL) {
+        free(generator->filename_source);
+        free(generator->filename_wat);
+        free(generator);
+        return NULL;
+    }
     generator->output_buffer[0] = '\0';
     generator->buffer_size = 0;
     generator->error = WAT_OK;
-    
+
     return generator;
 }
 
@@ -86,14 +105,14 @@ void l_wat_del(wat_generator_t* generator) {
 
 static WatErrorCode _wat_generate_module_header(wat_generator_t* generator) {
     _wat_append(generator, "(module\n");
-    
+
     // Import print function from host environment
     _wat_append(generator, "  (import \"env\" \"print_f64\" (func $print_f64 (param f64)))\n");
     _wat_append(generator, "  (import \"env\" \"print_str\" (func $print_str (param i32 i32)))\n");
-    
+
     // Define memory for string storage
     _wat_append(generator, "  (memory (export \"memory\") 1)\n");
-    
+
     return WAT_OK;
 }
 
@@ -122,13 +141,13 @@ static WatErrorCode _wat_generate_value(wat_generator_t* generator, value_t valu
         generator->error = WAT_ERROR_INVALID_VALUE_TYPE;
         return WAT_ERROR_INVALID_VALUE_TYPE;
     }
-    
+
     return WAT_OK;
 }
 
 static WatErrorCode _wat_generate_instruction(wat_generator_t* generator, chunk_t* chunk, int* ip) {
     uint8_t instruction = chunk->code[*ip];
-    
+
     switch (instruction) {
         case OP_CONSTANT: {
             (*ip)++;
@@ -145,6 +164,54 @@ static WatErrorCode _wat_generate_instruction(wat_generator_t* generator, chunk_
         case OP_FALSE:
             _wat_append(generator, "    f64.const 0.0\n");
             break;
+        case OP_POP:
+            _wat_append(generator, "    drop\n");
+            break;
+        case OP_GET_LOCAL:
+            (*ip)++;
+            _wat_append(generator, "    local.get ");
+            _wat_append_int(generator, chunk->code[*ip]);
+            _wat_append(generator, "\n");
+            break;
+        case OP_SET_LOCAL:
+            (*ip)++;
+            _wat_append(generator, "    local.set ");
+            _wat_append_int(generator, chunk->code[*ip]);
+            _wat_append(generator, "\n");
+            break;
+        case OP_GET_GLOBAL:
+            (*ip)++;
+            _wat_append(generator, "    global.get $g");
+            _wat_append_int(generator, chunk->code[*ip]);
+            _wat_append(generator, "\n");
+            break;
+        case OP_SET_GLOBAL:
+            (*ip)++;
+            _wat_append(generator, "    global.set $g");
+            _wat_append_int(generator, chunk->code[*ip]);
+            _wat_append(generator, "\n");
+            break;
+        case OP_GET_UPVALUE:
+            (*ip)++;
+            _wat_append(generator, "    ;; upvalue ");
+            _wat_append_int(generator, chunk->code[*ip]);
+            _wat_append(generator, " (not yet implemented)\n");
+            break;
+        case OP_SET_UPVALUE:
+            (*ip)++;
+            _wat_append(generator, "    ;; set upvalue ");
+            _wat_append_int(generator, chunk->code[*ip]);
+            _wat_append(generator, " (not yet implemented)\n");
+            break;
+        case OP_EQUAL:
+            _wat_append(generator, "    f64.eq\n");
+            break;
+        case OP_GREATER:
+            _wat_append(generator, "    f64.gt\n");
+            break;
+        case OP_LESS:
+            _wat_append(generator, "    f64.lt\n");
+            break;
         case OP_ADD:
             _wat_append(generator, "    f64.add\n");
             break;
@@ -160,47 +227,104 @@ static WatErrorCode _wat_generate_instruction(wat_generator_t* generator, chunk_
         case OP_NEGATE:
             _wat_append(generator, "    f64.neg\n");
             break;
+        case OP_NOT:
+            _wat_append(generator, "    i32.eqz\n");
+            break;
         case OP_PRINT:
             _wat_append(generator, "    call $print_f64\n");
             break;
-        case OP_POP:
-            _wat_append(generator, "    drop\n");
+        case OP_JUMP:
+            (*ip)++;
+            _wat_append(generator, "    ;; jump target ");
+            _wat_append_int(generator, (chunk->code[*ip] << 8) | chunk->code[*ip + 1]);
+            _wat_append(generator, " (not yet implemented)\n");
+            (*ip)++;
+            break;
+        case OP_JUMP_IF_FALSE:
+            (*ip)++;
+            _wat_append(generator, "    ;; conditional jump target ");
+            _wat_append_int(generator, (chunk->code[*ip] << 8) | chunk->code[*ip + 1]);
+            _wat_append(generator, " (not yet implemented)\n");
+            (*ip)++;
+            break;
+        case OP_LOOP:
+            (*ip)++;
+            _wat_append(generator, "    ;; loop target ");
+            _wat_append_int(generator, (chunk->code[*ip] << 8) | chunk->code[*ip + 1]);
+            _wat_append(generator, " (not yet implemented)\n");
+            (*ip)++;
+            break;
+        case OP_CALL:
+            (*ip)++;
+            _wat_append(generator, "    ;; call function ");
+            _wat_append_int(generator, chunk->code[*ip]);
+            _wat_append(generator, " (not yet implemented)\n");
+            break;
+        case OP_INVOKE:
+            (*ip)++;
+            _wat_append(generator, "    ;; invoke method (not yet implemented)\n");
+            break;
+        case OP_SUPER_INVOKE:
+            (*ip)++;
+            _wat_append(generator, "    ;; super invoke (not yet implemented)\n");
+            break;
+        case OP_CLOSURE:
+            (*ip)++;
+            _wat_append(generator, "    ;; closure (not yet implemented)\n");
+            break;
+        case OP_CLOSE_UPVALUE:
+            _wat_append(generator, "    ;; close upvalue (not yet implemented)\n");
+            break;
+        case OP_ARRAY_EMPTY:
+            _wat_append(generator, "    ;; empty array (not yet implemented)\n");
+            break;
+        case OP_ARRAY_PUSH:
+            _wat_append(generator, "    ;; array push (not yet implemented)\n");
+            break;
+        case OP_ARRAY_RANGE:
+            (*ip)++;
+            _wat_append(generator, "    ;; array range (not yet implemented)\n");
             break;
         case OP_RETURN:
             _wat_append(generator, "    return\n");
+            break;
+        case OP_BREAK:
+        case OP_CONTINUE:
+        case OP_CASE_FALLTHROUGH:
+            _wat_append(generator, "    ;; no-op\n");
             break;
         default:
             generator->error = WAT_ERROR_UNSUPPORTED_OPCODE;
             return WAT_ERROR_UNSUPPORTED_OPCODE;
     }
-    
+
     return WAT_OK;
 }
 
 WatErrorCode l_wat_generate_from_function(wat_generator_t* generator, obj_function_t* function) {
     WatErrorCode result;
-    
+
     // Generate module header
     result = _wat_generate_module_header(generator);
     if (result != WAT_OK) return result;
-    
+
     // Start main function
     _wat_append(generator, "  (func (export \"main\")\n");
-    
+
     // Generate instructions
     chunk_t* chunk = &function->chunk;
     int ip = 0;
-    
+
     while (ip < chunk->count) {
         result = _wat_generate_instruction(generator, chunk, &ip);
         if (result != WAT_OK) return result;
         ip++;
     }
-    
+
     // End function and module
     _wat_append(generator, "  )\n");
     _wat_append(generator, ")\n");
-    
+
     return WAT_OK;
 }
 
@@ -210,14 +334,15 @@ WatErrorCode l_wat_write_to_file(wat_generator_t* generator) {
         generator->error = WAT_ERROR_FILE_NOT_OPEN;
         return WAT_ERROR_FILE_NOT_OPEN;
     }
-    
+
+    // Write buffer contents (already null-terminated)
     size_t written = fwrite(generator->output_buffer, 1, generator->buffer_size, file);
     fclose(file);
-    
+
     if (written != generator->buffer_size) {
         generator->error = WAT_ERROR_FILE_NOT_WRITTEN;
         return WAT_ERROR_FILE_NOT_WRITTEN;
     }
-    
+
     return WAT_OK;
 }

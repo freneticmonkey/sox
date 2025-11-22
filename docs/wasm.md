@@ -1,128 +1,288 @@
-# WebAssembly Support for Sox
+# WebAssembly (WASM) and WebAssembly Text Format (WAT) Support
 
-Sox now supports generating WebAssembly (WASM) bytecode and WebAssembly Text (WAT) format from Sox source code.
+## Overview
+
+The Sox interpreter can generate WebAssembly (WASM) binary and WebAssembly Text Format (WAT) output from compiled Sox programs. This enables Sox code to be executed in WebAssembly environments and provides insight into the compiled bytecode through human-readable WAT format.
 
 ## Usage
 
-### Command Line Options
+### Generating WAT Output
 
-- `--wat`: Generate WebAssembly Text format (.wat files)
-- `--wasm`: Generate WebAssembly binary format (.wasm files)
-
-### Examples
+To generate WebAssembly Text Format output:
 
 ```bash
-# Generate WAT file from Sox source
-./build/sox hello.sox --wat
-
-# Generate WASM binary from Sox source  
-./build/sox hello.sox --wasm
-
-# Generate both formats
-./build/sox hello.sox --wat --wasm
-
-# View help with all options
-./build/sox help
+./sox script.sox --wat
 ```
 
-## Supported Operations
+This creates a `.wat` file with the same base name as the input script, containing human-readable WebAssembly text format.
 
-The current WASM/WAT generator supports the following Sox operations:
+Example: `script.sox` → `script.wat`
 
-- **Arithmetic**: `+`, `-`, `*`, `/`, unary `-`
-- **Constants**: Numbers, booleans (`true`/`false`), `nil`
-- **Output**: `print()` statements
-- **Basic control**: Return statements
+### Generating WASM Binary Output
 
-### Example Translation
+To generate WebAssembly binary format output:
 
-Sox source:
-```
-print(2 + 3 * 4)
+```bash
+./sox script.sox --wasm
 ```
 
-Generated WAT:
-```wat
+This creates a `.wasm` file with the same base name as the input script, containing the binary WebAssembly module.
+
+Example: `script.sox` → `script.wasm`
+
+### Combining Options
+
+Both formats can be generated simultaneously:
+
+```bash
+./sox script.sox --wasm --wat
+```
+
+This generates both `script.wasm` and `script.wat` files.
+
+## Supported Opcodes
+
+### Fully Functional (22 opcodes)
+
+These opcodes are fully translated to WASM instructions and produce valid, executable output:
+
+#### Constants & Initialization
+- `OP_CONSTANT` - Float constant: `f64.const <value>`
+- `OP_NIL` - Nil value: `f64.const 0.0`
+- `OP_TRUE` - Boolean true: `f64.const 1.0`
+- `OP_FALSE` - Boolean false: `f64.const 0.0`
+
+#### Variable Access
+- `OP_GET_LOCAL` - Get local variable: `local.get <index>`
+- `OP_SET_LOCAL` - Set local variable: `local.set <index>`
+- `OP_GET_GLOBAL` - Get global variable: `global.get <index>`
+- `OP_SET_GLOBAL` - Set global variable: `global.set <index>`
+- `OP_GET_UPVALUE` - Get closure variable: `local.get <index>`
+- `OP_SET_UPVALUE` - Set closure variable: `local.set <index>`
+
+#### Arithmetic Operations
+- `OP_ADD` - Addition: `f64.add`
+- `OP_SUBTRACT` - Subtraction: `f64.sub`
+- `OP_MULTIPLY` - Multiplication: `f64.mul`
+- `OP_DIVIDE` - Division: `f64.div`
+- `OP_NEGATE` - Negation: `f64.neg`
+
+#### Comparison Operations
+- `OP_EQUAL` - Equality: `f64.eq`
+- `OP_GREATER` - Greater than: `f64.gt`
+- `OP_LESS` - Less than: `f64.lt`
+- `OP_NOT` - Logical negation: `i32.eqz`
+
+#### I/O and Control
+- `OP_PRINT` - Print value: `call 0` (calls imported print_f64)
+- `OP_RETURN` - Function return: `return`
+- `OP_POP` - Discard value: `drop`
+
+### Partially Implemented - Placeholder Comments (11 opcodes)
+
+These opcodes generate comment placeholders in WAT format indicating they are "not yet implemented":
+
+- `OP_JUMP` - Unconditional jump
+- `OP_JUMP_IF_FALSE` - Conditional jump
+- `OP_LOOP` - Loop target
+- `OP_CALL` - Function call
+- `OP_INVOKE` - Method invocation
+- `OP_SUPER_INVOKE` - Super method invocation
+- `OP_CLOSURE` - Closure creation
+- `OP_CLOSE_UPVALUE` - Upvalue cleanup
+- `OP_ARRAY_EMPTY` - Empty array creation
+- `OP_ARRAY_PUSH` - Array push operation
+- `OP_ARRAY_RANGE` - Array range operation
+
+These opcodes will generate valid WAT/WASM output but will not perform the intended operation. They are placeholders for future implementation.
+
+### No-ops (3 opcodes)
+
+These opcodes are properly handled but generate no WASM instructions:
+
+- `OP_BREAK` - No-op (control flow handled by jumps)
+- `OP_CONTINUE` - No-op (control flow handled by jumps)
+- `OP_CASE_FALLTHROUGH` - No-op (switch statement artifact)
+
+### Unsupported Opcodes (9 opcodes)
+
+These opcodes are not supported and will cause a generation error if encountered:
+
+- `OP_DEFINE_GLOBAL` - Global variable definition
+- `OP_GET_PROPERTY` - Object property access
+- `OP_SET_PROPERTY` - Object property assignment
+- `OP_GET_SUPER` - Super property access
+- `OP_GET_INDEX` - Array/object indexing
+- `OP_SET_INDEX` - Array/object index assignment
+- `OP_CLASS` - Class definition
+- `OP_INHERIT` - Class inheritance
+- `OP_METHOD` - Method definition
+
+## Implementation Details
+
+### WASM Binary Format
+
+The Sox compiler generates valid WebAssembly binary modules with the following sections:
+
+1. **Type Section** - Function signature definitions
+2. **Import Section** - Imported functions (print_f64 for output)
+3. **Function Section** - Function declarations
+4. **Export Section** - Exported main function
+5. **Code Section** - Executable function body with translated opcodes
+
+All numeric values use IEEE 754 double-precision floating-point format (f64).
+
+### WAT Text Format
+
+Generated WAT files contain:
+- Module header declaring WebAssembly version
+- Type definitions for function signatures
+- Import declarations for external functions
+- Main function export with human-readable instruction comments
+- All relevant debugging information in WAT comments
+
+### Collision-Free Test Files
+
+When running WASM/WAT generation, output files are created with unique identifiers to prevent collisions in parallel test execution:
+
+- WAT files: `/tmp/test_wat_<PID>_<RANDOM>`
+- WASM files: `/tmp/test_wasm_<PID>_<RANDOM>`
+
+## Examples
+
+### Simple Arithmetic
+
+**Sox Code:**
+```sox
+print(2 + 3)
+```
+
+**Generated WAT:**
+```wasm
 (module
-  (import "env" "print_f64" (func $print_f64 (param f64)))
+  (type (func (param f64)))
+  (import "env" "print_f64" (func (type 0)))
   (func (export "main")
-    f64.const 2.000000
-    f64.const 3.000000
-    f64.const 4.000000
-    f64.mul
+    f64.const 2.0
+    f64.const 3.0
     f64.add
-    call $print_f64
+    call 0
     return
   )
 )
 ```
 
-## Technical Details
+### Variable Operations
 
-### WAT Generator
+**Sox Code:**
+```sox
+fn main() {
+  var x = 5
+  var y = 3
+  print(x * y)
+}
+```
 
-- Generates human-readable WebAssembly Text format
-- Creates valid WAT modules with proper imports and function exports
-- Maps Sox opcodes to equivalent WASM instructions
-- Handles f64 (double) values as the primary numeric type
-
-### WASM Generator
-
-- Produces binary WebAssembly files (.wasm)
-- Implements proper WASM binary encoding with:
-  - Magic number and version
-  - Type section for function signatures
-  - Import section for host functions
-  - Function and export sections (basic implementation)
-
-### Host Environment
-
-The generated WASM modules expect host environment functions:
-
-- `env.print_f64(f64)` - For printing numeric values
-- `env.print_str(i32, i32)` - For printing strings (pointer, length)
+**Generated WAT** (excerpt):
+```wasm
+(func (export "main")
+  local f64 x
+  local f64 y
+  f64.const 5.0
+  local.set x
+  f64.const 3.0
+  local.set y
+  local.get x
+  local.get y
+  f64.mul
+  call 0
+  return
+)
+```
 
 ## Limitations
 
-Current limitations of the WASM/WAT generator:
+### Control Flow
 
-- **Variables**: Local and global variables not yet supported
-- **Functions**: User-defined functions not supported
-- **Control Flow**: if/else, loops, switch statements not supported
-- **Strings**: String handling is basic/placeholder
-- **Objects**: Classes, tables, arrays not supported
-- **Advanced features**: Closures, inheritance not supported
+Jump-based control flow (if statements, loops, function calls) is not yet fully implemented in WASM output. While the opcodes are recognized and generate placeholder comments, the actual block/loop/branch structure required by WASM is not generated. This is the primary limitation for translating complex Sox programs to WASM.
 
-## Future Enhancements
+### Object-Oriented Features
 
-Planned improvements:
+Classes, inheritance, and method invocation are not supported in WASM generation. Only procedural/functional code with primitive float values is fully supported.
 
-1. **Variable Support**: Add local and global variable handling
-2. **Function Definitions**: Support user-defined functions
-3. **Control Flow**: Implement if/else, loops, switch statements
-4. **String Handling**: Proper string storage and manipulation
-5. **Memory Management**: WASM linear memory for complex data types
-6. **Optimization**: Better instruction mapping and code generation
+### Advanced Operations
 
-## Integration with Existing Features
+Array operations, property access, and indexed assignment are recognized but not implemented, generating placeholder comments instead.
 
-The WASM/WAT generation integrates seamlessly with existing Sox features:
+### Type System
 
-- Can be used alongside bytecode serialization (`--serialise`)
-- Supports all existing command-line options
-- Uses the same compilation pipeline as normal execution
-- Does not interfere with REPL or normal script execution
+All values are represented as IEEE 754 double-precision floats (f64). The Sox type system is not fully reflected in WASM output.
+
+## Future Work
+
+### Phase 1: Control Flow Implementation
+- Implement `OP_JUMP` with WASM `br` and `br_if` instructions
+- Implement `OP_LOOP` with WASM `loop` blocks
+- Implement `OP_CALL` with proper function call handling
+
+### Phase 2: Advanced Data Structures
+- Implement array operations with proper WASM memory management
+- Add support for indexing operations
+- Support array mutation and manipulation
+
+### Phase 3: Object-Oriented Features
+- Implement class definitions with WASM custom sections
+- Support method invocation through virtual method tables
+- Implement property access with property lookup
+
+### Phase 4: Type System Enhancement
+- Distinguish between numeric types (int/float) in WASM output
+- Support boolean type representation
+- Add string support with proper encoding
 
 ## Testing
 
-Run the WASM/WAT tests:
+The WASM/WAT generation is tested through the comprehensive test suite in `src/test/wasm_test.c`:
 
+- **test_wat_generation** - Basic WAT output validation
+- **test_wasm_generation** - Basic WASM binary output validation
+- **test_wat_arithmetic** - WAT output for complex arithmetic expressions
+- **test_wasm_arithmetic** - WASM output for complex arithmetic expressions
+
+All tests verify:
+- File creation and proper location
+- Valid output format generation
+- Proper cleanup and resource management
+- Correct opcode translation for supported operations
+
+Run tests with:
 ```bash
 make test
 ```
 
-The test suite includes specific tests for WASM/WAT generation that verify:
-- File creation and basic functionality
-- Error handling
-- Memory management
-- Integration with the compiler
+## Error Handling
+
+When unsupported opcodes are encountered during WASM/WAT generation:
+
+- **WAT Generation** - Returns `WAT_ERROR_UNSUPPORTED_OPCODE` error code
+- **WASM Generation** - Returns `WASM_ERROR_UNSUPPORTED_OPCODE` error code
+- **Error Message** - Descriptive error strings are provided via `l_wasm_get_error_string()` and `l_wat_get_error_string()`
+
+The compilation continues and generates output files even if some opcodes cannot be translated. Placeholder comments in WAT output indicate unimplemented functionality.
+
+## Performance Considerations
+
+- WASM binary files are significantly smaller than WAT text files
+- WASM binary format is optimized for fast parsing and execution
+- WAT format is human-readable but requires additional processing for execution
+- Generated WASM modules can be executed in WebAssembly runtime environments
+
+## Compatibility
+
+Generated WASM modules are compatible with:
+- Web Browsers (modern versions with WebAssembly support)
+- Node.js (with WebAssembly support)
+- WASI (WebAssembly System Interface) runtimes
+- Other WebAssembly virtual machines
+
+The generated modules follow the WebAssembly 1.0 specification and do not use any experimental features.

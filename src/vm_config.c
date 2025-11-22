@@ -56,7 +56,7 @@ vm_config_t l_default_vmconfig() {
 }
 
 void l_init_vmconfig(vm_config_t *config, int argc, const char *argv[]) {
-    
+
     config->enable_serialisation = false;
     config->suppress_print = false;
     config->enable_wasm_output = false;

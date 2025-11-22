@@ -1,5 +1,5 @@
-#ifndef WASM_TEST_H
-#define WASM_TEST_H
+#ifndef SOX_WASM_TEST_H
+#define SOX_WASM_TEST_H
 
 #include "munit/munit.h"
 
