@@ -196,6 +196,164 @@ static WasmErrorCode _wasm_generate_import_section(wasm_generator_t* generator) 
     return _wasm_encode_leb128_at(generator, size_pos, content_size);
 }
 
+static WasmErrorCode _wasm_generate_function_section(wasm_generator_t* generator) {
+    // Function section ID
+    _wasm_append_byte(generator, 0x03);
+
+    // Section size placeholder
+    size_t size_pos = generator->buffer_size;
+    _wasm_append_leb128_u32(generator, 0); // Placeholder, will be updated
+    size_t content_start = generator->buffer_size;
+
+    // Number of function declarations (1 = main function)
+    _wasm_append_leb128_u32(generator, 1);
+
+    // Function 0: main() uses type 1 (no params, no returns)
+    _wasm_append_leb128_u32(generator, 1); // type index
+
+    // Update section size
+    size_t content_size = generator->buffer_size - content_start;
+    return _wasm_encode_leb128_at(generator, size_pos, content_size);
+}
+
+static WasmErrorCode _wasm_generate_export_section(wasm_generator_t* generator) {
+    // Export section ID
+    _wasm_append_byte(generator, 0x07);
+
+    // Section size placeholder
+    size_t size_pos = generator->buffer_size;
+    _wasm_append_leb128_u32(generator, 0); // Placeholder, will be updated
+    size_t content_start = generator->buffer_size;
+
+    // Number of exports
+    _wasm_append_leb128_u32(generator, 1);
+
+    // Export: "main" function
+    _wasm_append_leb128_u32(generator, 4); // name length
+    _wasm_append_bytes(generator, (const uint8_t*)"main", 4);
+    _wasm_append_byte(generator, 0x00); // export kind: function
+    _wasm_append_leb128_u32(generator, 1); // function index (1 = our main, 0 is imported print_f64)
+
+    // Update section size
+    size_t content_size = generator->buffer_size - content_start;
+    return _wasm_encode_leb128_at(generator, size_pos, content_size);
+}
+
+static WasmErrorCode _wasm_generate_code_section(wasm_generator_t* generator, obj_function_t* function) {
+    // Code section ID
+    _wasm_append_byte(generator, 0x0A);
+
+    // Section size placeholder
+    size_t size_pos = generator->buffer_size;
+    _wasm_append_leb128_u32(generator, 0); // Placeholder, will be updated
+    size_t content_start = generator->buffer_size;
+
+    // Number of function bodies (1 = main)
+    _wasm_append_leb128_u32(generator, 1);
+
+    // First pass: generate code to calculate size
+    size_t temp_pos = generator->buffer_size;
+
+    // Temp buffer to collect function body
+    uint8_t temp_body[4096];
+    size_t temp_body_size = 0;
+
+    // Manually build function body
+    // Local variables count (0 for now - we don't use locals)
+    temp_body[temp_body_size++] = 0x00; // 0 local variable groups
+
+    // Generate instructions from bytecode
+    chunk_t* chunk = &function->chunk;
+    int ip = 0;
+
+    while (ip < chunk->count && temp_body_size < sizeof(temp_body)) {
+        uint8_t instruction = chunk->code[ip];
+
+        switch (instruction) {
+            case OP_CONSTANT: {
+                ip++;
+                uint8_t constant_index = chunk->code[ip];
+                value_t constant = chunk->constants.values[constant_index];
+
+                if (IS_NUMBER(constant)) {
+                    temp_body[temp_body_size++] = 0x44; // f64.const
+                    union { double d; uint8_t bytes[8]; } u;
+                    u.d = AS_NUMBER(constant);
+                    for (int i = 0; i < 8; i++) {
+                        temp_body[temp_body_size++] = u.bytes[i];
+                    }
+                } else if (IS_BOOL(constant)) {
+                    temp_body[temp_body_size++] = 0x44; // f64.const
+                    union { double d; uint8_t bytes[8]; } u;
+                    u.d = AS_BOOL(constant) ? 1.0 : 0.0;
+                    for (int i = 0; i < 8; i++) {
+                        temp_body[temp_body_size++] = u.bytes[i];
+                    }
+                } else if (IS_NIL(constant)) {
+                    temp_body[temp_body_size++] = 0x44; // f64.const
+                    union { double d; uint8_t bytes[8]; } u;
+                    u.d = 0.0;
+                    for (int i = 0; i < 8; i++) {
+                        temp_body[temp_body_size++] = u.bytes[i];
+                    }
+                }
+                break;
+            }
+            case OP_NIL:
+                temp_body[temp_body_size++] = 0x44;
+                for (int i = 0; i < 8; i++) temp_body[temp_body_size++] = (i == 0) ? 0 : 0;
+                break;
+            case OP_TRUE:
+                temp_body[temp_body_size++] = 0x44;
+                for (int i = 0; i < 8; i++) temp_body[temp_body_size++] = (i == 0) ? 0xF0 : 0x3F;
+                break;
+            case OP_FALSE:
+                temp_body[temp_body_size++] = 0x44;
+                for (int i = 0; i < 8; i++) temp_body[temp_body_size++] = 0;
+                break;
+            case OP_ADD:
+                temp_body[temp_body_size++] = 0xA0;
+                break;
+            case OP_SUBTRACT:
+                temp_body[temp_body_size++] = 0xA1;
+                break;
+            case OP_MULTIPLY:
+                temp_body[temp_body_size++] = 0xA2;
+                break;
+            case OP_DIVIDE:
+                temp_body[temp_body_size++] = 0xA3;
+                break;
+            case OP_NEGATE:
+                temp_body[temp_body_size++] = 0x9A;
+                break;
+            case OP_PRINT:
+                temp_body[temp_body_size++] = 0x10; // call
+                temp_body[temp_body_size++] = 0x00; // function index 0
+                break;
+            case OP_POP:
+                temp_body[temp_body_size++] = 0x1A;
+                break;
+            case OP_RETURN:
+                temp_body[temp_body_size++] = 0x0F;
+                break;
+        }
+        ip++;
+    }
+
+    // Add implicit return if not already present
+    if (chunk->count == 0 || chunk->code[chunk->count - 1] != OP_RETURN) {
+        temp_body[temp_body_size++] = 0x0F; // return
+    }
+
+    // Now write the function body with correct size
+    _wasm_append_leb128_u32(generator, temp_body_size);
+    _wasm_append_bytes(generator, temp_body, temp_body_size);
+
+    // Update section size
+    size_t content_size = generator->buffer_size - content_start;
+    return _wasm_encode_leb128_at(generator, size_pos, content_size);
+}
+
 WasmErrorCode l_wasm_generate_from_function(wasm_generator_t* generator, obj_function_t* function) {
     WasmErrorCode result;
 
@@ -211,8 +369,17 @@ WasmErrorCode l_wasm_generate_from_function(wasm_generator_t* generator, obj_fun
     result = _wasm_generate_import_section(generator);
     if (result != WASM_OK) return result;
 
-    // For now, we'll create a minimal WASM file
-    // A full implementation would need function, export, and code sections
+    // Generate function section
+    result = _wasm_generate_function_section(generator);
+    if (result != WASM_OK) return result;
+
+    // Generate export section
+    result = _wasm_generate_export_section(generator);
+    if (result != WASM_OK) return result;
+
+    // Generate code section (function bodies)
+    result = _wasm_generate_code_section(generator, function);
+    if (result != WASM_OK) return result;
 
     return WASM_OK;
 }
