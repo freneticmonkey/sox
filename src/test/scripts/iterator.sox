@@ -2,7 +2,7 @@
 var array_values[] = {0,1,2}
 
 foreach var i, val in array_values {
-    print(value)
+    print(val)
 }
 
 //for var val in array_values {

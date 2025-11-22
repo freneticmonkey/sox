@@ -17,8 +17,8 @@
 #define MAX_BRANCHES 32
 
 typedef struct {
-    token_t * current;
-    token_t * previous;
+    token_t current;
+    token_t previous;
     bool    had_error;
     bool    panic_mode;
 } _parser_t;
@@ -166,11 +166,11 @@ static void _error_at(token_t* token, const char* message) {
 }
 
 static void _error(const char* message) {
-    _error_at(_parser.previous, message);
+    _error_at(&_parser.previous, message);
 }
 
 static void _error_at_current(const char* message) {
-    _error_at(_parser.current, message);
+    _error_at(&_parser.current, message);
 }
 
 static void _advance() {
@@ -178,17 +178,17 @@ static void _advance() {
     
     for (;;) {
         _parser.current = l_scan_token();
-        if (_parser.current->type != TOKEN_ERROR) 
+        if (_parser.current.type != TOKEN_ERROR) 
             break;
 
-        _error_at_current(_parser.current->start);
+        _error_at_current(_parser.current.start);
     }
 
 #ifdef DEBUG_PRINT_TOKENS
     fprintf(stdout, " `%.*s` (%s)", 
-            _parser.current->length, 
-            _parser.current->start, 
-            l_token_type_to_string(_parser.current->type)
+            _parser.current.length, 
+            _parser.current.start, 
+            l_token_type_to_string(_parser.current.type)
         );
 
     fflush(stdout);
@@ -196,7 +196,7 @@ static void _advance() {
 }
 
 static void _optional_consume(TokenType type, const char* message) {
-    if (_parser.current->type == type) {
+    if (_parser.current.type == type) {
         _advance();
         return;
     }
@@ -204,7 +204,7 @@ static void _optional_consume(TokenType type, const char* message) {
 }
 
 static void _consume(TokenType type, const char* message) {
-    if (_parser.current->type == type) {
+    if (_parser.current.type == type) {
         _advance();
         return;
     }
@@ -213,7 +213,7 @@ static void _consume(TokenType type, const char* message) {
 }
 
 static bool _check(TokenType type) {
-    return _parser.current->type == type;
+    return _parser.current.type == type;
 }
 
 static bool _match(TokenType type) {
@@ -225,7 +225,7 @@ static bool _match(TokenType type) {
 }
 
 static void _emit_byte(uint8_t byte) {
-    l_write_chunk(_current_chunk(), byte, _parser.previous->line);
+    l_write_chunk(_current_chunk(), byte, _parser.previous.line);
 }
 
 static void _emit_bytes(uint8_t byte1, uint8_t byte2) {
@@ -324,8 +324,8 @@ static void l_init_compiler(compiler_t* compiler, FunctionType type) {
     _current = compiler;
 
     if (type != TYPE_SCRIPT) {
-        _current->function->name = l_copy_string(_parser.previous->start,
-                                                 _parser.previous->length);
+        _current->function->name = l_copy_string(_parser.previous.start,
+                                                 _parser.previous.length);
     }
 
     local_t* local = &_current->locals[_current->local_count++];
@@ -513,18 +513,18 @@ static int _declare_variable() {
     if (_current->scope_depth == 0) 
         return -1;
 
-    token_t* name = _parser.previous;
+    token_t name = _parser.previous;
     for (int i = _current->local_count - 1; i >= 0; i--) {
         local_t* local = &_current->locals[i];
         if (local->depth != -1 && local->depth < _current->scope_depth) {
             break; 
         }
 
-        if (_identifiers_equal(name, &local->name)) {
+        if (_identifiers_equal(&name, &local->name)) {
             _error("Already a variable with this name in this scope.");
         }
     }
-    return _add_local(*name);
+    return _add_local(name);
 }
 
 static uint8_t _parse_variable(const char* errorMessage) {
@@ -534,7 +534,7 @@ static uint8_t _parse_variable(const char* errorMessage) {
     if ( _current->scope_depth > 0 )
         return 0;
 
-    return _identifier_constant(_parser.previous);
+    return _identifier_constant(&_parser.previous);
 }
 
 static void _mark_initialized() {
@@ -576,7 +576,7 @@ static void _and_(bool canAssign) {
 }
 
 static void _binary(bool canAssign) {
-    TokenType operatorType = _parser.previous->type;
+    TokenType operatorType = _parser.previous.type;
     parse_rule_t* rule = _get_rule(operatorType);
     _parse_precedence((Precedence)(rule->precedence + 1));
 
@@ -603,7 +603,7 @@ static void _call(bool canAssign) {
 
 static void _dot(bool canAssign) {
     _consume(TOKEN_IDENTIFIER, "Expect property name after '.'.");
-    uint8_t name = _identifier_constant(_parser.previous);
+    uint8_t name = _identifier_constant(&_parser.previous);
 
     if (canAssign && _match(TOKEN_EQUAL)) {
         _expression();
@@ -618,7 +618,7 @@ static void _dot(bool canAssign) {
 }
 
 static void _literal(bool canAssign) {
-    switch (_parser.previous->type) {
+    switch (_parser.previous.type) {
         case TOKEN_FALSE: _emit_byte(OP_FALSE); break;
         case TOKEN_NIL:   _emit_byte(OP_NIL); break;
         case TOKEN_TRUE:  _emit_byte(OP_TRUE); break;
@@ -646,9 +646,9 @@ static void _array_grouping(bool canAssign) {
     // var array[] = {1,2,3}
     //                  ^ ^
     // read the rest of the array items
-    if (_parser.current->type == TOKEN_COMMA) {
+    if (_parser.current.type == TOKEN_COMMA) {
 
-        while (_parser.current->type == TOKEN_COMMA) {
+        while (_parser.current.type == TOKEN_COMMA) {
             _optional_consume(TOKEN_COMMA, "unused"); 
             _expression();
             length += 1;
@@ -666,7 +666,7 @@ static void _array_grouping(bool canAssign) {
 }
 
 static void _number(bool canAssign) {
-    double number = strtod(_parser.previous->start, NULL);
+    double number = strtod(_parser.previous.start, NULL);
     _emit_constant(NUMBER_VAL(number));
 }
 
@@ -684,8 +684,8 @@ static void _or_(bool canAssign) {
 static void _string(bool canAssign) {
     _emit_constant(
         OBJ_VAL(
-            l_copy_string(_parser.previous->start  + 1,
-                          _parser.previous->length - 2)
+            l_copy_string(_parser.previous.start  + 1,
+                          _parser.previous.length - 2)
         )
     );
 }
@@ -700,7 +700,7 @@ static int _named_variable(token_t * name, bool canAssign) {
         getOp = OP_GET_UPVALUE;
         setOp = OP_SET_UPVALUE;
     } else {
-        arg = _identifier_constant(&name);
+        arg = _identifier_constant(name);
         getOp = OP_GET_GLOBAL;
         setOp = OP_SET_GLOBAL;
     }
@@ -715,7 +715,7 @@ static int _named_variable(token_t * name, bool canAssign) {
 }
 
 static void _variable(bool canAssign) {
-    _named_variable(_parser.previous, canAssign);
+    _named_variable(&_parser.previous, canAssign);
 }
 
 static token_t _synthetic_token(const char* text) {
@@ -734,7 +734,7 @@ static void _super_(bool canAssign) {
 
     _consume(TOKEN_DOT, "Expect '.' after 'super'.");
     _consume(TOKEN_IDENTIFIER, "Expect superclass method name.");
-    uint8_t name = _identifier_constant(_parser.previous);
+    uint8_t name = _identifier_constant(&_parser.previous);
 
     token_t this = _synthetic_token("this");
     token_t super = _synthetic_token("super");
@@ -814,7 +814,7 @@ static void _index(bool canAssign) {
 }
 
 static void _unary(bool canAssign) {
-    TokenType operatorType = _parser.previous->type;
+    TokenType operatorType = _parser.previous.type;
 
     // Compile the operand.
     _parse_precedence(PREC_UNARY);
@@ -883,7 +883,7 @@ parse_rule_t rules[] = {
 static void _parse_precedence(Precedence precedence) {
     _advance();
 
-    parse_func prefixRule = _get_rule(_parser.previous->type)->prefix;
+    parse_func prefixRule = _get_rule(_parser.previous.type)->prefix;
     if (prefixRule == NULL) {
         _error("Expect expression.");
         return;
@@ -892,9 +892,9 @@ static void _parse_precedence(Precedence precedence) {
     bool canAssign = precedence <= PREC_ASSIGNMENT;
     prefixRule(canAssign);
 
-    while (precedence <= _get_rule(_parser.current->type)->precedence) {
+    while (precedence <= _get_rule(_parser.current.type)->precedence) {
         _advance();
-        parse_func infixRule = _get_rule(_parser.previous->type)->infix;
+        parse_func infixRule = _get_rule(_parser.previous.type)->infix;
         infixRule(canAssign);
     }
 
@@ -1067,11 +1067,11 @@ static void _function(FunctionType type) {
 
 static void _method() {
     _consume(TOKEN_IDENTIFIER, "Expect method name.");
-    uint8_t constant = _identifier_constant(_parser.previous);
+    uint8_t constant = _identifier_constant(&_parser.previous);
 
     FunctionType type = TYPE_METHOD;
-    if (_parser.previous->length == 4 &&
-        memcmp(_parser.previous->start, "init", 4) == 0) {
+    if (_parser.previous.length == 4 &&
+        memcmp(_parser.previous.start, "init", 4) == 0) {
         type = TYPE_INITIALIZER;
     }
     _function(type);
@@ -1081,8 +1081,8 @@ static void _method() {
 
 static void _class_declaration() {
     _consume(TOKEN_IDENTIFIER, "Expect class name.");
-    token_t * className = _parser.previous;
-    uint8_t nameConstant = _identifier_constant(_parser.previous);
+    token_t className = _parser.previous;
+    uint8_t nameConstant = _identifier_constant(&_parser.previous);
     _declare_variable();
 
     _emit_bytes(OP_CLASS, nameConstant);
@@ -1096,7 +1096,7 @@ static void _class_declaration() {
     if (_match(TOKEN_LESS)) {
         _consume(TOKEN_IDENTIFIER, "Expect superclass name.");
         _variable(false);
-        if (_identifiers_equal(&className, _parser.previous)) {
+        if (_identifiers_equal(&className, &_parser.previous)) {
            _error("A class can't inherit from itself.");
         }
         
@@ -1104,12 +1104,12 @@ static void _class_declaration() {
         _add_local(_synthetic_token("super"));
         _define_variable(0);
 
-        _named_variable(className, false);
+        _named_variable(&className, false);
         _emit_byte(OP_INHERIT);
         classCompiler.has_superclass = true;
     }
 
-    _named_variable(className, false);
+    _named_variable(&className, false);
 
     _consume(TOKEN_LEFT_BRACE, "Expect '{' before class body.");
 
@@ -1141,7 +1141,7 @@ static void _fun_declaration() {
     uint8_t global = _parse_variable("Expect function name.");
     
     if (_current->enclosing == NULL) {
-        if ( strncmp(_parser.previous->start, "main", 4) == 0 ) {
+        if ( strncmp(_parser.previous.start, "main", 4) == 0 ) {
             if (_current->main_function != -1) {
                 _error_at_current("Cannot have more than one main()");
             }
@@ -1177,7 +1177,7 @@ static void _var_declaration() {
         _expression();
     } else if (_match(TOKEN_LEFT_BRACKET)) {
         _array();
-    } else if (TOKEN_COMMA) {
+    } else if (_match(TOKEN_COMMA)) {
         _var_declaration();
     } else {
         _emit_byte(OP_NIL);
@@ -1306,73 +1306,53 @@ static void _expression_statement() {
 static void _foreach_statement() {
     _begin_scope();
 
-    // process two variables, the index and the value
-    _expression();
+    // Parse foreach variable declarations properly
+    // Expect: foreach var index, value in container
+    _consume(TOKEN_VAR, "Expect 'var' after 'foreach'.");
+    
+    // Parse index variable
+    _consume(TOKEN_IDENTIFIER, "Expect index variable name.");
+    token_t indexName = _parser.previous;
+    int indexSlot = _add_local(indexName);
+    _mark_initialized();
+    
+    _consume(TOKEN_COMMA, "Expect ',' after index variable.");
+    
+    // Parse value variable  
+    _consume(TOKEN_IDENTIFIER, "Expect value variable name.");
+    token_t valueName = _parser.previous;
+    int valueSlot = _add_local(valueName);
+    _mark_initialized();
 
     // Check that the next token is an 'in'
-    if (!_match(TOKEN_IN)) {
-        _error_at_current("Expect 'in' after foreach declaration.");
-        return;
-    }
+    _consume(TOKEN_IN, "Expect 'in' after foreach variables.");
     
-    // now collect the names for the index and value local variables
-
-    // let's search back to the two index and value variables
-    // and resolve them to their local variable index
-
-    // determine where the foreach is
-    token_t * searchToken = _parser.current;
-
-    token_t * value = NULL;
-    token_t * index = NULL;
-
-    while (searchToken->type != TOKEN_FOREACH) {
-        searchToken = searchToken->previous;
-
-        if (searchToken->type == TOKEN_IDENTIFIER || searchToken->type == TOKEN_UNDERSCORE) {
-            if (value == NULL) {
-                value = searchToken;
-            } else if (index == NULL) {
-                index = searchToken;
-            }
-        }
-    }
-
-    // token_t indexToken = _synthetic_token("index");
-    // int index = _add_local(indexToken);
-    int indexSlot = _resolve_local(_current, index);
-    // _emit_bytes(OP_SET_LOCAL, indexSlot);
-    
-    // token_t valueToken = _synthetic_token("value");
-    // int value = _add_local(valueToken);
-    int valueSlot = _resolve_local(_current, value);
-    // _emit_bytes(OP_SET_LOCAL, valueSlot);
-
-    // generate local variables for the iterator, index, and value
+    // Generate local variable for the iterator
     token_t iterToken = _synthetic_token("iter");
-    int iter = _add_local(iterToken);
-    _emit_bytes(OP_SET_LOCAL, iter);
+    int iterSlot = _add_local(iterToken);
+    _mark_initialized();
     
-    // now get the container that is going to be iterated
+    // Parse the container expression that will be iterated
     _expression();
 
-    loop_t loop;
-    _loop_init(&loop);
-    _loop_start(&loop);
-    
-    // get the iterator from the container
+    // get the iterator from the container (execute only once)
     _emit_byte(OP_GET_ITERATOR);
 
     // send the local variables used for the iteration
-    _emit_byte(iter);
+    _emit_byte(iterSlot);
     _emit_byte(indexSlot);
     _emit_byte(valueSlot);
+
+    // Loop restart point starts here (after iterator creation)
+    loop_t loop;
+    _loop_init(&loop);
+    _loop_start(&loop);
 
     // test for end condition
     // evaluate the iteration condition
     // get the value at the current index
     _emit_byte(OP_TEST_ITERATOR);
-    _emit_byte(iter);
+    _emit_byte(iterSlot);
 
     // Jump out of the loop if the condition is false.
     _loop_test_exit();
@@ -1385,7 +1365,7 @@ static void _foreach_statement() {
 
     // trigger the iterator next increment
     _emit_byte(OP_NEXT_ITERATOR);
-    _emit_byte(iter);
+    _emit_byte(iterSlot);
 
     // now set a jump to location for the loop end condition check
     _loop_jump();
@@ -1401,7 +1381,10 @@ static void _foreach_statement() {
     // this will skip the increment code after the loop end condition has been checked
     _patch_jump(bodyJump);
     
-    _statement();
+    // Parse the foreach body as a block
+    _consume(TOKEN_LEFT_BRACE, "Expect '{' before foreach body.");
+    
+    _block();
 
     // jump to either the increment code, or if no increment the loop end condition check
     _loop_jump();
@@ -1675,11 +1658,11 @@ static void _while_statement() {
 static void _synchronize() {
     _parser.panic_mode = false;
 
-    while (_parser.current->type != TOKEN_EOF) {
-        if (_parser.previous->type == TOKEN_SEMICOLON) 
+    while (_parser.current.type != TOKEN_EOF) {
+        if (_parser.previous.type == TOKEN_SEMICOLON) 
             return;
         
-        switch (_parser.current->type) {
+        switch (_parser.current.type) {
             case TOKEN_CLASS:
             case TOKEN_FUN:
             case TOKEN_VAR:
@@ -1701,7 +1684,6 @@ static void _synchronize() {
 }
 
 static void _declaration() {
-
     if ( _match(TOKEN_CLASS) ) {
         _class_declaration();
     } else if (_match(TOKEN_DEFER)) {

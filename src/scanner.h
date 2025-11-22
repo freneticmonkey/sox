@@ -38,6 +38,6 @@ typedef struct token_t{
 } token_t;
 
 void      l_init_scanner(const char* source);
-token_t * l_scan_token();
+token_t l_scan_token();
 
 #endif

@@ -47,6 +47,14 @@ static int _jump_instruction(const char* name, int sign, chunk_t* chunk, int off
     return offset + 3;
 }
 
+static int _iterator_instruction(const char* name, chunk_t* chunk, int offset) {
+    uint8_t iter_slot = chunk->code[offset + 1];
+    uint8_t index_slot = chunk->code[offset + 2];
+    uint8_t value_slot = chunk->code[offset + 3];
+    printf("%-16s iter:%d index:%d value:%d\n", name, iter_slot, index_slot, value_slot);
+    return offset + 4;
+}
+
 int l_disassemble_instruction(chunk_t* chunk, int offset) {
     printf("%04d ", offset);
 
@@ -154,20 +162,20 @@ int l_disassemble_instruction(chunk_t* chunk, int offset) {
         case OP_METHOD:
             return _constant_instruction("OP_METHOD", chunk, offset);
         case OP_ARRAY_EMPTY:
-            return _byte_instruction("OP_ARRAY_EMPTY", chunk, offset);
+            return _simple_instruction("OP_ARRAY_EMPTY", offset);
         case OP_ARRAY_PUSH:
             return _byte_instruction("OP_ARRAY_PUSH", chunk, offset);
         case OP_ARRAY_RANGE:
-            return _byte_instruction("OP_ARRAY_RANGE", chunk, offset);
+            return _simple_instruction("OP_ARRAY_RANGE", offset);
 
         
         // ITERATORS
         case OP_TEST_ITERATOR:
-            return _simple_instruction("OP_TEST_ITERATOR", offset);
+            return _byte_instruction("OP_TEST_ITERATOR", chunk, offset);
         case OP_GET_ITERATOR:
-            return _simple_instruction("OP_GET_ITERATOR", offset);
+            return _iterator_instruction("OP_GET_ITERATOR", chunk, offset);
         case OP_NEXT_ITERATOR:
-            return _simple_instruction("OP_NEXT_ITERATOR", offset);
+            return _byte_instruction("OP_NEXT_ITERATOR", chunk, offset);
 
         // NO_OP codes that the VM shouldn't ever see
         case OP_BREAK:

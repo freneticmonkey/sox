@@ -44,8 +44,6 @@ typedef struct {
 
 _scanner_t _scanner;
 
-token_t _tokens[1024];
-int _token_next = 0;
 
 void l_init_scanner(const char* source) {
     _scanner.start = source;
@@ -93,31 +91,21 @@ static bool _match(char expected) {
     return true;
 }
 
-static int _get_next_token() {
-    _token_next++;
-    if (_token_next >= 1024) {
-        _token_next = 0;
-    }
-    return _token_next;
-}
-
-static token_t * _make_token(TokenType type) {
-    token_t * token = &_tokens[_get_next_token()];
-    token->type = type;
-    token->start = _scanner.start;
-    token->length = (int)(_scanner.current - _scanner.start);
-    token->line = _scanner.line;
-    token->previous = NULL;
+static token_t _make_token(TokenType type) {
+    token_t token;
+    token.type = type;
+    token.start = _scanner.start;
+    token.length = (int)(_scanner.current - _scanner.start);
+    token.line = _scanner.line;
     return token;
 }
 
-static token_t * _error_token(const char* message) {
-    token_t * token = &_tokens[_get_next_token()];
-    token->type = TOKEN_ERROR;
-    token->start = message;
-    token->length = (int)strlen(message);
-    token->line = _scanner.line;
-    token->previous = NULL;
+static token_t _error_token(const char* message) {
+    token_t token;
+    token.type = TOKEN_ERROR;
+    token.start = message;
+    token.length = (int)strlen(message);
+    token.line = _scanner.line;
     return token;
 }
 
@@ -242,13 +230,13 @@ static TokenType _identifier_type() {
     return TOKEN_IDENTIFIER;
 }
 
-static token_t * _identifier() {
+static token_t _identifier() {
     while (_is_alpha(_peek()) || _is_digit(_peek())) 
         _advance();
     return _make_token(_identifier_type());
 }
 
-static token_t * _string() {
+static token_t _string() {
     while (_peek() != '"' && !_is_at_end()) {
         if (_peek() == '\n') 
             _scanner.line++;
@@ -263,7 +251,7 @@ static token_t * _string() {
     return _make_token(TOKEN_STRING);
 }
 
-static token_t * _number() {
+static token_t _number() {
   while (_is_digit(_peek())) 
     _advance();
 
@@ -279,7 +267,7 @@ static token_t * _number() {
   return _make_token(TOKEN_NUMBER);
 }
 
-token_t * l_scan_token() {
+token_t l_scan_token() {
     _skip_whitespace();
     _scanner.start = _scanner.current;
 

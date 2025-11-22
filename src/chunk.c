@@ -114,7 +114,12 @@ int l_op_get_arg_size_bytes(const chunk_t* chunk, int ip) {
         case OP_BREAK:
         case OP_CASE_FALLTHROUGH:
         case OP_CONTINUE:
+        case OP_ARRAY_EMPTY:
+        case OP_ARRAY_RANGE:
             return 0;
+
+        case OP_ARRAY_PUSH:
+            return 1;
     }
 
     // TODO: Throw compile error here
