@@ -31,7 +31,12 @@ const char * l_wasm_get_error_string(WasmErrorCode error) {
 static void _wasm_append_byte(wasm_generator_t* generator, uint8_t byte) {
     if (generator->buffer_size + 1 > generator->buffer_capacity) {
         generator->buffer_capacity = (generator->buffer_capacity == 0) ? 1024 : generator->buffer_capacity * 2;
-        generator->output_buffer = (uint8_t*)realloc(generator->output_buffer, generator->buffer_capacity);
+        uint8_t* new_buffer = (uint8_t*)realloc(generator->output_buffer, generator->buffer_capacity);
+        if (new_buffer == NULL) {
+            generator->error = WASM_ERROR;
+            return;
+        }
+        generator->output_buffer = new_buffer;
     }
 
     generator->output_buffer[generator->buffer_size++] = byte;
@@ -116,8 +121,20 @@ static WasmErrorCode _wasm_generate_module_header(wasm_generator_t* generator) {
     return WASM_OK;
 }
 
+// Helper function to reserve space for section size placeholder
+// Returns the position where size will be written, reserves 5 bytes
+static size_t _wasm_reserve_section_size_placeholder(wasm_generator_t* generator) {
+    size_t pos = generator->buffer_size;
+    // Reserve 5 bytes max for LEB128 u32 (worst case: 0xFFFFFFFF)
+    for (int i = 0; i < 5; i++) {
+        _wasm_append_byte(generator, 0x00);
+    }
+    return pos;
+}
+
 // Helper function to encode and store a LEB128 value at a specific position
-static WasmErrorCode _wasm_encode_leb128_at(wasm_generator_t* generator, size_t pos, uint32_t value) {
+// Also returns the actual number of bytes used
+static WasmErrorCode _wasm_encode_leb128_at(wasm_generator_t* generator, size_t pos, uint32_t value, int* bytes_used) {
     uint8_t bytes[5]; // Max 5 bytes for 32-bit LEB128
     int byte_count = 0;
 
@@ -140,6 +157,10 @@ static WasmErrorCode _wasm_encode_leb128_at(wasm_generator_t* generator, size_t 
         generator->output_buffer[pos + i] = bytes[i];
     }
 
+    if (bytes_used) {
+        *bytes_used = byte_count;
+    }
+
     return WASM_OK;
 }
 
@@ -147,9 +168,8 @@ static WasmErrorCode _wasm_generate_type_section(wasm_generator_t* generator) {
     // Type section ID
     _wasm_append_byte(generator, 0x01);
 
-    // Section size placeholder - save position for later update
-    size_t size_pos = generator->buffer_size;
-    _wasm_append_leb128_u32(generator, 0); // Placeholder, will be updated
+    // Section size placeholder - reserves 5 bytes for LEB128
+    size_t size_pos = _wasm_reserve_section_size_placeholder(generator);
     size_t content_start = generator->buffer_size;
 
     // Number of types
@@ -168,16 +188,15 @@ static WasmErrorCode _wasm_generate_type_section(wasm_generator_t* generator) {
 
     // Update section size with proper LEB128 encoding
     size_t content_size = generator->buffer_size - content_start;
-    return _wasm_encode_leb128_at(generator, size_pos, content_size);
+    return _wasm_encode_leb128_at(generator, size_pos, content_size, NULL);
 }
 
 static WasmErrorCode _wasm_generate_import_section(wasm_generator_t* generator) {
     // Import section ID
     _wasm_append_byte(generator, 0x02);
 
-    // Section size placeholder
-    size_t size_pos = generator->buffer_size;
-    _wasm_append_leb128_u32(generator, 0); // Placeholder, will be updated
+    // Section size placeholder - reserves 5 bytes for LEB128
+    size_t size_pos = _wasm_reserve_section_size_placeholder(generator);
     size_t content_start = generator->buffer_size;
 
     // Number of imports
@@ -193,16 +212,15 @@ static WasmErrorCode _wasm_generate_import_section(wasm_generator_t* generator) 
 
     // Update section size with proper LEB128 encoding
     size_t content_size = generator->buffer_size - content_start;
-    return _wasm_encode_leb128_at(generator, size_pos, content_size);
+    return _wasm_encode_leb128_at(generator, size_pos, content_size, NULL);
 }
 
 static WasmErrorCode _wasm_generate_function_section(wasm_generator_t* generator) {
     // Function section ID
     _wasm_append_byte(generator, 0x03);
 
-    // Section size placeholder
-    size_t size_pos = generator->buffer_size;
-    _wasm_append_leb128_u32(generator, 0); // Placeholder, will be updated
+    // Section size placeholder - reserves 5 bytes for LEB128
+    size_t size_pos = _wasm_reserve_section_size_placeholder(generator);
     size_t content_start = generator->buffer_size;
 
     // Number of function declarations (1 = main function)
@@ -213,16 +231,15 @@ static WasmErrorCode _wasm_generate_function_section(wasm_generator_t* generator
 
     // Update section size
     size_t content_size = generator->buffer_size - content_start;
-    return _wasm_encode_leb128_at(generator, size_pos, content_size);
+    return _wasm_encode_leb128_at(generator, size_pos, content_size, NULL);
 }
 
 static WasmErrorCode _wasm_generate_export_section(wasm_generator_t* generator) {
     // Export section ID
     _wasm_append_byte(generator, 0x07);
 
-    // Section size placeholder
-    size_t size_pos = generator->buffer_size;
-    _wasm_append_leb128_u32(generator, 0); // Placeholder, will be updated
+    // Section size placeholder - reserves 5 bytes for LEB128
+    size_t size_pos = _wasm_reserve_section_size_placeholder(generator);
     size_t content_start = generator->buffer_size;
 
     // Number of exports
@@ -236,16 +253,15 @@ static WasmErrorCode _wasm_generate_export_section(wasm_generator_t* generator) 
 
     // Update section size
     size_t content_size = generator->buffer_size - content_start;
-    return _wasm_encode_leb128_at(generator, size_pos, content_size);
+    return _wasm_encode_leb128_at(generator, size_pos, content_size, NULL);
 }
 
 static WasmErrorCode _wasm_generate_code_section(wasm_generator_t* generator, obj_function_t* function) {
     // Code section ID
     _wasm_append_byte(generator, 0x0A);
 
-    // Section size placeholder
-    size_t size_pos = generator->buffer_size;
-    _wasm_append_leb128_u32(generator, 0); // Placeholder, will be updated
+    // Section size placeholder - reserves 5 bytes for LEB128
+    size_t size_pos = _wasm_reserve_section_size_placeholder(generator);
     size_t content_start = generator->buffer_size;
 
     // Number of function bodies (1 = main)
@@ -299,18 +315,36 @@ static WasmErrorCode _wasm_generate_code_section(wasm_generator_t* generator, ob
                 }
                 break;
             }
-            case OP_NIL:
+            case OP_NIL: {
+                // FIX BUG #3: Fixed redundant ternary - 0.0 is all zeros
                 temp_body[temp_body_size++] = 0x44;
-                for (int i = 0; i < 8; i++) temp_body[temp_body_size++] = (i == 0) ? 0 : 0;
+                union { double d; uint8_t bytes[8]; } u;
+                u.d = 0.0;
+                for (int i = 0; i < 8; i++) {
+                    temp_body[temp_body_size++] = u.bytes[i];
+                }
                 break;
-            case OP_TRUE:
+            }
+            case OP_TRUE: {
+                // FIX BUG #2: CRITICAL - OP_TRUE must use IEEE 754 1.0, not hardcoded bytes
+                temp_body[temp_body_size++] = 0x44; // f64.const
+                union { double d; uint8_t bytes[8]; } u;
+                u.d = 1.0;  // Proper IEEE 754 encoding for 1.0
+                for (int i = 0; i < 8; i++) {
+                    temp_body[temp_body_size++] = u.bytes[i];
+                }
+                break;
+            }
+            case OP_FALSE: {
+                // 0.0 is all zeros
                 temp_body[temp_body_size++] = 0x44;
-                for (int i = 0; i < 8; i++) temp_body[temp_body_size++] = (i == 0) ? 0xF0 : 0x3F;
+                union { double d; uint8_t bytes[8]; } u;
+                u.d = 0.0;
+                for (int i = 0; i < 8; i++) {
+                    temp_body[temp_body_size++] = u.bytes[i];
+                }
                 break;
-            case OP_FALSE:
-                temp_body[temp_body_size++] = 0x44;
-                for (int i = 0; i < 8; i++) temp_body[temp_body_size++] = 0;
-                break;
+            }
             case OP_ADD:
                 temp_body[temp_body_size++] = 0xA0;
                 break;
@@ -351,7 +385,7 @@ static WasmErrorCode _wasm_generate_code_section(wasm_generator_t* generator, ob
 
     // Update section size
     size_t content_size = generator->buffer_size - content_start;
-    return _wasm_encode_leb128_at(generator, size_pos, content_size);
+    return _wasm_encode_leb128_at(generator, size_pos, content_size, NULL);
 }
 
 WasmErrorCode l_wasm_generate_from_function(wasm_generator_t* generator, obj_function_t* function) {
