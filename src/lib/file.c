@@ -6,6 +6,9 @@
 #include "lib/print.h"
 #include "serialise.h"
 #include "vm.h"
+#include "wat_generator.h"
+#include "wasm_generator.h"
+#include "compiler.h"
 
 char* l_read_file(const char* path) {
     FILE* file = fopen(path, "rb");
@@ -93,7 +96,7 @@ int _deserialise_bytecode(vm_config_t *config, const char* path, const char* sou
 
     // free the reader serialiser
     l_serialise_del(serialiser);
-    
+
     // run the vm
     InterpretResult result = l_run();
 
@@ -124,9 +127,9 @@ int _interpret_serialise_bytecode(vm_config_t *config, const char* path, const c
 
     // interpret the source
     InterpretResult result = l_interpret(source);
-    
 
-    if (result == INTERPRET_COMPILE_ERROR) 
+
+    if (result == INTERPRET_COMPILE_ERROR)
         return 65;
 
     // serialise the vm state
@@ -135,7 +138,7 @@ int _interpret_serialise_bytecode(vm_config_t *config, const char* path, const c
     // flush to the file and free the serialiser
     l_serialise_flush(serialiser);
     l_serialise_finalise(serialiser);
-    
+
     l_serialise_del(serialiser);
 
     // run the vm
@@ -145,7 +148,7 @@ int _interpret_serialise_bytecode(vm_config_t *config, const char* path, const c
     l_free_vm();
 
     l_free_memory();
-    
+
     if (result == INTERPRET_COMPILE_ERROR)
         return 65;
 
@@ -155,10 +158,81 @@ int _interpret_serialise_bytecode(vm_config_t *config, const char* path, const c
     return 0;
 }
 
+int _generate_wasm_wat(vm_config_t *config, const char* path, const char* source) {
+    l_init_memory();
+
+    // Initialize VM for compilation
+    l_init_vm(config);
+
+    // Compile the source to get the function
+    obj_function_t* function = l_compile(source);
+
+    if (function == NULL) {
+        l_free_vm();
+        l_free_memory();
+        return 65; // Compile error
+    }
+
+    // Generate WAT file if requested
+    if (config->enable_wat_output) {
+        wat_generator_t* wat_gen = l_wat_new(path);
+        if (wat_gen == NULL) {
+            l_free_vm();
+            l_free_memory();
+            return 70; // Runtime error
+        }
+
+        WatErrorCode wat_result = l_wat_generate_from_function(wat_gen, function);
+
+        if (wat_result == WAT_OK) {
+            wat_result = l_wat_write_to_file(wat_gen);
+            if (wat_result == WAT_OK) {
+                printf("WAT file generated: %s.wat\n", path);
+            } else {
+                fprintf(stderr, "WAT generation error: %s\n", l_wat_get_error_string(wat_result));
+            }
+        } else {
+            fprintf(stderr, "WAT generation error: %s\n", l_wat_get_error_string(wat_result));
+        }
+
+        l_wat_del(wat_gen);
+    }
+
+    // Generate WASM file if requested
+    if (config->enable_wasm_output) {
+        wasm_generator_t* wasm_gen = l_wasm_new(path);
+        if (wasm_gen == NULL) {
+            l_free_vm();
+            l_free_memory();
+            return 70; // Runtime error
+        }
+
+        WasmErrorCode wasm_result = l_wasm_generate_from_function(wasm_gen, function);
+
+        if (wasm_result == WASM_OK) {
+            wasm_result = l_wasm_write_to_file(wasm_gen);
+            if (wasm_result == WASM_OK) {
+                printf("WASM file generated: %s.wasm\n", path);
+            } else {
+                fprintf(stderr, "WASM generation error: %s\n", l_wasm_get_error_string(wasm_result));
+            }
+        } else {
+            fprintf(stderr, "WASM generation error: %s\n", l_wasm_get_error_string(wasm_result));
+        }
+
+        l_wasm_del(wasm_gen);
+    }
+
+    // Cleanup: free VM and memory before returning (Phase 1.3 fix)
+    l_free_vm();
+    l_free_memory();
+    return 0;
+}
+
 int _interpret_run(vm_config_t *config, const char* source) {
-    
+
     InterpretResult result;
-    
+
     l_init_memory();
 
     // start the VM and interpret the source
@@ -172,7 +246,7 @@ int _interpret_run(vm_config_t *config, const char* source) {
         l_free_memory();
         return 65;
     }
-    
+
     // run the vm
     result = l_run();
 
@@ -185,7 +259,7 @@ int _interpret_run(vm_config_t *config, const char* source) {
         return 65;
     if (result == INTERPRET_RUNTIME_ERROR)
         return 70;
-    
+
     return 0;
 }
 
@@ -214,27 +288,42 @@ int l_run_file(vm_config_t *config) {
     if (config->suppress_print) {
         l_print_enable_suppress();
     }
-    
+
     InterpretResult result;
+
+    // Check if we only need to generate WASM/WAT without running
+    if (config->enable_wasm_output || config->enable_wat_output) {
+        int wasm_result = _generate_wasm_wat(config, path, source);
+        if (wasm_result != 0) {
+            free(source);
+            return wasm_result;
+        }
+
+        // If only generating WASM/WAT, don't run the program unless serialization is also enabled
+        if (!config->enable_serialisation) {
+            free(source);
+            return 0;
+        }
+    }
 
     if (config->enable_serialisation == false) {
         result = _interpret_run(config, source);
 
     } else {
         char filename_bytecode[256];
-        sprintf(&filename_bytecode[0], "%s.sbc", path);
-        
-        if (l_file_exists(&filename_bytecode[0])) {
+        snprintf(filename_bytecode, sizeof(filename_bytecode), "%s.sbc", path);
+
+        if (l_file_exists(filename_bytecode)) {
             result = _deserialise_bytecode(config, path, source);
         } else {
             result = _interpret_serialise_bytecode(config, path, source);
         }
-        
+
     }
-    
+
     // clean up the source code
     free(source);
-    
+
     return result;
 }
 

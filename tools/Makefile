@@ -78,4 +78,12 @@ build-version-all: details
 	GOOS=linux GOARCH=amd64 go build -o ./bin/unix/x86/version src/version/main.go 
 	GOOS=linux GOARCH=arm64 go build -o ./bin/unix/arm/version src/version/main.go 
 
+# Check if Go is available, only build tools if it is
+GO_AVAILABLE := $(shell which go > /dev/null 2>&1 && echo 1 || echo 0)
+
+ifeq (${GO_AVAILABLE},1)
 all: build-version-all
+else
+all:
+	@echo "Go not found - skipping tool rebuild (using pre-built binaries)"
+endif
