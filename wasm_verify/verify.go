@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"unsafe"
 
 	"github.com/tetratelabs/wazero"
@@ -19,10 +20,14 @@ import (
 // OutputCapture holds captured output from print_f64 calls
 type OutputCapture struct {
 	values []float64
+	mu     sync.Mutex
 }
 
 // Global output capture for the current execution
-var currentOutput *OutputCapture
+var (
+	currentOutput *OutputCapture
+	outputMutex   sync.Mutex
+)
 
 // VerifyResult contains the result of WASM verification
 type VerifyResult struct {
@@ -33,7 +38,12 @@ type VerifyResult struct {
 
 // print_f64 is the host function that Sox WASM modules import
 func print_f64(_ context.Context, m api.Module, value float64) {
+	outputMutex.Lock()
+	defer outputMutex.Unlock()
+
 	if currentOutput != nil {
+		currentOutput.mu.Lock()
+		defer currentOutput.mu.Unlock()
 		currentOutput.values = append(currentOutput.values, value)
 	}
 }
@@ -70,12 +80,17 @@ func LoadAndExecuteWASM(wasmPath string) (*VerifyResult, error) {
 	// Instantiate WASI to provide basic functionality
 	wasi_snapshot_preview1.MustInstantiate(ctx, r)
 
-	// Initialize output capture
+	// Initialize output capture with thread safety
+	outputMutex.Lock()
 	currentOutput = &OutputCapture{
 		values: []float64{},
 	}
+	outputMutex.Unlock()
+
 	defer func() {
+		outputMutex.Lock()
 		currentOutput = nil
+		outputMutex.Unlock()
 	}()
 
 	// Create host module "env" with print_f64 function
@@ -111,9 +126,16 @@ func LoadAndExecuteWASM(wasmPath string) (*VerifyResult, error) {
 		return result, err
 	}
 
-	// Success! Capture the output
+	// Success! Capture the output with thread safety
 	result.Success = true
-	result.Output = currentOutput.values
+	outputMutex.Lock()
+	if currentOutput != nil {
+		currentOutput.mu.Lock()
+		result.Output = make([]float64, len(currentOutput.values))
+		copy(result.Output, currentOutput.values)
+		currentOutput.mu.Unlock()
+	}
+	outputMutex.Unlock()
 	return result, nil
 }
 

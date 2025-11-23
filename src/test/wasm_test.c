@@ -10,7 +10,7 @@
 #include "vm.h"
 #include "lib/memory.h"
 #include "lib/file.h"
-#include "../wasm_verify/wasm_verify.h"
+#include "wasm_verify.h"
 
 // Helper to generate unique test filenames
 static void _get_unique_filename(char* buffer, size_t buflen, const char* prefix) {
@@ -221,28 +221,32 @@ static MunitResult test_wasm_verification_simple(const MunitParameter params[], 
     double* output = NULL;
     int count = 0;
     char* error = NULL;
+    MunitResult test_result = MUNIT_OK;
 
     int verify_result = GetWASMOutput(full_filename, &output, &count, &error);
 
     if (!verify_result) {
         printf("WASM verification failed: %s\n", error ? error : "unknown error");
         if (error) FreeString(error);
-        munit_assert_true(false);
+        test_result = MUNIT_FAIL;
+        goto cleanup;
     }
 
     // Should have one output value: 5.0
-    munit_assert_int(count, ==, 1);
-    munit_assert_not_null(output);
-    munit_assert_double_equal(output[0], 5.0, 6);
+    if (count != 1 || output == NULL || output[0] < 4.999999 || output[0] > 5.000001) {
+        test_result = MUNIT_FAIL;
+        goto cleanup;
+    }
 
-    // Clean up
-    FreeDoubleArray(output);
+cleanup:
+    // Clean up resources
+    if (output) FreeDoubleArray(output);
     l_wasm_del(generator);
     l_free_vm();
     l_free_memory();
     l_file_delete(full_filename);
 
-    return MUNIT_OK;
+    return test_result;
 }
 
 static MunitResult test_wasm_verification_arithmetic(const MunitParameter params[], void* data) {
@@ -281,28 +285,32 @@ static MunitResult test_wasm_verification_arithmetic(const MunitParameter params
     double* output = NULL;
     int count = 0;
     char* error = NULL;
+    MunitResult test_result = MUNIT_OK;
 
     int verify_result = GetWASMOutput(full_filename, &output, &count, &error);
 
     if (!verify_result) {
         printf("WASM verification failed: %s\n", error ? error : "unknown error");
         if (error) FreeString(error);
-        munit_assert_true(false);
+        test_result = MUNIT_FAIL;
+        goto cleanup;
     }
 
     // Should have one output value: 18.0
-    munit_assert_int(count, ==, 1);
-    munit_assert_not_null(output);
-    munit_assert_double_equal(output[0], 18.0, 6);
+    if (count != 1 || output == NULL || output[0] < 17.999999 || output[0] > 18.000001) {
+        test_result = MUNIT_FAIL;
+        goto cleanup;
+    }
 
-    // Clean up
-    FreeDoubleArray(output);
+cleanup:
+    // Clean up resources
+    if (output) FreeDoubleArray(output);
     l_wasm_del(generator);
     l_free_vm();
     l_free_memory();
     l_file_delete(full_filename);
 
-    return MUNIT_OK;
+    return test_result;
 }
 
 static MunitResult test_wasm_verification_multiple_prints(const MunitParameter params[], void* data) {
@@ -341,30 +349,35 @@ static MunitResult test_wasm_verification_multiple_prints(const MunitParameter p
     double* output = NULL;
     int count = 0;
     char* error = NULL;
+    MunitResult test_result = MUNIT_OK;
 
     int verify_result = GetWASMOutput(full_filename, &output, &count, &error);
 
     if (!verify_result) {
         printf("WASM verification failed: %s\n", error ? error : "unknown error");
         if (error) FreeString(error);
-        munit_assert_true(false);
+        test_result = MUNIT_FAIL;
+        goto cleanup;
     }
 
     // Should have three output values
-    munit_assert_int(count, ==, 3);
-    munit_assert_not_null(output);
-    munit_assert_double_equal(output[0], 10.0, 6);
-    munit_assert_double_equal(output[1], 20.0, 6);
-    munit_assert_double_equal(output[2], 30.0, 6);
+    if (count != 3 || output == NULL ||
+        output[0] < 9.999999 || output[0] > 10.000001 ||
+        output[1] < 19.999999 || output[1] > 20.000001 ||
+        output[2] < 29.999999 || output[2] > 30.000001) {
+        test_result = MUNIT_FAIL;
+        goto cleanup;
+    }
 
-    // Clean up
-    FreeDoubleArray(output);
+cleanup:
+    // Clean up resources
+    if (output) FreeDoubleArray(output);
     l_wasm_del(generator);
     l_free_vm();
     l_free_memory();
     l_file_delete(full_filename);
 
-    return MUNIT_OK;
+    return test_result;
 }
 
 static MunitResult test_wasm_verification_string_api(const MunitParameter params[], void* data) {
@@ -402,31 +415,39 @@ static MunitResult test_wasm_verification_string_api(const MunitParameter params
     // Verify with wazero using string API
     char* output_str = NULL;
     char* error = NULL;
+    MunitResult test_result = MUNIT_OK;
 
     int verify_result = VerifyWASMFile(full_filename, &output_str, &error);
 
     if (!verify_result) {
         printf("WASM verification failed: %s\n", error ? error : "unknown error");
         if (error) FreeString(error);
-        munit_assert_true(false);
+        test_result = MUNIT_FAIL;
+        goto cleanup;
     }
 
     // Output should be "42.000000"
-    munit_assert_not_null(output_str);
+    if (output_str == NULL) {
+        test_result = MUNIT_FAIL;
+        goto cleanup;
+    }
 
     // Parse the output and verify
     double value;
-    sscanf(output_str, "%lf", &value);
-    munit_assert_double_equal(value, 42.0, 6);
+    if (sscanf(output_str, "%lf", &value) != 1 || value < 41.999999 || value > 42.000001) {
+        test_result = MUNIT_FAIL;
+        goto cleanup;
+    }
 
-    // Clean up
-    FreeString(output_str);
+cleanup:
+    // Clean up resources
+    if (output_str) FreeString(output_str);
     l_wasm_del(generator);
     l_free_vm();
     l_free_memory();
     l_file_delete(full_filename);
 
-    return MUNIT_OK;
+    return test_result;
 }
 
 static MunitTest wasm_tests[] = {

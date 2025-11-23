@@ -1,8 +1,8 @@
 # Makefile for building wasm_verify shared library
 
 # Detect OS
-UNAME_S := $(shell uname -s)
-UNAME_M := $(shell uname -m)
+UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)
+UNAME_M := $(shell uname -m 2>/dev/null || echo unknown)
 
 # Library name and output
 LIB_NAME = libwasm_verify
@@ -13,11 +13,28 @@ ifeq ($(UNAME_S),Linux)
     LIB_EXT = so
     LIB_FLAGS = -shared
     PLATFORM = linux
-endif
-ifeq ($(UNAME_S),Darwin)
+else ifeq ($(UNAME_S),Darwin)
     LIB_EXT = dylib
     LIB_FLAGS = -dynamiclib
     PLATFORM = darwin
+else ifneq (,$(findstring MINGW,$(UNAME_S)))
+    LIB_EXT = dll
+    LIB_FLAGS = -shared
+    PLATFORM = windows
+else ifneq (,$(findstring MSYS,$(UNAME_S)))
+    LIB_EXT = dll
+    LIB_FLAGS = -shared
+    PLATFORM = windows
+else ifneq (,$(findstring CYGWIN,$(UNAME_S)))
+    LIB_EXT = dll
+    LIB_FLAGS = -shared
+    PLATFORM = windows
+else ifeq ($(UNAME_S),Windows)
+    LIB_EXT = dll
+    LIB_FLAGS = -shared
+    PLATFORM = windows
+else
+    $(error Unsupported platform: $(UNAME_S). Supported: Linux, Darwin, Windows (MINGW/MSYS/Cygwin))
 endif
 
 LIB_FILE = $(OUTPUT_DIR)/$(LIB_NAME).$(LIB_EXT)

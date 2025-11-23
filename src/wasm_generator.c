@@ -121,16 +121,6 @@ static WasmErrorCode _wasm_generate_module_header(wasm_generator_t* generator) {
     return WASM_OK;
 }
 
-// Helper to calculate LEB128 encoding size
-static int _wasm_get_leb128_size(uint32_t value) {
-    int count = 0;
-    do {
-        value >>= 7;
-        count++;
-    } while (value > 0);
-    return count;
-}
-
 // Helper function to reserve space for section size placeholder
 // Returns the position where size will be written, reserves 5 bytes
 static size_t _wasm_reserve_section_size_placeholder(wasm_generator_t* generator) {
