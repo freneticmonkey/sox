@@ -18,6 +18,10 @@ typedef struct {
     // for unit testing
     bool suppress_print;
 
+    // WASM/WAT output options
+    bool enable_wasm_output;
+    bool enable_wat_output;
+
     vm_args_t args;
 } vm_config_t;
 
