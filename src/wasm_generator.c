@@ -466,11 +466,11 @@ static WasmErrorCode _wasm_generate_code_section(wasm_generator_t* generator, ob
     }
 
     // Add implicit return if not already present
-    if (chunk->count > 0 && chunk->code[chunk->count - 1] == OP_RETURN) {
-        // Already has return, don't add another
-    } else {
+    if (chunk->count == 0 || chunk->code[chunk->count - 1] != OP_RETURN) {
         TEMP_BODY_RESERVE(1);
         temp_body[temp_body_size++] = 0x0F; // return
+    } else {
+        // Already has return, don't add another
     }
 
     // Verify output buffer is valid before writing
