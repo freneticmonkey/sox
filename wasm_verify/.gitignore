@@ -2,7 +2,6 @@
 *.so
 *.dylib
 *.dll
-go.sum
 
 # Generated header from CGO (not our manual wasm_verify.h)
 libwasm_verify.h
