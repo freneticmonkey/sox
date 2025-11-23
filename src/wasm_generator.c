@@ -148,7 +148,7 @@ static WasmErrorCode _wasm_encode_leb128_at(wasm_generator_t* generator, size_t 
     } while (value > 0 && byte_count < 5);
 
     // Check if we have enough space
-    if (pos + byte_count > generator->buffer_capacity) {
+    if (pos + byte_count > generator->buffer_size) {
         return WASM_ERROR;
     }
 
