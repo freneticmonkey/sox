@@ -23,8 +23,12 @@ else ifeq ($(UNAME_S),Darwin)
     LIB_EXT = dylib
     LIB_FLAGS = -dynamiclib
     PLATFORM = darwin
-    # Force x86_64 to match the C build (premake5.lua defaults to x86_64)
-    GOARCH = amd64
+    # Match the architecture from the main build
+    ifeq ($(UNAME_M),arm64)
+        GOARCH = arm64
+    else
+        GOARCH = amd64
+    endif
 else ifneq (,$(findstring MINGW,$(UNAME_S)))
     LIB_EXT = dll
     LIB_FLAGS = -shared
