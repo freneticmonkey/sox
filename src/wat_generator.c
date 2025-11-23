@@ -58,6 +58,9 @@ static void _wat_append_double(wat_generator_t* generator, double value) {
 
 wat_generator_t * l_wat_new(const char * filename_source) {
     wat_generator_t* generator = (wat_generator_t*)malloc(sizeof(wat_generator_t));
+    if (generator == NULL) {
+        return NULL;
+    }
 
     // Create WAT filename from source filename
     size_t source_len = strlen(filename_source);
