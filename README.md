@@ -9,6 +9,11 @@ variation of the implementation of the sox interpreter as described on http://cr
 <!-- | Windows | ![Build](https://github.com/freneticmonkey/sox/actions/workflows/windows-build.yml/badge.svg) | -->
 <!-- | macOS | ![Build](https://github.com/freneticmonkey/sox/actions/workflows/macos-build.yml/badge.svg) | -->
 
+## Features
+
+### WebAssembly Support
+Sox can generate WebAssembly (WASM) binary and WebAssembly Text Format (WAT) output. See [WebAssembly Documentation](docs/wasm.md) for details on supported opcodes and usage.
+
 ### Tests TODO:
 - [x] Run each script in the scripts folder without errors
 - [x] Script output validation
@@ -49,6 +54,8 @@ variation of the implementation of the sox interpreter as described on http://cr
 - [ ] multi-line comment blocks
 - [ ] load multiple scripts / modules
 - [x] Bytecode scripts
+- [x] WebAssembly (WASM) bytecode generation
+- [x] WebAssembly Text (WAT) format generation
 
 ## Advanced language features
 - [ ] interfaces
