@@ -47,13 +47,18 @@ src/version.h
 *.pdb
 
 # Kernel Module Compile Results
-*.mod*
+*.mod
+*.mod.c
 *.cmd
 .tmp_versions/
 modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# Go modules (override kernel .mod exclusion)
+!go.mod
+!go.sum
 
 #OS
 .DS_Store
