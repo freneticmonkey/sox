@@ -66,7 +66,7 @@ wat_generator_t * l_wat_new(const char * filename_source) {
         free(generator);
         return NULL;
     }
-    strcpy(generator->filename_source, filename_source);
+    memcpy(generator->filename_source, filename_source, source_len + 1);
 
     // Use snprintf to prevent buffer overflow when creating .wat filename
     size_t wat_filename_size = source_len + 5; // +4 for ".wat" +1 for null terminator
