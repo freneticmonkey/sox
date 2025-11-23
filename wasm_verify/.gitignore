@@ -1,0 +1,10 @@
+# Go build artifacts
+*.so
+*.dylib
+*.dll
+
+# Generated header from CGO (not our manual wasm_verify.h)
+libwasm_verify.h
+
+# Test binaries
+*.test
