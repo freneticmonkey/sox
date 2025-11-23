@@ -25,8 +25,8 @@ filter "configurations:Release"
   optimize "On"
   defines { "NDEBUG" }
 
--- Architecture is x86_64 by default
-architecture "x86_64"
+-- Architecture is ARM64 by default
+architecture "ARM64"
 
 filter "system:windows"
   defines {
