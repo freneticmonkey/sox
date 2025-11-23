@@ -70,11 +70,6 @@ int l_op_get_arg_size_bytes(const chunk_t* chunk, int ip) {
         case OP_INHERIT:
             return 0;
 
-        case OP_GET_ITERATOR:
-            return 3;
-        case OP_TEST_ITERATOR:
-        case OP_NEXT_ITERATOR:
-
         case OP_GET_LOCAL:
         case OP_SET_LOCAL:
         case OP_GET_UPVALUE:
