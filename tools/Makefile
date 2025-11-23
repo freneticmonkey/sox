@@ -79,7 +79,7 @@ build-version-all: details
 	GOOS=linux GOARCH=arm64 go build -o ./bin/unix/arm/version src/version/main.go 
 
 # Check if Go is available, only build tools if it is
-GO_AVAILABLE := $(shell which go > /dev/null 2>&1 && echo 1 || echo 0)
+GO_AVAILABLE := $(shell command -v go >/dev/null 2>&1 && echo 1 || echo 0)
 
 ifeq (${GO_AVAILABLE},1)
 all: build-version-all
