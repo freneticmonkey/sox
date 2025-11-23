@@ -79,7 +79,7 @@ wasm_generator_t * l_wasm_new(const char * filename_source) {
         free(generator);
         return NULL;
     }
-    strcpy(generator->filename_source, filename_source);
+    memcpy(generator->filename_source, filename_source, source_len + 1);
 
     // Use snprintf to prevent buffer overflow when creating .wasm filename
     size_t wasm_filename_size = source_len + 6; // +5 for ".wasm" +1 for null terminator
