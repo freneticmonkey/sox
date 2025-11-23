@@ -108,8 +108,13 @@ int l_op_get_arg_size_bytes(const chunk_t* chunk, int ip) {
         }
 
         case OP_BREAK:
-        case OP_CASE_FALLTHROUGH:
         case OP_CONTINUE:
+            return 2;
+
+        case OP_CASE_FALLTHROUGH:
+        case OP_ARRAY_EMPTY:
+        case OP_ARRAY_PUSH:
+        case OP_ARRAY_RANGE:
             return 0;
     }
 

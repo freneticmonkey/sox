@@ -927,7 +927,7 @@ static void _patch_jumps(int from_location, OpCode patch_code) {
             i += 1 + skip_size;
         }
 
-        
+
     }
 }
 
