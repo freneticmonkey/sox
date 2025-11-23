@@ -167,24 +167,40 @@ static WasmErrorCode _wasm_encode_leb128_at(wasm_generator_t* generator, size_t 
 static WasmErrorCode _wasm_generate_type_section(wasm_generator_t* generator) {
     // Type section ID
     _wasm_append_byte(generator, 0x01);
+    if (generator->error != WASM_OK) return generator->error;
 
     // Section size placeholder - reserves 5 bytes for LEB128
     size_t size_pos = _wasm_reserve_section_size_placeholder(generator);
+    if (generator->error != WASM_OK) return generator->error;
+
     size_t content_start = generator->buffer_size;
 
     // Number of types
     _wasm_append_leb128_u32(generator, 2);
+    if (generator->error != WASM_OK) return generator->error;
 
     // Type 0: (f64) -> () - for print function
     _wasm_append_byte(generator, 0x60); // func type
+    if (generator->error != WASM_OK) return generator->error;
+
     _wasm_append_leb128_u32(generator, 1); // param count
+    if (generator->error != WASM_OK) return generator->error;
+
     _wasm_append_byte(generator, 0x7C); // f64
+    if (generator->error != WASM_OK) return generator->error;
+
     _wasm_append_leb128_u32(generator, 0); // result count
+    if (generator->error != WASM_OK) return generator->error;
 
     // Type 1: () -> () - for main function
     _wasm_append_byte(generator, 0x60); // func type
+    if (generator->error != WASM_OK) return generator->error;
+
     _wasm_append_leb128_u32(generator, 0); // param count
+    if (generator->error != WASM_OK) return generator->error;
+
     _wasm_append_leb128_u32(generator, 0); // result count
+    if (generator->error != WASM_OK) return generator->error;
 
     // Update section size with proper LEB128 encoding
     size_t content_size = generator->buffer_size - content_start;
@@ -194,21 +210,36 @@ static WasmErrorCode _wasm_generate_type_section(wasm_generator_t* generator) {
 static WasmErrorCode _wasm_generate_import_section(wasm_generator_t* generator) {
     // Import section ID
     _wasm_append_byte(generator, 0x02);
+    if (generator->error != WASM_OK) return generator->error;
 
     // Section size placeholder - reserves 5 bytes for LEB128
     size_t size_pos = _wasm_reserve_section_size_placeholder(generator);
+    if (generator->error != WASM_OK) return generator->error;
+
     size_t content_start = generator->buffer_size;
 
     // Number of imports
     _wasm_append_leb128_u32(generator, 1);
+    if (generator->error != WASM_OK) return generator->error;
 
     // Import: env.print_f64
     _wasm_append_leb128_u32(generator, 3); // module name length
+    if (generator->error != WASM_OK) return generator->error;
+
     _wasm_append_bytes(generator, (const uint8_t*)"env", 3);
+    if (generator->error != WASM_OK) return generator->error;
+
     _wasm_append_leb128_u32(generator, 9); // field name length (print_f64 is 9 chars)
+    if (generator->error != WASM_OK) return generator->error;
+
     _wasm_append_bytes(generator, (const uint8_t*)"print_f64", 9);
+    if (generator->error != WASM_OK) return generator->error;
+
     _wasm_append_byte(generator, 0x00); // import kind: function
+    if (generator->error != WASM_OK) return generator->error;
+
     _wasm_append_leb128_u32(generator, 0); // type index
+    if (generator->error != WASM_OK) return generator->error;
 
     // Update section size with proper LEB128 encoding
     size_t content_size = generator->buffer_size - content_start;
@@ -218,16 +249,21 @@ static WasmErrorCode _wasm_generate_import_section(wasm_generator_t* generator) 
 static WasmErrorCode _wasm_generate_function_section(wasm_generator_t* generator) {
     // Function section ID
     _wasm_append_byte(generator, 0x03);
+    if (generator->error != WASM_OK) return generator->error;
 
     // Section size placeholder - reserves 5 bytes for LEB128
     size_t size_pos = _wasm_reserve_section_size_placeholder(generator);
+    if (generator->error != WASM_OK) return generator->error;
+
     size_t content_start = generator->buffer_size;
 
     // Number of function declarations (1 = main function)
     _wasm_append_leb128_u32(generator, 1);
+    if (generator->error != WASM_OK) return generator->error;
 
     // Function 0: main() uses type 1 (no params, no returns)
     _wasm_append_leb128_u32(generator, 1); // type index
+    if (generator->error != WASM_OK) return generator->error;
 
     // Update section size
     size_t content_size = generator->buffer_size - content_start;
@@ -237,61 +273,111 @@ static WasmErrorCode _wasm_generate_function_section(wasm_generator_t* generator
 static WasmErrorCode _wasm_generate_export_section(wasm_generator_t* generator) {
     // Export section ID
     _wasm_append_byte(generator, 0x07);
+    if (generator->error != WASM_OK) return generator->error;
 
     // Section size placeholder - reserves 5 bytes for LEB128
     size_t size_pos = _wasm_reserve_section_size_placeholder(generator);
+    if (generator->error != WASM_OK) return generator->error;
+
     size_t content_start = generator->buffer_size;
 
     // Number of exports
     _wasm_append_leb128_u32(generator, 1);
+    if (generator->error != WASM_OK) return generator->error;
 
     // Export: "main" function
     _wasm_append_leb128_u32(generator, 4); // name length
+    if (generator->error != WASM_OK) return generator->error;
+
     _wasm_append_bytes(generator, (const uint8_t*)"main", 4);
+    if (generator->error != WASM_OK) return generator->error;
+
     _wasm_append_byte(generator, 0x00); // export kind: function
+    if (generator->error != WASM_OK) return generator->error;
+
     _wasm_append_leb128_u32(generator, 1); // function index (1 = our main, 0 is imported print_f64)
+    if (generator->error != WASM_OK) return generator->error;
 
     // Update section size
     size_t content_size = generator->buffer_size - content_start;
     return _wasm_encode_leb128_at(generator, size_pos, content_size, NULL);
 }
 
+// Helper macro to check buffer space before write operations
+#define TEMP_BODY_RESERVE(size) do { \
+    if (temp_body_size + (size) > temp_body_capacity) { \
+        generator->error = WASM_ERROR; \
+        if (temp_body != NULL) free(temp_body); \
+        return WASM_ERROR; \
+    } \
+} while(0)
+
 static WasmErrorCode _wasm_generate_code_section(wasm_generator_t* generator, obj_function_t* function) {
     // Code section ID
     _wasm_append_byte(generator, 0x0A);
+    if (generator->error != WASM_OK) return generator->error;
 
     // Section size placeholder - reserves 5 bytes for LEB128
     size_t size_pos = _wasm_reserve_section_size_placeholder(generator);
+    if (generator->error != WASM_OK) return generator->error;
+
     size_t content_start = generator->buffer_size;
 
     // Number of function bodies (1 = main)
     _wasm_append_leb128_u32(generator, 1);
+    if (generator->error != WASM_OK) return generator->error;
 
-    // First pass: generate code to calculate size
-    size_t temp_pos = generator->buffer_size;
+    // Dynamically allocate temp buffer to avoid fixed-size overflow
+    size_t temp_body_capacity = 8192; // Initial capacity
+    uint8_t* temp_body = (uint8_t*)malloc(temp_body_capacity);
+    if (temp_body == NULL) {
+        generator->error = WASM_ERROR;
+        return WASM_ERROR;
+    }
 
-    // Temp buffer to collect function body
-    uint8_t temp_body[4096];
     size_t temp_body_size = 0;
 
     // Manually build function body
     // Local variables count (0 for now - we don't use locals)
+    TEMP_BODY_RESERVE(1);
     temp_body[temp_body_size++] = 0x00; // 0 local variable groups
 
     // Generate instructions from bytecode
     chunk_t* chunk = &function->chunk;
     int ip = 0;
 
-    while (ip < chunk->count && temp_body_size < sizeof(temp_body)) {
+    while (ip < chunk->count) {
+        // Bounds check before reading instruction
+        if (ip >= chunk->count) {
+            generator->error = WASM_ERROR;
+            free(temp_body);
+            return WASM_ERROR;
+        }
+
         uint8_t instruction = chunk->code[ip];
 
         switch (instruction) {
             case OP_CONSTANT: {
                 ip++;
+                // Bounds check before reading operand
+                if (ip >= chunk->count) {
+                    generator->error = WASM_ERROR;
+                    free(temp_body);
+                    return WASM_ERROR;
+                }
+
                 uint8_t constant_index = chunk->code[ip];
+                // Bounds check on constant array access
+                if (constant_index >= chunk->constants.count) {
+                    generator->error = WASM_ERROR;
+                    free(temp_body);
+                    return WASM_ERROR;
+                }
+
                 value_t constant = chunk->constants.values[constant_index];
 
                 if (IS_NUMBER(constant)) {
+                    TEMP_BODY_RESERVE(9); // 1 byte opcode + 8 bytes f64
                     temp_body[temp_body_size++] = 0x44; // f64.const
                     union { double d; uint8_t bytes[8]; } u;
                     u.d = AS_NUMBER(constant);
@@ -299,6 +385,7 @@ static WasmErrorCode _wasm_generate_code_section(wasm_generator_t* generator, ob
                         temp_body[temp_body_size++] = u.bytes[i];
                     }
                 } else if (IS_BOOL(constant)) {
+                    TEMP_BODY_RESERVE(9);
                     temp_body[temp_body_size++] = 0x44; // f64.const
                     union { double d; uint8_t bytes[8]; } u;
                     u.d = AS_BOOL(constant) ? 1.0 : 0.0;
@@ -306,6 +393,7 @@ static WasmErrorCode _wasm_generate_code_section(wasm_generator_t* generator, ob
                         temp_body[temp_body_size++] = u.bytes[i];
                     }
                 } else if (IS_NIL(constant)) {
+                    TEMP_BODY_RESERVE(9);
                     temp_body[temp_body_size++] = 0x44; // f64.const
                     union { double d; uint8_t bytes[8]; } u;
                     u.d = 0.0;
@@ -316,7 +404,7 @@ static WasmErrorCode _wasm_generate_code_section(wasm_generator_t* generator, ob
                 break;
             }
             case OP_NIL: {
-                // FIX BUG #3: Fixed redundant ternary - 0.0 is all zeros
+                TEMP_BODY_RESERVE(9);
                 temp_body[temp_body_size++] = 0x44;
                 union { double d; uint8_t bytes[8]; } u;
                 u.d = 0.0;
@@ -326,17 +414,17 @@ static WasmErrorCode _wasm_generate_code_section(wasm_generator_t* generator, ob
                 break;
             }
             case OP_TRUE: {
-                // FIX BUG #2: CRITICAL - OP_TRUE must use IEEE 754 1.0, not hardcoded bytes
+                TEMP_BODY_RESERVE(9);
                 temp_body[temp_body_size++] = 0x44; // f64.const
                 union { double d; uint8_t bytes[8]; } u;
-                u.d = 1.0;  // Proper IEEE 754 encoding for 1.0
+                u.d = 1.0;
                 for (int i = 0; i < 8; i++) {
                     temp_body[temp_body_size++] = u.bytes[i];
                 }
                 break;
             }
             case OP_FALSE: {
-                // 0.0 is all zeros
+                TEMP_BODY_RESERVE(9);
                 temp_body[temp_body_size++] = 0x44;
                 union { double d; uint8_t bytes[8]; } u;
                 u.d = 0.0;
@@ -346,28 +434,36 @@ static WasmErrorCode _wasm_generate_code_section(wasm_generator_t* generator, ob
                 break;
             }
             case OP_ADD:
+                TEMP_BODY_RESERVE(1);
                 temp_body[temp_body_size++] = 0xA0;
                 break;
             case OP_SUBTRACT:
+                TEMP_BODY_RESERVE(1);
                 temp_body[temp_body_size++] = 0xA1;
                 break;
             case OP_MULTIPLY:
+                TEMP_BODY_RESERVE(1);
                 temp_body[temp_body_size++] = 0xA2;
                 break;
             case OP_DIVIDE:
+                TEMP_BODY_RESERVE(1);
                 temp_body[temp_body_size++] = 0xA3;
                 break;
             case OP_NEGATE:
+                TEMP_BODY_RESERVE(1);
                 temp_body[temp_body_size++] = 0x9A;
                 break;
             case OP_PRINT:
+                TEMP_BODY_RESERVE(2);
                 temp_body[temp_body_size++] = 0x10; // call
                 temp_body[temp_body_size++] = 0x00; // function index 0
                 break;
             case OP_POP:
+                TEMP_BODY_RESERVE(1);
                 temp_body[temp_body_size++] = 0x1A;
                 break;
             case OP_RETURN:
+                TEMP_BODY_RESERVE(1);
                 temp_body[temp_body_size++] = 0x0F;
                 break;
         }
@@ -375,13 +471,35 @@ static WasmErrorCode _wasm_generate_code_section(wasm_generator_t* generator, ob
     }
 
     // Add implicit return if not already present
-    if (chunk->count == 0 || chunk->code[chunk->count - 1] != OP_RETURN) {
+    if (chunk->count > 0 && chunk->code[chunk->count - 1] == OP_RETURN) {
+        // Already has return, don't add another
+    } else {
+        TEMP_BODY_RESERVE(1);
         temp_body[temp_body_size++] = 0x0F; // return
+    }
+
+    // Verify output buffer is valid before writing
+    if (generator->output_buffer == NULL && generator->buffer_capacity > 0) {
+        generator->error = WASM_ERROR;
+        free(temp_body);
+        return WASM_ERROR;
     }
 
     // Now write the function body with correct size
     _wasm_append_leb128_u32(generator, temp_body_size);
+    if (generator->error != WASM_OK) {
+        free(temp_body);
+        return generator->error;
+    }
+
     _wasm_append_bytes(generator, temp_body, temp_body_size);
+    if (generator->error != WASM_OK) {
+        free(temp_body);
+        return generator->error;
+    }
+
+    // Clean up temp buffer
+    free(temp_body);
 
     // Update section size
     size_t content_size = generator->buffer_size - content_start;
