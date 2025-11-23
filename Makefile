@@ -102,7 +102,11 @@ ifeq (${THIS_OS},linux)
 	make -C projects ${PROJECT_NAME} config=release_linux64
 endif
 
-build-test: gen
+build-wasm-verify:
+	@echo "Building wazero WASM verification library..."
+	make -C wasm_verify all
+
+build-test: gen build-wasm-verify
 ifeq (${THIS_OS},windows)
 	msbuild.exe ./projects/${PROJECT_NAME}.sln -p:Platform="windows";Configuration=Debug -target:test
 endif
@@ -124,10 +128,10 @@ ifeq (${THIS_OS},windows)
 	.\build\test.exe
 endif
 ifeq (${THIS_OS},darwin)
-	./build/test
+	DYLD_LIBRARY_PATH=./build:$$DYLD_LIBRARY_PATH ./build/test
 endif
 ifeq (${THIS_OS},linux)
-	./build/test
+	LD_LIBRARY_PATH=./build:$$LD_LIBRARY_PATH ./build/test
 endif
 
 clean-${PROJECT_NAME}:
@@ -156,6 +160,8 @@ else
 	rm -Rf ./build/
 	rm -Rf ./projects
 endif
+	@echo "Cleaning wazero WASM verification library..."
+	make -C wasm_verify clean 2>/dev/null || true
 
 build-tools:
 	make -C tools/ all

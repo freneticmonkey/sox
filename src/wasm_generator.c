@@ -121,6 +121,16 @@ static WasmErrorCode _wasm_generate_module_header(wasm_generator_t* generator) {
     return WASM_OK;
 }
 
+// Helper to calculate LEB128 encoding size
+static int _wasm_get_leb128_size(uint32_t value) {
+    int count = 0;
+    do {
+        value >>= 7;
+        count++;
+    } while (value > 0);
+    return count;
+}
+
 // Helper function to reserve space for section size placeholder
 // Returns the position where size will be written, reserves 5 bytes
 static size_t _wasm_reserve_section_size_placeholder(wasm_generator_t* generator) {
@@ -133,7 +143,7 @@ static size_t _wasm_reserve_section_size_placeholder(wasm_generator_t* generator
 }
 
 // Helper function to encode and store a LEB128 value at a specific position
-// Also returns the actual number of bytes used
+// Also returns the actual number of bytes used and shifts the buffer to remove unused bytes
 static WasmErrorCode _wasm_encode_leb128_at(wasm_generator_t* generator, size_t pos, uint32_t value, int* bytes_used) {
     uint8_t bytes[5]; // Max 5 bytes for 32-bit LEB128
     int byte_count = 0;
@@ -148,13 +158,30 @@ static WasmErrorCode _wasm_encode_leb128_at(wasm_generator_t* generator, size_t 
     } while (value > 0 && byte_count < 5);
 
     // Check if we have enough space
-    if (pos + byte_count > generator->buffer_size) {
+    if (pos + 5 > generator->buffer_size) {
         return WASM_ERROR;
     }
 
-    // Write bytes
+    // Write the LEB128 bytes
     for (int i = 0; i < byte_count; i++) {
         generator->output_buffer[pos + i] = bytes[i];
+    }
+
+    // Calculate how many placeholder bytes are unused
+    int unused_bytes = 5 - byte_count;
+
+    if (unused_bytes > 0) {
+        // Shift the buffer left to remove unused placeholder bytes
+        size_t bytes_after = generator->buffer_size - (pos + 5);
+        if (bytes_after > 0) {
+            memmove(
+                &generator->output_buffer[pos + byte_count],
+                &generator->output_buffer[pos + 5],
+                bytes_after
+            );
+        }
+        // Update buffer size to reflect removed bytes
+        generator->buffer_size -= unused_bytes;
     }
 
     if (bytes_used) {
@@ -472,6 +499,10 @@ static WasmErrorCode _wasm_generate_code_section(wasm_generator_t* generator, ob
     } else {
         // Already has return, don't add another
     }
+
+    // Add end opcode (required for all WASM function bodies)
+    TEMP_BODY_RESERVE(1);
+    temp_body[temp_body_size++] = 0x0B; // end
 
     // Verify output buffer is valid before writing
     if (generator->output_buffer == NULL && generator->buffer_capacity > 0) {

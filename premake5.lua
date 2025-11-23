@@ -154,7 +154,8 @@ project "test"
   }
 
   links {
-    "munit"
+    "munit",
+    "wasm_verify"
   }
 
   libdirs {
@@ -162,11 +163,13 @@ project "test"
   }
 
   sysincludedirs {
-    "ext"
+    "ext",
+    "wasm_verify"
   }
 
   includedirs {
-    "src"
+    "src",
+    "wasm_verify"
   }
 
   files {
