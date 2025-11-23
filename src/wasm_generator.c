@@ -348,11 +348,6 @@ static WasmErrorCode _wasm_generate_code_section(wasm_generator_t* generator, ob
 
     while (ip < chunk->count) {
         // Bounds check before reading instruction
-        if (ip >= chunk->count) {
-            generator->error = WASM_ERROR;
-            free(temp_body);
-            return WASM_ERROR;
-        }
 
         uint8_t instruction = chunk->code[ip];
 
