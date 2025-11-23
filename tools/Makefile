@@ -54,16 +54,20 @@ details:
 
 
 build-version: details
-	@echo 
+	@echo
 	@echo Building version - version header generation tool
 ifeq (${THIS_OS},windows)
-	env GOOS=windows go build -o ${TOOL_PATH}/version.exe src/version/main.go 
+	env GOOS=windows go build -o ${TOOL_PATH}/version.exe src/version/main.go
 endif
 ifeq (${THIS_OS},darwin)
-	GOOS=darwin go build -o ${TOOL_PATH}/version src/version/main.go 
+	ifeq (${THIS_ARCH},arm64)
+		GOOS=darwin GOARCH=arm64 go build -o ${TOOL_PATH}/version src/version/main.go
+	else
+		GOOS=darwin GOARCH=amd64 go build -o ${TOOL_PATH}/version src/version/main.go
+	endif
 endif
 ifeq (${THIS_OS},linux)
-	GOOS=linux go build -o ${TOOL_PATH}/version src/version/main.go 
+	GOOS=linux go build -o ${TOOL_PATH}/version src/version/main.go
 endif
 
 build-version-all: details
