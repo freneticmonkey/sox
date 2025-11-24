@@ -119,7 +119,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/sox",
-            "args": ["src/test/scripts/argtest.sox"],
+            "args": ["src/test/scripts/hello.sox"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

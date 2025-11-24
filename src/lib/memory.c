@@ -623,6 +623,7 @@ static void _blacken_object(obj_t* object) {
         }
         case OBJ_NATIVE:
         case OBJ_STRING:
+        case OBJ_ITERATOR:
         break;
     }
 }

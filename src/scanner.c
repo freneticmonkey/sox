@@ -5,6 +5,37 @@
 
 #include "common.h"
 
+// define a string array for each TokenType
+static const char* _token_type_strings[] = {
+    // Single-character tokens.
+    "LEFT_PAREN", "RIGHT_PAREN", 
+    "LEFT_BRACE", "RIGHT_BRACE",
+    "LEFT_BRACKET", "RIGHT_BRACKET",
+    "COMMA", "DOT", "MINUS", "PLUS", 
+    "SEMICOLON", "SLASH", "STAR", "COLON", "UNDERSCORE",
+    // One or two character tokens.
+    "BANG", "BANG_EQUAL",
+    "EQUAL", "EQUAL_EQUAL",
+    "GREATER", "GREATER_EQUAL",
+    "LESS", "LESS_EQUAL",
+    // Literals.
+    "IDENTIFIER", "STRING", "NUMBER",
+    // Keywords.
+    "AND", "CLASS", "ELSE", "FALSE", 
+    "FOR", "FOREACH", "FUN", "IF", "NIL", "OR",
+    "PRINT", "RETURN", "SUPER", "THIS", 
+    "TRUE", "VAR", "WHILE", "DEFER", "IN", "INDEX", "VALUE",
+
+    "SWITCH", "CASE", "DEFAULT", "BREAK", "CONTINUE",
+
+    "ERROR", "EOF"
+};
+
+
+const char * l_token_type_to_string(TokenType type) {
+    return _token_type_strings[type];
+}
+
 typedef struct {
     const char* start;
     const char* current;
@@ -12,6 +43,7 @@ typedef struct {
 } _scanner_t;
 
 _scanner_t _scanner;
+
 
 void l_init_scanner(const char* source) {
     _scanner.start = source;
@@ -146,12 +178,32 @@ static TokenType _identifier_type() {
             if (_scanner.current - _scanner.start > 1) {
                 switch (_scanner.start[1]) {
                     case 'a': return _check_keyword(2, 3, "lse", TOKEN_FALSE);
-                    case 'o': return _check_keyword(2, 1, "r", TOKEN_FOR);
+                    // case 'o': return _check_keyword(2, 1, "r", TOKEN_FOR);
                     case 'n': return _check_keyword(2, 0, "", TOKEN_FUN);
+                    case 'o': {
+                        switch (_scanner.start[2]) {
+                            case 'r': {
+                                switch (_scanner.start[3]) {
+                                    case 'e': return _check_keyword(4, 3, "ach", TOKEN_FOREACH);
+                                    default: {
+                                        return _check_keyword(3, 0, "", TOKEN_FOR);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             break;
-        case 'i': return _check_keyword(1, 1, "f", TOKEN_IF);
+        case 'i': 
+            if (_scanner.current - _scanner.start > 1) {
+                switch (_scanner.start[1]) {
+                    case 'f': return _check_keyword(2, 0, "", TOKEN_IF);
+                    // case 'm': return _check_keyword(2, 4, "port", TOKEN_IMPORT);
+                    case 'n': return _check_keyword(2, 0, "", TOKEN_IN);
+                }
+            }
+            break;
         case 'n': return _check_keyword(1, 2, "il", TOKEN_NIL);
         case 'o': return _check_keyword(1, 1, "r", TOKEN_OR);
         case 'p': return _check_keyword(1, 4, "rint", TOKEN_PRINT);
@@ -245,6 +297,7 @@ token_t l_scan_token() {
         case '+': return _make_token(TOKEN_PLUS);
         case '/': return _make_token(TOKEN_SLASH);
         case '*': return _make_token(TOKEN_STAR);
+        case '_': return _make_token(TOKEN_UNDERSCORE);
         case '!': {
             return _make_token(
                 _match('=') ? TOKEN_BANG_EQUAL : TOKEN_BANG

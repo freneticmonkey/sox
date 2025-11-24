@@ -28,6 +28,7 @@
         "__locale": "c",
         "common.h": "c",
         "memory.h": "c",
-        "serialise.h": "c"
+        "serialise.h": "c",
+        "vm_config.h": "c"
     }
 }
