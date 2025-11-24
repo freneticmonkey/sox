@@ -121,7 +121,7 @@ build-release: gen binary-release post-build
 build-debug: gen binary-debug post-build
 
 # by default build a debug binary
-build: build-debug
+build: build-debug build-tools
 
 test: build-test post-build
 ifeq (${THIS_OS},windows)
@@ -165,3 +165,4 @@ endif
 
 build-tools:
 	make -C tools/ all
+	make -C wasm_verify/ all
