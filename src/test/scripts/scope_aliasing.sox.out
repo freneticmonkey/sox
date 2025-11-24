@@ -1,0 +1,13 @@
+Testing Scope Aliasing
+global x: global
+function x: function
+block x: block
+function x after block: function
+global x after function: global
+outer y: outer block
+inner y: inner block
+outer y after inner: outer block
+param x: parameter
+shadowed x: shadowed param
+param x after shadow: parameter
+Scope aliasing test complete

@@ -1,0 +1,46 @@
+// Test math operations
+print "Testing Math Operations"
+
+// Addition
+var a = 10 + 5
+print a
+
+// Subtraction
+var b = 10 - 5
+print b
+
+// Multiplication
+var c = 10 * 5
+print c
+
+// Division
+var d = 10 / 5
+print d
+
+// Operator precedence
+var e = 2 + 3 * 4
+print e
+
+var f = (2 + 3) * 4
+print f
+
+// Negative numbers
+var g = -5
+print g
+
+var h = 10 + -5
+print h
+
+// Complex expression
+var i = 2 * 3 + 4 * 5
+print i
+
+// Division with decimals
+var j = 7 / 2
+print j
+
+// Modulo (if supported)
+var k = 10 - 2 * 4
+print k
+
+print "Math operations test complete"
