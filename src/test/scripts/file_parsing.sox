@@ -1,0 +1,52 @@
+// Test file parsing edge cases
+print "Testing File Parsing"
+
+// Comments
+// This is a comment
+var a = 1 // inline comment
+print a
+
+// Multiple statements on separate lines
+var b = 2
+var c = 3
+print b
+print c
+
+// Empty lines
+
+
+print "after empty lines"
+
+// Nested blocks
+{
+    {
+        {
+            print "deeply nested"
+        }
+    }
+}
+
+// Mixed semicolons and no semicolons
+var d = 4;
+var e = 5
+print d;
+print e
+
+// Long expressions
+var long_expr = 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10
+print long_expr
+
+// Multiple function calls
+fn f1() { print "f1" }
+fn f2() { print "f2" }
+fn f3() { print "f3" }
+
+f1()
+f2()
+f3()
+
+// Whitespace variations
+var   spaced   =   10
+print spaced
+
+print "File parsing test complete"

@@ -17,15 +17,15 @@ Sox can generate WebAssembly (WASM) binary and WebAssembly Text Format (WAT) out
 ### Tests TODO:
 - [x] Run each script in the scripts folder without errors
 - [x] Script output validation
-- [ ] Globals
-- [ ] Locals
-- [ ] String operations
-- [ ] Math operations
-- [ ] Invalid + - / *
-- [ ] invalid assignment - 3 * 4 = 12
-- [ ] local var aliasing across scopes
-- [ ] duplicate variable definition
-- [ ] File parsing
+- [x] Globals
+- [x] Locals
+- [x] String operations
+- [x] Math operations
+- [x] Invalid + - / *
+- [x] invalid assignment - 3 * 4 = 12
+- [x] local var aliasing across scopes
+- [x] duplicate variable definition
+- [x] File parsing
 
 ## Future Language features
 - [x] Defer
