@@ -96,7 +96,7 @@ ifeq (${THIS_OS},windows)
 	msbuild.exe ./projects/${PROJECT_NAME}.sln -p:Platform="windows";Configuration=Release -target:${PROJECT_NAME}
 endif
 ifeq (${THIS_OS},darwin)
-	xcodebuild -configuration "Release" ARCHS="x86_64" -destination 'platform=macOS' -project "projects/${PROJECT_NAME}.xcodeproj" -target ${PROJECT_NAME}
+	xcodebuild -configuration "Release" ARCHS="arm64" -destination 'platform=macOS' -project "projects/${PROJECT_NAME}.xcodeproj" -target ${PROJECT_NAME}
 endif
 ifeq (${THIS_OS},linux)
 	make -C projects ${PROJECT_NAME} config=release_linux64
@@ -111,7 +111,7 @@ ifeq (${THIS_OS},windows)
 	msbuild.exe ./projects/${PROJECT_NAME}.sln -p:Platform="windows";Configuration=Debug -target:test
 endif
 ifeq (${THIS_OS},darwin)
-	xcodebuild -configuration "Debug" ARCHS="x86_64" -destination 'platform=macOS' -project "projects/test.xcodeproj" -target test
+	xcodebuild -configuration "Debug" ARCHS="arm64" -destination 'platform=macOS' -project "projects/test.xcodeproj" -target test
 endif
 ifeq (${THIS_OS},linux)
 	make -C projects test config=debug_linux64
