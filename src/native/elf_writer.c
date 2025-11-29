@@ -165,7 +165,7 @@ static void write_data(elf_builder_t* builder, const void* data, size_t size) {
     builder->size += size;
 }
 
-bool elf_write_file(elf_builder_t* builder, const char* filename) {
+bool elf_write_file(elf_builder_t* builder, const char* filename, uint16_t machine_type) {
     // Build ELF header
     Elf64_Ehdr ehdr;
     memset(&ehdr, 0, sizeof(ehdr));
@@ -179,7 +179,7 @@ bool elf_write_file(elf_builder_t* builder, const char* filename) {
     ehdr.e_ident[6] = EV_CURRENT;
 
     ehdr.e_type = ET_REL;
-    ehdr.e_machine = EM_X86_64;
+    ehdr.e_machine = machine_type;
     ehdr.e_version = EV_CURRENT;
     ehdr.e_entry = 0;
     ehdr.e_phoff = 0;
@@ -241,7 +241,8 @@ bool elf_write_file(elf_builder_t* builder, const char* filename) {
 }
 
 bool elf_create_object_file(const char* filename, const uint8_t* code,
-                             size_t code_size, const char* function_name) {
+                             size_t code_size, const char* function_name,
+                             uint16_t machine_type) {
     elf_builder_t* builder = elf_builder_new();
 
     // Add .text section
@@ -263,7 +264,7 @@ bool elf_create_object_file(const char* filename, const uint8_t* code,
     elf_add_symbol(builder, function_name, STB_GLOBAL, STT_FUNC,
                    text_section + 1, 0, code_size);
 
-    bool result = elf_write_file(builder, filename);
+    bool result = elf_write_file(builder, filename, machine_type);
 
     elf_builder_free(builder);
     return result;

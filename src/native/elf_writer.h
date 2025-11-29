@@ -65,6 +65,7 @@ typedef struct {
 
 #define ET_REL 1        // Relocatable object file
 #define EM_X86_64 62    // AMD x86-64
+#define EM_AARCH64 183  // ARM64 / AArch64
 
 // Section types
 #define SHT_NULL 0
@@ -145,10 +146,11 @@ void elf_add_relocation(elf_builder_t* builder, uint64_t offset, uint32_t sym,
                         uint32_t type, int64_t addend);
 
 // Write ELF file
-bool elf_write_file(elf_builder_t* builder, const char* filename);
+bool elf_write_file(elf_builder_t* builder, const char* filename, uint16_t machine_type);
 
 // High-level API: create object file from code
 bool elf_create_object_file(const char* filename, const uint8_t* code,
-                             size_t code_size, const char* function_name);
+                             size_t code_size, const char* function_name,
+                             uint16_t machine_type);
 
 #endif

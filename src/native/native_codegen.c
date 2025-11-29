@@ -1,6 +1,7 @@
 #include "native_codegen.h"
 #include "ir_builder.h"
 #include "codegen.h"
+#include "codegen_arm64.h"
 #include "elf_writer.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,24 +32,51 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
         ir_module_print(module);
     }
 
-    // Step 2: Generate native code
-    printf("[2/4] Generating x86-64 machine code...\n");
-    codegen_context_t* codegen = codegen_new(module);
-    if (!codegen_generate(codegen)) {
-        fprintf(stderr, "Error: Failed to generate native code\n");
-        codegen_free(codegen);
-        ir_module_free(module);
-        return false;
-    }
-
-    if (options->debug_output) {
-        printf("\nGenerated machine code:\n");
-        codegen_print(codegen);
-    }
-
-    // Step 3: Get generated code
+    // Step 2: Generate native code based on architecture
     size_t code_size;
-    uint8_t* code = codegen_get_code(codegen, &code_size);
+    uint8_t* code = NULL;
+    uint16_t machine_type;
+    bool is_arm64 = (strcmp(options->target_arch, "arm64") == 0 ||
+                     strcmp(options->target_arch, "aarch64") == 0);
+
+    if (is_arm64) {
+        printf("[2/4] Generating ARM64 machine code...\n");
+        codegen_arm64_context_t* codegen = codegen_arm64_new(module);
+        if (!codegen_arm64_generate(codegen)) {
+            fprintf(stderr, "Error: Failed to generate ARM64 code\n");
+            codegen_arm64_free(codegen);
+            ir_module_free(module);
+            return false;
+        }
+
+        if (options->debug_output) {
+            printf("\nGenerated machine code:\n");
+            codegen_arm64_print(codegen);
+        }
+
+        code = codegen_arm64_get_code(codegen, &code_size);
+        machine_type = EM_AARCH64;
+        codegen_arm64_free(codegen);
+    } else {
+        printf("[2/4] Generating x86-64 machine code...\n");
+        codegen_context_t* codegen = codegen_new(module);
+        if (!codegen_generate(codegen)) {
+            fprintf(stderr, "Error: Failed to generate x86-64 code\n");
+            codegen_free(codegen);
+            ir_module_free(module);
+            return false;
+        }
+
+        if (options->debug_output) {
+            printf("\nGenerated machine code:\n");
+            codegen_print(codegen);
+        }
+
+        code = codegen_get_code(codegen, &code_size);
+        machine_type = EM_X86_64;
+        codegen_free(codegen);
+    }
+
     printf("Generated %zu bytes of machine code\n", code_size);
 
     // Step 4: Write output file
@@ -59,7 +87,8 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
         // Generate object file
         const char* func_name = closure->function->name ?
                                 closure->function->name->chars : "sox_main";
-        success = elf_create_object_file(options->output_file, code, code_size, func_name);
+        success = elf_create_object_file(options->output_file, code, code_size,
+                                          func_name, machine_type);
     } else {
         // For executables, we'd need to link with runtime library
         fprintf(stderr, "Warning: Executable generation not yet implemented, generating object file\n");
@@ -67,7 +96,8 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
         snprintf(obj_file, sizeof(obj_file), "%s.o", options->output_file);
         const char* func_name = closure->function->name ?
                                 closure->function->name->chars : "sox_main";
-        success = elf_create_object_file(obj_file, code, code_size, func_name);
+        success = elf_create_object_file(obj_file, code, code_size,
+                                          func_name, machine_type);
 
         if (success) {
             printf("Generated object file: %s\n", obj_file);
@@ -85,7 +115,6 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
     }
 
     // Cleanup
-    codegen_free(codegen);
     ir_module_free(module);
 
     return success;
