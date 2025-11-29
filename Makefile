@@ -166,3 +166,6 @@ endif
 build-tools:
 	make -C tools/ all
 	make -C wasm_verify/ all
+
+ui:
+	cd sox_ui && wails dev
