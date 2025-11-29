@@ -114,3 +114,103 @@ func (a *App) GetFlowStats(nodesJSON string, edgesJSON string) string {
 
 	return fmt.Sprintf("Nodes: %d, Edges: %d", len(nodes), len(edges))
 }
+
+// CompileGraphResult contains compilation results
+type CompileGraphResult struct {
+	Success      bool               `json:"success"`
+	SourceCode   string             `json:"sourceCode"`
+	SourceMap    *SourceMap         `json:"sourceMap"`
+	Errors       []CompilationError `json:"errors"`
+	ErrorMessage string             `json:"errorMessage"`
+}
+
+// CompileGraph compiles a visual graph to Sox source code
+func (a *App) CompileGraph(nodesJSON string, edgesJSON string) string {
+	var nodes []Node
+	var edges []Edge
+
+	// Parse input
+	if err := json.Unmarshal([]byte(nodesJSON), &nodes); err != nil {
+		result := CompileGraphResult{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("Failed to parse nodes: %v", err),
+		}
+		resultJSON, _ := json.Marshal(result)
+		return string(resultJSON)
+	}
+
+	if err := json.Unmarshal([]byte(edgesJSON), &edges); err != nil {
+		result := CompileGraphResult{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("Failed to parse edges: %v", err),
+		}
+		resultJSON, _ := json.Marshal(result)
+		return string(resultJSON)
+	}
+
+	// Compile
+	compiler := NewGraphCompiler()
+	source, sourceMap, err := compiler.CompileToSource(nodes, edges)
+
+	if err != nil {
+		result := CompileGraphResult{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("Compilation failed: %v", err),
+			Errors:       compiler.errors,
+		}
+		resultJSON, _ := json.Marshal(result)
+		return string(resultJSON)
+	}
+
+	// Success
+	result := CompileGraphResult{
+		Success:    true,
+		SourceCode: source,
+		SourceMap:  sourceMap,
+	}
+	resultJSON, _ := json.Marshal(result)
+	return string(resultJSON)
+}
+
+// ValidateGraphDetailed performs detailed graph validation
+func (a *App) ValidateGraphDetailed(nodesJSON string, edgesJSON string) string {
+	var nodes []Node
+	var edges []Edge
+
+	// Parse input
+	if err := json.Unmarshal([]byte(nodesJSON), &nodes); err != nil {
+		result := ValidationResult{
+			IsValid: false,
+			Errors: []CompilationError{
+				{
+					Message:   fmt.Sprintf("Failed to parse nodes: %v", err),
+					ErrorType: "parse_error",
+				},
+			},
+		}
+		resultJSON, _ := json.Marshal(result)
+		return string(resultJSON)
+	}
+
+	if err := json.Unmarshal([]byte(edgesJSON), &edges); err != nil {
+		result := ValidationResult{
+			IsValid: false,
+			Errors: []CompilationError{
+				{
+					Message:   fmt.Sprintf("Failed to parse edges: %v", err),
+					ErrorType: "parse_error",
+				},
+			},
+		}
+		resultJSON, _ := json.Marshal(result)
+		return string(resultJSON)
+	}
+
+	// Validate
+	compiler := NewGraphCompiler()
+	compiler.buildGraph(nodes, edges)
+	validationResult := compiler.validateGraph()
+
+	resultJSON, _ := json.Marshal(validationResult)
+	return string(resultJSON)
+}
