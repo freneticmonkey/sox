@@ -13,3 +13,11 @@ export function SaveFlow(arg1, arg2) {
 export function ValidateFlow(arg1, arg2) {
   return window['go']['main']['App']['ValidateFlow'](arg1, arg2);
 }
+
+export function CompileGraph(arg1, arg2) {
+  return window['go']['main']['App']['CompileGraph'](arg1, arg2);
+}
+
+export function ValidateGraphDetailed(arg1, arg2) {
+  return window['go']['main']['App']['ValidateGraphDetailed'](arg1, arg2);
+}

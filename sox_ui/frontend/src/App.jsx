@@ -12,6 +12,8 @@ import {
 import '@xyflow/react/dist/style.css';
 import './App.css';
 import { GetFlowStats, ValidateFlow, SaveFlow, CompileGraph } from '../wailsjs/go/main/App';
+import NodePalette from './NodePalette';
+import { nodeTypes } from './CustomNodes';
 
 const initialNodes = [
   { id: '1', position: { x: 250, y: 50 }, data: { label: 'Start Node' }, type: 'input' },
@@ -32,6 +34,7 @@ function App() {
   const [message, setMessage] = useState('');
   const [compiledSource, setCompiledSource] = useState('');
   const [showSource, setShowSource] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(true);
 
   const onConnect = useCallback(
     (params) => setEdges((eds) => addEdge(params, eds)),
@@ -105,14 +108,68 @@ function App() {
     }
   };
 
+  const handleAddNodeFromPalette = (nodeType, nodeLabel) => {
+    const newNodeId = `${nodeId}`;
+    const newNode = {
+      id: newNodeId,
+      type: getReactFlowNodeType(nodeType),
+      position: {
+        x: 250 + Math.random() * 100,
+        y: 150 + Math.random() * 100,
+      },
+      data: getNodeData(nodeType, nodeLabel),
+    };
+
+    setNodes((nds) => nds.concat(newNode));
+    setNodeId((id) => id + 1);
+    setMessage(`✓ Added ${nodeLabel} node`);
+  };
+
+  const getReactFlowNodeType = (soxNodeType) => {
+    // Map Sox node types to React Flow visual types
+    if (soxNodeType === 'EntryPoint') return 'input';
+    if (soxNodeType === 'Print') return 'output';
+    return 'default';
+  };
+
+  const getNodeData = (nodeType, nodeLabel) => {
+    const data = {
+      label: nodeLabel,
+      nodeType: nodeType, // Store the Sox node type
+    };
+
+    // Set default values based on node type
+    switch (nodeType) {
+      case 'NumberNode':
+        data.value = 0;
+        break;
+      case 'StringNode':
+        data.value = '';
+        break;
+      case 'BooleanNode':
+        data.value = true;
+        break;
+      case 'DeclareVar':
+      case 'GetVar':
+      case 'SetVar':
+        data.name = 'x';
+        break;
+      default:
+        break;
+    }
+
+    return data;
+  };
+
   return (
-    <div style={{ width: '100vw', height: '100vh' }}>
+    <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        nodeTypes={nodeTypes}
         fitView
       >
         <Controls />
@@ -124,7 +181,8 @@ function App() {
             background: 'white',
             borderRadius: '8px',
             boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-            minWidth: '250px'
+            minWidth: '250px',
+            maxWidth: '350px',
           }}>
             <h3 style={{ margin: '0 0 15px 0', color: '#333', fontSize: '18px' }}>Sox Node Editor</h3>
 
@@ -309,6 +367,11 @@ function App() {
           </div>
         </Panel>
       </ReactFlow>
+      <NodePalette
+        onAddNode={handleAddNodeFromPalette}
+        isOpen={paletteOpen}
+        onToggle={() => setPaletteOpen(!paletteOpen)}
+      />
     </div>
   );
 }

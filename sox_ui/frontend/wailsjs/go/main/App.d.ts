@@ -6,3 +6,7 @@ export function GetFlowStats(arg1:string,arg2:string):Promise<string>;
 export function SaveFlow(arg1:string,arg2:string):Promise<string>;
 
 export function ValidateFlow(arg1:string,arg2:string):Promise<boolean|string>;
+
+export function CompileGraph(arg1:string,arg2:string):Promise<string>;
+
+export function ValidateGraphDetailed(arg1:string,arg2:string):Promise<string>;
