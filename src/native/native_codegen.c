@@ -3,6 +3,7 @@
 #include "codegen.h"
 #include "codegen_arm64.h"
 #include "elf_writer.h"
+#include "macho_writer.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -82,28 +83,62 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
     // Step 4: Write output file
     printf("[3/4] Writing output file...\n");
     bool success = false;
+    bool use_macho = (strcmp(options->target_os, "macos") == 0 ||
+                      strcmp(options->target_os, "darwin") == 0);
+
+    const char* func_name = closure->function->name ?
+                            closure->function->name->chars : "sox_main";
 
     if (options->emit_object) {
         // Generate object file
-        const char* func_name = closure->function->name ?
-                                closure->function->name->chars : "sox_main";
-        success = elf_create_object_file(options->output_file, code, code_size,
-                                          func_name, machine_type);
+        if (use_macho) {
+            // Determine CPU type for Mach-O
+            uint32_t cputype, cpusubtype;
+            if (is_arm64) {
+                cputype = CPU_TYPE_ARM64;
+                cpusubtype = CPU_SUBTYPE_ARM64_ALL;
+            } else {
+                cputype = CPU_TYPE_X86_64;
+                cpusubtype = CPU_SUBTYPE_X86_64_ALL;
+            }
+            success = macho_create_object_file(options->output_file, code, code_size,
+                                                func_name, cputype, cpusubtype);
+        } else {
+            success = elf_create_object_file(options->output_file, code, code_size,
+                                              func_name, machine_type);
+        }
     } else {
         // For executables, we'd need to link with runtime library
         fprintf(stderr, "Warning: Executable generation not yet implemented, generating object file\n");
         char obj_file[256];
         snprintf(obj_file, sizeof(obj_file), "%s.o", options->output_file);
-        const char* func_name = closure->function->name ?
-                                closure->function->name->chars : "sox_main";
-        success = elf_create_object_file(obj_file, code, code_size,
-                                          func_name, machine_type);
+
+        if (use_macho) {
+            uint32_t cputype, cpusubtype;
+            if (is_arm64) {
+                cputype = CPU_TYPE_ARM64;
+                cpusubtype = CPU_SUBTYPE_ARM64_ALL;
+            } else {
+                cputype = CPU_TYPE_X86_64;
+                cpusubtype = CPU_SUBTYPE_X86_64_ALL;
+            }
+            success = macho_create_object_file(obj_file, code, code_size,
+                                                func_name, cputype, cpusubtype);
+        } else {
+            success = elf_create_object_file(obj_file, code, code_size,
+                                              func_name, machine_type);
+        }
 
         if (success) {
             printf("Generated object file: %s\n", obj_file);
             printf("\nTo create executable, link with:\n");
-            printf("  gcc %s -o %s -L/path/to/sox/runtime -lsox_runtime\n",
-                   obj_file, options->output_file);
+            if (use_macho) {
+                printf("  clang %s -o %s -L/path/to/sox/runtime -lsox_runtime\n",
+                       obj_file, options->output_file);
+            } else {
+                printf("  gcc %s -o %s -L/path/to/sox/runtime -lsox_runtime\n",
+                       obj_file, options->output_file);
+            }
         }
     }
 
