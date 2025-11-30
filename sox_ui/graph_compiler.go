@@ -161,7 +161,7 @@ func (gc *GraphCompiler) buildGraph(nodes []Node, edges []Edge) error {
 
 		// Determine port names based on node types
 		sourcePort := gc.getOutputPortName(sourceNode)
-		targetPort := gc.getInputPortName(targetNode)
+		targetPort := gc.determineTargetPort(targetNode, edge.Source)
 
 		// Add to outputs of source node
 		nodePort := NodePort{NodeID: edge.Target, PortName: targetPort}
@@ -390,16 +390,8 @@ func (gc *GraphCompiler) generateSource() (string, error) {
 // generateNodeSource generates source code for a single node
 func (gc *GraphCompiler) generateNodeSource(node *CompiledNode) (string, error) {
 	switch node.Node.Type {
-	case "NumberNode":
-		// Number literals will be used inline in expressions
-		return "", nil
-
-	case "StringNode":
-		// String literals will be used inline in expressions
-		return "", nil
-
-	case "BooleanNode":
-		// Boolean literals will be used inline
+	case "NumberNode", "StringNode", "BooleanNode", "NilNode":
+		// Literals are used inline in expressions, not as statements
 		return "", nil
 
 	case "Print":
@@ -421,6 +413,23 @@ func (gc *GraphCompiler) generateNodeSource(node *CompiledNode) (string, error) 
 		}
 		return fmt.Sprintf("var %s", name), nil
 
+	case "SetVar":
+		name, _ := node.Node.Data["name"].(string)
+		if input, ok := node.Inputs["value"]; ok {
+			inputNode := gc.nodes[input.NodeID]
+			value := gc.getNodeValue(inputNode)
+			return fmt.Sprintf("%s = %s", name, value), nil
+		}
+		return "", fmt.Errorf("SetVar node missing value input")
+
+	case "Add", "Subtract", "Multiply", "Divide":
+		// Binary operators are used inline, not as statements
+		return "", nil
+
+	case "Negate", "Not":
+		// Unary operators are used inline, not as statements
+		return "", nil
+
 	default:
 		return fmt.Sprintf("// Unsupported node type: %s", node.Node.Type), nil
 	}
@@ -441,12 +450,76 @@ func (gc *GraphCompiler) getNodeValue(node *CompiledNode) string {
 		if val, ok := node.Node.Data["value"].(bool); ok {
 			return fmt.Sprintf("%v", val)
 		}
+	case "NilNode":
+		return "nil"
 	case "GetVar":
 		if name, ok := node.Node.Data["name"].(string); ok {
 			return name
 		}
+
+	// Binary operators
+	case "Add":
+		return gc.getBinaryOperatorValue(node, "+")
+	case "Subtract":
+		return gc.getBinaryOperatorValue(node, "-")
+	case "Multiply":
+		return gc.getBinaryOperatorValue(node, "*")
+	case "Divide":
+		return gc.getBinaryOperatorValue(node, "/")
+
+	// Comparison operators
+	case "Equal":
+		return gc.getBinaryOperatorValue(node, "==")
+	case "Greater":
+		return gc.getBinaryOperatorValue(node, ">")
+	case "Less":
+		return gc.getBinaryOperatorValue(node, "<")
+
+	// Logical operators
+	case "And":
+		return gc.getBinaryOperatorValue(node, "and")
+	case "Or":
+		return gc.getBinaryOperatorValue(node, "or")
+
+	// Unary operators
+	case "Negate":
+		return gc.getUnaryOperatorValue(node, "-")
+	case "Not":
+		return gc.getUnaryOperatorValue(node, "not")
 	}
 	return "nil"
+}
+
+// getBinaryOperatorValue generates source for binary operators
+func (gc *GraphCompiler) getBinaryOperatorValue(node *CompiledNode, operator string) string {
+	leftInput, hasLeft := node.Inputs["left"]
+	rightInput, hasRight := node.Inputs["right"]
+
+	if !hasLeft || !hasRight {
+		return "nil"
+	}
+
+	leftNode := gc.nodes[leftInput.NodeID]
+	rightNode := gc.nodes[rightInput.NodeID]
+
+	leftValue := gc.getNodeValue(leftNode)
+	rightValue := gc.getNodeValue(rightNode)
+
+	return fmt.Sprintf("(%s %s %s)", leftValue, operator, rightValue)
+}
+
+// getUnaryOperatorValue generates source for unary operators
+func (gc *GraphCompiler) getUnaryOperatorValue(node *CompiledNode, operator string) string {
+	operandInput, hasOperand := node.Inputs["operand"]
+
+	if !hasOperand {
+		return "nil"
+	}
+
+	operandNode := gc.nodes[operandInput.NodeID]
+	operandValue := gc.getNodeValue(operandNode)
+
+	return fmt.Sprintf("%s%s", operator, operandValue)
 }
 
 // FindMapping finds the source mapping for a given line
@@ -466,22 +539,37 @@ func (gc *GraphCompiler) getOutputPortName(node *CompiledNode) string {
 		return "flow"
 	case "NumberNode", "StringNode", "BooleanNode", "NilNode":
 		return "value"
-	case "DeclareVar", "GetVar":
+	case "DeclareVar", "GetVar", "SetVar":
 		return "value"
+	case "Add", "Subtract", "Multiply", "Divide":
+		return "result"
+	case "Equal", "Greater", "Less":
+		return "result"
+	case "And", "Or", "Not":
+		return "result"
+	case "Negate":
+		return "result"
 	default:
 		return "output"
 	}
 }
 
-// getInputPortName determines the input port name for a node
-func (gc *GraphCompiler) getInputPortName(node *CompiledNode) string {
-	switch node.Node.Type {
+// determineTargetPort determines which input port to use for a connection
+// For binary operators, assigns "left" to first input, "right" to second
+func (gc *GraphCompiler) determineTargetPort(targetNode *CompiledNode, sourceID string) string {
+	switch targetNode.Node.Type {
 	case "Print":
 		return "value"
-	case "DeclareVar":
+	case "DeclareVar", "SetVar":
 		return "value"
-	case "SetVar":
-		return "value"
+	case "Add", "Subtract", "Multiply", "Divide", "Equal", "Greater", "Less", "And", "Or":
+		// Binary operators: assign "left" if no left input yet, otherwise "right"
+		if _, hasLeft := targetNode.Inputs["left"]; !hasLeft {
+			return "left"
+		}
+		return "right"
+	case "Negate", "Not":
+		return "operand"
 	default:
 		return "input"
 	}

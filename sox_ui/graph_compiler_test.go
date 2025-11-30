@@ -391,3 +391,135 @@ func TestTopologicalSorting(t *testing.T) {
 		t.Error("var1 should come before print1 in execution order")
 	}
 }
+
+// TestArithmeticOperators tests arithmetic operator node compilation
+func TestArithmeticOperators(t *testing.T) {
+	// Create graph: 2 + 3
+	nodes := []Node{
+		{
+			ID:   "entry",
+			Type: "EntryPoint",
+			Data: map[string]interface{}{"label": "Start"},
+		},
+		{
+			ID:   "num1",
+			Type: "NumberNode",
+			Data: map[string]interface{}{"value": 2.0},
+		},
+		{
+			ID:   "num2",
+			Type: "NumberNode",
+			Data: map[string]interface{}{"value": 3.0},
+		},
+		{
+			ID:   "add1",
+			Type: "Add",
+			Data: map[string]interface{}{"label": "Add"},
+		},
+		{
+			ID:   "print1",
+			Type: "Print",
+			Data: map[string]interface{}{"label": "Print"},
+		},
+	}
+
+	edges := []Edge{
+		{ID: "e1", Source: "entry", Target: "print1"},
+		{ID: "e2", Source: "num1", Target: "add1"}, // left input
+		{ID: "e3", Source: "num2", Target: "add1"}, // right input
+		{ID: "e4", Source: "add1", Target: "print1"},
+	}
+
+	// Manually set up inputs for the Add node since port names matter
+	compiler := NewGraphCompiler()
+	compiler.buildGraph(nodes, edges)
+
+	// Fix the Add node inputs to have both left and right
+	addNode := compiler.nodes["add1"]
+	addNode.Inputs["left"] = NodePort{NodeID: "num1", PortName: "value"}
+	addNode.Inputs["right"] = NodePort{NodeID: "num2", PortName: "value"}
+
+	source, _, err := compiler.CompileToSource(nodes, edges)
+
+	if err != nil {
+		t.Fatalf("Compilation failed: %v", err)
+	}
+
+	if !strings.Contains(source, "print((2 + 3))") {
+		t.Errorf("Expected 'print((2 + 3))' in source, got:\n%s", source)
+	}
+}
+
+// TestMultipleOperators tests nested arithmetic operations
+func TestMultipleOperators(t *testing.T) {
+	// Create graph: (2 * 3) + 4
+	nodes := []Node{
+		{
+			ID:   "entry",
+			Type: "EntryPoint",
+			Data: map[string]interface{}{"label": "Start"},
+		},
+		{
+			ID:   "num1",
+			Type: "NumberNode",
+			Data: map[string]interface{}{"value": 2.0},
+		},
+		{
+			ID:   "num2",
+			Type: "NumberNode",
+			Data: map[string]interface{}{"value": 3.0},
+		},
+		{
+			ID:   "num3",
+			Type: "NumberNode",
+			Data: map[string]interface{}{"value": 4.0},
+		},
+		{
+			ID:   "mul1",
+			Type: "Multiply",
+			Data: map[string]interface{}{"label": "Multiply"},
+		},
+		{
+			ID:   "add1",
+			Type: "Add",
+			Data: map[string]interface{}{"label": "Add"},
+		},
+		{
+			ID:   "print1",
+			Type: "Print",
+			Data: map[string]interface{}{"label": "Print"},
+		},
+	}
+
+	edges := []Edge{
+		{ID: "e1", Source: "entry", Target: "print1"},
+		{ID: "e2", Source: "num1", Target: "mul1"},
+		{ID: "e3", Source: "num2", Target: "mul1"},
+		{ID: "e4", Source: "mul1", Target: "add1"},
+		{ID: "e5", Source: "num3", Target: "add1"},
+		{ID: "e6", Source: "add1", Target: "print1"},
+	}
+
+	compiler := NewGraphCompiler()
+	compiler.buildGraph(nodes, edges)
+
+	// Manually set up the binary operator inputs
+	mulNode := compiler.nodes["mul1"]
+	mulNode.Inputs["left"] = NodePort{NodeID: "num1", PortName: "value"}
+	mulNode.Inputs["right"] = NodePort{NodeID: "num2", PortName: "value"}
+
+	addNode := compiler.nodes["add1"]
+	addNode.Inputs["left"] = NodePort{NodeID: "mul1", PortName: "result"}
+	addNode.Inputs["right"] = NodePort{NodeID: "num3", PortName: "value"}
+
+	source, _, err := compiler.CompileToSource(nodes, edges)
+
+	if err != nil {
+		t.Fatalf("Compilation failed: %v", err)
+	}
+
+	// Should contain nested expression
+	if !strings.Contains(source, "((2 * 3) + 4)") {
+		t.Errorf("Expected '((2 * 3) + 4)' in source, got:\n%s", source)
+	}
+}
