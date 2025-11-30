@@ -11,7 +11,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import './App.css';
-import { GetFlowStats, ValidateFlow, SaveFlow } from '../wailsjs/go/main/App';
+import { GetFlowStats, ValidateFlow, SaveFlow, CompileGraph } from '../wailsjs/go/main/App';
 
 const initialNodes = [
   { id: '1', position: { x: 250, y: 50 }, data: { label: 'Start Node' }, type: 'input' },
@@ -30,6 +30,8 @@ function App() {
   const [nodeId, setNodeId] = useState(4);
   const [stats, setStats] = useState('');
   const [message, setMessage] = useState('');
+  const [compiledSource, setCompiledSource] = useState('');
+  const [showSource, setShowSource] = useState(false);
 
   const onConnect = useCallback(
     (params) => setEdges((eds) => addEdge(params, eds)),
@@ -79,6 +81,27 @@ function App() {
       setMessage('✓ Flow saved to console');
     } catch (err) {
       setMessage(`Error: ${err}`);
+    }
+  };
+
+  const compileGraph = async () => {
+    try {
+      const result = await CompileGraph(JSON.stringify(nodes), JSON.stringify(edges));
+      const parsed = JSON.parse(result);
+
+      if (parsed.success) {
+        setCompiledSource(parsed.sourceCode);
+        setShowSource(true);
+        setMessage('✓ Compilation successful!');
+      } else {
+        setMessage(`✗ Compilation failed: ${parsed.errorMessage}`);
+        setCompiledSource('');
+        setShowSource(false);
+      }
+    } catch (err) {
+      setMessage(`Error: ${err}`);
+      setCompiledSource('');
+      setShowSource(false);
     }
   };
 
@@ -177,6 +200,7 @@ function App() {
                 style={{
                   padding: '8px 16px',
                   marginBottom: '8px',
+                  marginRight: '8px',
                   cursor: 'pointer',
                   background: '#8b5cf6',
                   color: 'white',
@@ -186,6 +210,22 @@ function App() {
                 }}
               >
                 Save
+              </button>
+              <button
+                onClick={compileGraph}
+                style={{
+                  padding: '8px 16px',
+                  marginBottom: '8px',
+                  cursor: 'pointer',
+                  background: '#f59e0b',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                  fontWeight: 'bold'
+                }}
+              >
+                🔨 Compile
               </button>
             </div>
 
@@ -211,6 +251,59 @@ function App() {
                 color: message.includes('✓') ? '#065f46' : '#991b1b'
               }}>
                 {message}
+              </div>
+            )}
+
+            {showSource && compiledSource && (
+              <div style={{
+                marginTop: '15px',
+                borderTop: '1px solid #e5e7eb',
+                paddingTop: '15px'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '8px'
+                }}>
+                  <h4 style={{
+                    margin: 0,
+                    fontSize: '14px',
+                    color: '#374151',
+                    fontWeight: '600'
+                  }}>
+                    Generated Sox Code
+                  </h4>
+                  <button
+                    onClick={() => setShowSource(false)}
+                    style={{
+                      padding: '4px 8px',
+                      cursor: 'pointer',
+                      background: '#e5e7eb',
+                      color: '#374151',
+                      border: 'none',
+                      borderRadius: '4px',
+                      fontSize: '12px'
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <pre style={{
+                  padding: '12px',
+                  background: '#1e293b',
+                  color: '#e2e8f0',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  fontFamily: 'Consolas, Monaco, monospace',
+                  maxHeight: '200px',
+                  overflow: 'auto',
+                  margin: 0,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word'
+                }}>
+                  {compiledSource}
+                </pre>
               </div>
             )}
           </div>

@@ -159,9 +159,9 @@ func (gc *GraphCompiler) buildGraph(nodes []Node, edges []Edge) error {
 			return fmt.Errorf("edge references non-existent target node: %s", edge.Target)
 		}
 
-		// Determine port names from edge data (or use defaults)
-		sourcePort := "output" // Default output port
-		targetPort := "input"  // Default input port
+		// Determine port names based on node types
+		sourcePort := gc.getOutputPortName(sourceNode)
+		targetPort := gc.getInputPortName(targetNode)
 
 		// Add to outputs of source node
 		nodePort := NodePort{NodeID: edge.Target, PortName: targetPort}
@@ -457,6 +457,34 @@ func (sm *SourceMap) FindMapping(line, column int) *SourceMapping {
 		}
 	}
 	return nil
+}
+
+// getOutputPortName determines the output port name for a node
+func (gc *GraphCompiler) getOutputPortName(node *CompiledNode) string {
+	switch node.Node.Type {
+	case "EntryPoint":
+		return "flow"
+	case "NumberNode", "StringNode", "BooleanNode", "NilNode":
+		return "value"
+	case "DeclareVar", "GetVar":
+		return "value"
+	default:
+		return "output"
+	}
+}
+
+// getInputPortName determines the input port name for a node
+func (gc *GraphCompiler) getInputPortName(node *CompiledNode) string {
+	switch node.Node.Type {
+	case "Print":
+		return "value"
+	case "DeclareVar":
+		return "value"
+	case "SetVar":
+		return "value"
+	default:
+		return "input"
+	}
 }
 
 // MapCompilerError maps a compiler error back to a node
