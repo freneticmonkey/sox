@@ -219,7 +219,7 @@ static void emit_instruction(codegen_context_t* ctx, ir_instruction_t* instr) {
                 // Division requires RAX and RDX
                 x64_mov_reg_reg(ctx->asm_, X64_RAX, left);
                 // Sign-extend RAX into RDX:RAX
-                x64_emit_byte(ctx->asm_, REX_W);
+                x64_emit_byte(ctx->asm_, X64_REX_W);
                 x64_emit_byte(ctx->asm_, 0x99); // CQO
                 x64_idiv_reg(ctx->asm_, right);
                 if (dest != X64_RAX) {

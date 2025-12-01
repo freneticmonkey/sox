@@ -4,11 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-// REX prefix bits
-#define REX_W 0x48  // 64-bit operand size
-#define REX_R 0x44  // Extension of ModR/M reg field
-#define REX_X 0x42  // Extension of SIB index field
-#define REX_B 0x41  // Extension of ModR/M r/m field, SIB base, or opcode reg
+// Use REX constants from header (X64_REX_W, etc.)
+#define REX_W X64_REX_W
+#define REX_R X64_REX_R
+#define REX_X X64_REX_X
+#define REX_B X64_REX_B
 
 // ModR/M encoding helpers
 #define MODRM(mod, reg, rm) ((uint8_t)(((mod) << 6) | ((reg) << 3) | (rm)))

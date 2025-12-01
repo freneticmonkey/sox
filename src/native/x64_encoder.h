@@ -72,6 +72,12 @@ typedef enum {
     X64_CC_G = 15,   // Greater (signed >)
 } x64_condition_t;
 
+// REX prefix bits for 64-bit operations
+#define X64_REX_W 0x48  // 64-bit operand size
+#define X64_REX_R 0x44  // Extension of ModR/M reg field
+#define X64_REX_X 0x42  // Extension of SIB index field
+#define X64_REX_B 0x41  // Extension of ModR/M r/m field, SIB base, or opcode reg
+
 // Machine code buffer
 typedef struct {
     uint8_t* code;

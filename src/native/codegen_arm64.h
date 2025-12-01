@@ -5,6 +5,12 @@
 #include "arm64_encoder.h"
 #include "regalloc.h"
 
+// Patch location for forward jumps (ARM64)
+typedef struct {
+    size_t offset;
+    int target_label;
+} jump_patch_arm64_t;
+
 // ARM64 code generation context
 typedef struct {
     ir_module_t* module;
@@ -20,12 +26,7 @@ typedef struct {
     int label_capacity;
 
     // Patch locations for forward jumps
-    typedef struct {
-        size_t offset;
-        int target_label;
-    } jump_patch_t;
-
-    jump_patch_t* jump_patches;
+    jump_patch_arm64_t* jump_patches;
     int patch_count;
     int patch_capacity;
 } codegen_arm64_context_t;

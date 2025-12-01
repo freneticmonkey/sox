@@ -404,6 +404,30 @@ void* reallocate(void* pointer, size_t oldSize, size_t newSize, const char * fil
     return result;
 }
 
+// Simple memory allocation wrappers for native code generation
+// These bypass the VM's garbage collector and use direct malloc/free
+void* l_mem_alloc(size_t size) {
+    void* ptr = malloc(size);
+    if (ptr == NULL && size > 0) {
+        exit(1);
+    }
+    return ptr;
+}
+
+void* l_mem_realloc(void* pointer, size_t old_size, size_t new_size) {
+    (void)old_size; // Unused, but kept for API consistency
+    void* ptr = realloc(pointer, new_size);
+    if (ptr == NULL && new_size > 0) {
+        exit(1);
+    }
+    return ptr;
+}
+
+void l_mem_free(void* pointer, size_t size) {
+    (void)size; // Unused, but kept for API consistency
+    free(pointer);
+}
+
 // initialise the memory management system
 void l_init_memory() {
 

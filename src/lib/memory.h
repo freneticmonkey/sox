@@ -28,6 +28,11 @@ void* reallocate(void* pointer, size_t oldSize, size_t newSize, const char * fil
 
 size_t l_calculate_capacity_with_size(size_t current_capacity, size_t new_size);
 
+// Simple memory allocation wrappers for native code generation
+void* l_mem_alloc(size_t size);
+void* l_mem_realloc(void* pointer, size_t old_size, size_t new_size);
+void l_mem_free(void* pointer, size_t size);
+
 // Memory Initialisation
 //
 
