@@ -32,7 +32,7 @@ void codegen_free(codegen_context_t* ctx) {
         l_mem_free(ctx->label_offsets, sizeof(int) * ctx->label_capacity);
     }
     if (ctx->jump_patches) {
-        l_mem_free(ctx->jump_patches, sizeof(typeof(*ctx->jump_patches)) * ctx->patch_capacity);
+        l_mem_free(ctx->jump_patches, sizeof(jump_patch_t) * ctx->patch_capacity);
     }
 
     l_mem_free(ctx, sizeof(codegen_context_t));
@@ -63,9 +63,9 @@ static void add_jump_patch(codegen_context_t* ctx, size_t offset, int target_lab
         int old_capacity = ctx->patch_capacity;
         ctx->patch_capacity = (old_capacity < 8) ? 8 : old_capacity * 2;
         void* old_ptr = ctx->jump_patches;
-        size_t old_size = sizeof(*ctx->jump_patches) * old_capacity;
-        size_t new_size = sizeof(*ctx->jump_patches) * ctx->patch_capacity;
-        ctx->jump_patches = (typeof(ctx->jump_patches))l_mem_realloc(old_ptr, old_size, new_size);
+        size_t old_size = sizeof(jump_patch_t) * old_capacity;
+        size_t new_size = sizeof(jump_patch_t) * ctx->patch_capacity;
+        ctx->jump_patches = (jump_patch_t*)l_mem_realloc(old_ptr, old_size, new_size);
     }
 
     ctx->jump_patches[ctx->patch_count].offset = offset;
