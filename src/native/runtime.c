@@ -60,7 +60,7 @@ value_t sox_native_less(value_t left, value_t right) {
 }
 
 value_t sox_native_not(value_t operand) {
-    return BOOL_VAL(!IS_NIL(operand) && !(IS_BOOL(operand) && !AS_BOOL(operand)));
+    return BOOL_VAL(IS_NIL(operand) || (IS_BOOL(operand) && !AS_BOOL(operand)));
 }
 
 void sox_native_print(value_t value) {
