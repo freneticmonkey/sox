@@ -153,4 +153,23 @@ bool elf_create_object_file(const char* filename, const uint8_t* code,
                              size_t code_size, const char* function_name,
                              uint16_t machine_type);
 
+// High-level API: create executable-ready object file (with main entry point)
+bool elf_create_executable_object_file(const char* filename, const uint8_t* code,
+                                       size_t code_size,
+                                       uint16_t machine_type);
+
+// High-level API: create object file with relocations
+// Note: relocs should be of type 'codegen_relocation_t*' (include codegen.h to use)
+bool elf_create_object_file_with_relocations(const char* filename, const uint8_t* code,
+                                             size_t code_size, const char* function_name,
+                                             uint16_t machine_type,
+                                             const void* relocs, int reloc_count);
+
+// High-level API: create executable object file with relocations
+// Note: relocs should be of type 'codegen_relocation_t*' (include codegen.h to use)
+bool elf_create_executable_object_file_with_relocations(const char* filename, const uint8_t* code,
+                                                        size_t code_size,
+                                                        uint16_t machine_type,
+                                                        const void* relocs, int reloc_count);
+
 #endif

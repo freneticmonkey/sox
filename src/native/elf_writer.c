@@ -1,4 +1,5 @@
 #include "elf_writer.h"
+#include "codegen.h"
 #include "../lib/memory.h"
 #include "../lib/file.h"
 #include <stdio.h>
@@ -263,6 +264,158 @@ bool elf_create_object_file(const char* filename, const uint8_t* code,
     // Add function symbol
     elf_add_symbol(builder, function_name, STB_GLOBAL, STT_FUNC,
                    text_section + 1, 0, code_size);
+
+    bool result = elf_write_file(builder, filename, machine_type);
+
+    elf_builder_free(builder);
+    return result;
+}
+
+bool elf_create_executable_object_file(const char* filename, const uint8_t* code,
+                                       size_t code_size,
+                                       uint16_t machine_type) {
+    elf_builder_t* builder = elf_builder_new();
+
+    // Add .text section
+    int text_section = elf_add_section(builder, ".text", SHT_PROGBITS,
+                                        SHF_ALLOC | SHF_EXECINSTR, code, code_size);
+
+    // Add .strtab section
+    int strtab_section = elf_add_section(builder, ".strtab", SHT_STRTAB,
+                                          0, (uint8_t*)builder->strtab, builder->strtab_size);
+
+    // Add .symtab section
+    int symtab_section = elf_add_section(builder, ".symtab", SHT_SYMTAB,
+                                          0, (uint8_t*)builder->symtab,
+                                          builder->symtab_count * sizeof(Elf64_Sym));
+    builder->sections[symtab_section].sh_link = strtab_section;
+    builder->sections[symtab_section].sh_info = 1;
+
+    // Add main symbol at offset 0 (entry point for executable linking)
+    elf_add_symbol(builder, "main", STB_GLOBAL, STT_FUNC,
+                   text_section + 1, 0, code_size);
+
+    // Also add sox_main for reference
+    elf_add_symbol(builder, "sox_main", STB_GLOBAL, STT_FUNC,
+                   text_section + 1, 0, code_size);
+
+    bool result = elf_write_file(builder, filename, machine_type);
+
+    elf_builder_free(builder);
+    return result;
+}
+
+bool elf_create_object_file_with_relocations(const char* filename, const uint8_t* code,
+                                             size_t code_size, const char* function_name,
+                                             uint16_t machine_type,
+                                             const void* relocs_ptr, int reloc_count) {
+    const codegen_relocation_t* relocs = (const codegen_relocation_t*)relocs_ptr;
+    elf_builder_t* builder = elf_builder_new();
+
+    // Add .text section
+    int text_section = elf_add_section(builder, ".text", SHT_PROGBITS,
+                                        SHF_ALLOC | SHF_EXECINSTR, code, code_size);
+
+    // Add .strtab section
+    int strtab_section = elf_add_section(builder, ".strtab", SHT_STRTAB,
+                                          0, (uint8_t*)builder->strtab, builder->strtab_size);
+
+    // Add .symtab section
+    int symtab_section = elf_add_section(builder, ".symtab", SHT_SYMTAB,
+                                          0, (uint8_t*)builder->symtab,
+                                          builder->symtab_count * sizeof(Elf64_Sym));
+    builder->sections[symtab_section].sh_link = strtab_section;
+    builder->sections[symtab_section].sh_info = 1;
+
+    // Add function symbol
+    elf_add_symbol(builder, function_name, STB_GLOBAL, STT_FUNC,
+                   text_section + 1, 0, code_size);
+
+    // Add external symbols referenced by relocations
+    for (int i = 0; i < reloc_count; i++) {
+        // Add as undefined external symbol
+        elf_add_symbol(builder, relocs[i].symbol, STB_GLOBAL, STT_NOTYPE,
+                      STN_UNDEF, 0, 0);
+    }
+
+    // Add relocations
+    for (int i = 0; i < reloc_count; i++) {
+        // Symbol index is (1 + function symbol + i) since we have null symbol + function + externals
+        uint32_t sym_idx = 2 + i; // 0=null, 1=function, 2+=externals
+        elf_add_relocation(builder, relocs[i].offset, sym_idx,
+                          relocs[i].type, relocs[i].addend);
+    }
+
+    // Add .rela.text section if we have relocations
+    if (reloc_count > 0) {
+        int rela_section = elf_add_section(builder, ".rela.text", SHT_RELA,
+                                           0, (uint8_t*)builder->rela,
+                                           builder->rela_count * sizeof(Elf64_Rela));
+        builder->sections[rela_section].sh_link = symtab_section;
+        builder->sections[rela_section].sh_info = text_section + 1; // Points to .text section
+        builder->sections[rela_section].sh_entsize = sizeof(Elf64_Rela);
+    }
+
+    bool result = elf_write_file(builder, filename, machine_type);
+
+    elf_builder_free(builder);
+    return result;
+}
+
+bool elf_create_executable_object_file_with_relocations(const char* filename, const uint8_t* code,
+                                                        size_t code_size,
+                                                        uint16_t machine_type,
+                                                        const void* relocs_ptr, int reloc_count) {
+    const codegen_relocation_t* relocs = (const codegen_relocation_t*)relocs_ptr;
+    elf_builder_t* builder = elf_builder_new();
+
+    // Add .text section
+    int text_section = elf_add_section(builder, ".text", SHT_PROGBITS,
+                                        SHF_ALLOC | SHF_EXECINSTR, code, code_size);
+
+    // Add .strtab section
+    int strtab_section = elf_add_section(builder, ".strtab", SHT_STRTAB,
+                                          0, (uint8_t*)builder->strtab, builder->strtab_size);
+
+    // Add .symtab section
+    int symtab_section = elf_add_section(builder, ".symtab", SHT_SYMTAB,
+                                          0, (uint8_t*)builder->symtab,
+                                          builder->symtab_count * sizeof(Elf64_Sym));
+    builder->sections[symtab_section].sh_link = strtab_section;
+    builder->sections[symtab_section].sh_info = 1;
+
+    // Add main symbol at offset 0 (entry point for executable linking)
+    elf_add_symbol(builder, "main", STB_GLOBAL, STT_FUNC,
+                   text_section + 1, 0, code_size);
+
+    // Also add sox_main for reference
+    elf_add_symbol(builder, "sox_main", STB_GLOBAL, STT_FUNC,
+                   text_section + 1, 0, code_size);
+
+    // Add external symbols referenced by relocations
+    for (int i = 0; i < reloc_count; i++) {
+        // Add as undefined external symbol
+        elf_add_symbol(builder, relocs[i].symbol, STB_GLOBAL, STT_NOTYPE,
+                      STN_UNDEF, 0, 0);
+    }
+
+    // Add relocations
+    for (int i = 0; i < reloc_count; i++) {
+        // Symbol index is (2 + main + sox_main + i)
+        uint32_t sym_idx = 3 + i; // 0=null, 1=main, 2=sox_main, 3+=externals
+        elf_add_relocation(builder, relocs[i].offset, sym_idx,
+                          relocs[i].type, relocs[i].addend);
+    }
+
+    // Add .rela.text section if we have relocations
+    if (reloc_count > 0) {
+        int rela_section = elf_add_section(builder, ".rela.text", SHT_RELA,
+                                           0, (uint8_t*)builder->rela,
+                                           builder->rela_count * sizeof(Elf64_Rela));
+        builder->sections[rela_section].sh_link = symtab_section;
+        builder->sections[rela_section].sh_info = text_section + 1; // Points to .text section
+        builder->sections[rela_section].sh_entsize = sizeof(Elf64_Rela);
+    }
 
     bool result = elf_write_file(builder, filename, machine_type);
 

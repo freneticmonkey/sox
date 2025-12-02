@@ -176,6 +176,9 @@ ir_instruction_t* ir_instruction_new(ir_op_t op) {
     instr->operand1 = (ir_value_t){0};
     instr->operand2 = (ir_value_t){0};
     instr->operand3 = (ir_value_t){0};
+    instr->call_args = NULL;
+    instr->call_arg_count = 0;
+    instr->call_target = NULL;
     instr->line = 0;
     instr->next = NULL;
     return instr;
@@ -183,6 +186,9 @@ ir_instruction_t* ir_instruction_new(ir_op_t op) {
 
 void ir_instruction_free(ir_instruction_t* instr) {
     if (!instr) return;
+    if (instr->call_args) {
+        l_mem_free(instr->call_args, sizeof(ir_value_t) * instr->call_arg_count);
+    }
     l_mem_free(instr, sizeof(ir_instruction_t));
 }
 
