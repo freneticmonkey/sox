@@ -75,9 +75,9 @@ static void add_jump_patch(codegen_context_t* ctx, size_t offset, int target_lab
 
 static x64_register_t get_physical_register(codegen_context_t* ctx, ir_value_t value) {
     if (value.type == IR_VAL_REGISTER) {
-        x64_register_t reg = regalloc_get_register(ctx->regalloc, value.as.reg);
-        if (reg != X64_NO_REG) {
-            return reg;
+        int preg = regalloc_get_register(ctx->regalloc, value.as.reg);
+        if (preg >= 0) {
+            return regalloc_to_x64_register(preg);
         }
         // Handle spilled registers by loading into a temporary
         // For now, use RAX as scratch
@@ -353,7 +353,7 @@ bool codegen_generate_function(codegen_context_t* ctx, ir_function_t* func) {
     ctx->current_function = func;
 
     // Perform register allocation
-    ctx->regalloc = regalloc_new(func);
+    ctx->regalloc = regalloc_new(func, REGALLOC_ARCH_X64);
     if (!regalloc_allocate(ctx->regalloc)) {
         return false;
     }

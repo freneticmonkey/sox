@@ -3,7 +3,14 @@
 
 #include "ir.h"
 #include "x64_encoder.h"
+#include "arm64_encoder.h"
 #include <stdbool.h>
+
+// Architecture type for register allocation
+typedef enum {
+    REGALLOC_ARCH_X64,
+    REGALLOC_ARCH_ARM64,
+} regalloc_arch_t;
 
 // Live range for a virtual register
 typedef struct {
@@ -18,18 +25,19 @@ typedef struct {
 // Register allocation context
 typedef struct {
     ir_function_t* function;
+    regalloc_arch_t arch;  // Target architecture
 
     // Live ranges for each virtual register
     live_range_t* ranges;
     int range_count;
     int range_capacity;
 
-    // Available physical registers
-    x64_register_t* available_regs;
+    // Available physical registers (generic register numbers)
+    int* available_regs;
     int available_count;
 
     // Register mapping: vreg -> physical register or spill slot
-    x64_register_t* vreg_to_preg;
+    int* vreg_to_preg;  // Generic register number (0-31)
     int* vreg_to_spill;
     int vreg_count;
 
@@ -39,16 +47,20 @@ typedef struct {
 } regalloc_context_t;
 
 // Create register allocator
-regalloc_context_t* regalloc_new(ir_function_t* function);
+regalloc_context_t* regalloc_new(ir_function_t* function, regalloc_arch_t arch);
 void regalloc_free(regalloc_context_t* ctx);
 
 // Perform register allocation
 bool regalloc_allocate(regalloc_context_t* ctx);
 
-// Query allocation results
-x64_register_t regalloc_get_register(regalloc_context_t* ctx, int vreg);
+// Query allocation results (returns generic register number or -1 for none)
+int regalloc_get_register(regalloc_context_t* ctx, int vreg);
 int regalloc_get_spill_slot(regalloc_context_t* ctx, int vreg);
 bool regalloc_is_spilled(regalloc_context_t* ctx, int vreg);
+
+// Convert generic register number to architecture-specific register
+x64_register_t regalloc_to_x64_register(int reg);
+arm64_register_t regalloc_to_arm64_register(int reg);
 
 // Get frame size for prologue/epilogue
 int regalloc_get_frame_size(regalloc_context_t* ctx);

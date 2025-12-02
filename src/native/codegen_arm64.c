@@ -75,12 +75,10 @@ static void add_jump_patch(codegen_arm64_context_t* ctx, size_t offset, int targ
 // Map virtual register to ARM64 physical register
 static arm64_register_t get_physical_register_arm64(codegen_arm64_context_t* ctx, ir_value_t value) {
     if (value.type == IR_VAL_REGISTER) {
-        x64_register_t x64_reg = regalloc_get_register(ctx->regalloc, value.as.reg);
+        int preg = regalloc_get_register(ctx->regalloc, value.as.reg);
 
-        // Map x64 register numbers to ARM64 registers
-        // This is a simplified mapping
-        if (x64_reg == X64_NO_REG) {
-            // Handle spilled registers
+        // Check if register was spilled
+        if (preg < 0) {
             int spill_slot = regalloc_get_spill_slot(ctx->regalloc, value.as.reg);
             if (spill_slot >= 0) {
                 // Load from stack into temporary register X9
@@ -90,64 +88,53 @@ static arm64_register_t get_physical_register_arm64(codegen_arm64_context_t* ctx
             return ARM64_NO_REG;
         }
 
-        // Simple mapping: use same register number
-        // This works because we have 32 ARM64 registers and allocatable x64 registers fit
-        if (x64_reg < ARM64_REG_COUNT) {
-            return (arm64_register_t)x64_reg;
-        }
+        // Convert generic register number to ARM64 register
+        return regalloc_to_arm64_register(preg);
     }
     return ARM64_NO_REG;
 }
 
 static void emit_function_prologue_arm64(codegen_arm64_context_t* ctx) {
     // ARM64 function prologue (AArch64 calling convention)
-    // stp x29, x30, [sp, #-16]!  ; Save FP and LR
-    // mov x29, sp                 ; Set up frame pointer
-    // sub sp, sp, #frame_size     ; Allocate stack frame
+    // Calculate total frame size: saved regs + locals + alignment
+    int locals_size = regalloc_get_frame_size(ctx->regalloc);
 
-    // Save FP and LR
-    arm64_stp(ctx->asm_, ARM64_FP, ARM64_LR, ARM64_SP, -16);
-    arm64_sub_reg_reg_imm(ctx->asm_, ARM64_SP, ARM64_SP, 16);
+    // Need to save callee-saved registers if used
+    // For now, always save X19-X22 (32 bytes) if we have locals
+    int callee_saved_size = (locals_size > 0) ? 32 : 0;
+    int total_frame_size = locals_size + callee_saved_size + 16; // +16 for FP/LR
 
-    // Set up frame pointer
+    // Ensure 16-byte alignment
+    total_frame_size = (total_frame_size + 15) & ~15;
+
+    // Save FP and LR with pre-index: stp x29, x30, [sp, #-frame_size]!
+    arm64_stp_pre(ctx->asm_, ARM64_FP, ARM64_LR, ARM64_SP, -total_frame_size);
+
+    // Set up frame pointer: mov x29, sp
     arm64_mov_reg_reg(ctx->asm_, ARM64_FP, ARM64_SP);
 
-    // Allocate stack frame
-    int frame_size = regalloc_get_frame_size(ctx->regalloc);
-    if (frame_size > 0) {
-        if (frame_size < 4096) {
-            arm64_sub_reg_reg_imm(ctx->asm_, ARM64_SP, ARM64_SP, (uint16_t)frame_size);
-        } else {
-            // For large frames, use a register
-            arm64_mov_reg_imm(ctx->asm_, ARM64_X9, frame_size);
-            arm64_sub_reg_reg_reg(ctx->asm_, ARM64_SP, ARM64_SP, ARM64_X9);
-        }
-    }
-
-    // Save callee-saved registers (X19-X28)
-    // Simplified: save a few commonly used ones
-    if (frame_size > 64) {
-        arm64_stp(ctx->asm_, ARM64_X19, ARM64_X20, ARM64_SP, 0);
-        arm64_stp(ctx->asm_, ARM64_X21, ARM64_X22, ARM64_SP, 16);
+    // Save callee-saved registers if needed
+    if (callee_saved_size > 0) {
+        arm64_stp(ctx->asm_, ARM64_X19, ARM64_X20, ARM64_SP, 16);
+        arm64_stp(ctx->asm_, ARM64_X21, ARM64_X22, ARM64_SP, 32);
     }
 }
 
 static void emit_function_epilogue_arm64(codegen_arm64_context_t* ctx) {
     // ARM64 function epilogue
-    int frame_size = regalloc_get_frame_size(ctx->regalloc);
+    int locals_size = regalloc_get_frame_size(ctx->regalloc);
+    int callee_saved_size = (locals_size > 0) ? 32 : 0;
+    int total_frame_size = locals_size + callee_saved_size + 16;
+    total_frame_size = (total_frame_size + 15) & ~15;
 
-    // Restore callee-saved registers
-    if (frame_size > 64) {
-        arm64_ldp(ctx->asm_, ARM64_X21, ARM64_X22, ARM64_SP, 16);
-        arm64_ldp(ctx->asm_, ARM64_X19, ARM64_X20, ARM64_SP, 0);
+    // Restore callee-saved registers if they were saved
+    if (callee_saved_size > 0) {
+        arm64_ldp(ctx->asm_, ARM64_X21, ARM64_X22, ARM64_SP, 32);
+        arm64_ldp(ctx->asm_, ARM64_X19, ARM64_X20, ARM64_SP, 16);
     }
 
-    // Deallocate stack frame
-    arm64_mov_reg_reg(ctx->asm_, ARM64_SP, ARM64_FP);
-
-    // Restore FP and LR
-    arm64_ldp(ctx->asm_, ARM64_FP, ARM64_LR, ARM64_SP, 0);
-    arm64_add_reg_reg_imm(ctx->asm_, ARM64_SP, ARM64_SP, 16);
+    // Restore FP and LR with post-index: ldp x29, x30, [sp], #frame_size
+    arm64_ldp_post(ctx->asm_, ARM64_FP, ARM64_LR, ARM64_SP, total_frame_size);
 
     // Return
     arm64_ret(ctx->asm_, ARM64_LR);
@@ -348,7 +335,7 @@ bool codegen_arm64_generate_function(codegen_arm64_context_t* ctx, ir_function_t
     ctx->current_function = func;
 
     // Perform register allocation
-    ctx->regalloc = regalloc_new(func);
+    ctx->regalloc = regalloc_new(func, REGALLOC_ARCH_ARM64);
     if (!regalloc_allocate(ctx->regalloc)) {
         return false;
     }

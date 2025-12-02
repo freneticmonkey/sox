@@ -4,32 +4,55 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Available registers for allocation (excluding RSP, RBP which are reserved)
-static const x64_register_t allocatable_regs[] = {
-    X64_RAX, X64_RCX, X64_RDX, X64_RBX,
-    X64_RSI, X64_RDI,
-    X64_R8, X64_R9, X64_R10, X64_R11,
-    X64_R12, X64_R13, X64_R14, X64_R15
+// Available registers for x64 (excluding RSP, RBP which are reserved)
+// Using generic register numbers that map to x64_register_t
+static const int x64_allocatable_regs[] = {
+    0, 1, 2, 3,    // RAX, RCX, RDX, RBX
+    6, 7,          // RSI, RDI
+    8, 9, 10, 11,  // R8-R11
+    12, 13, 14, 15 // R12-R15
 };
-static const int allocatable_count = sizeof(allocatable_regs) / sizeof(allocatable_regs[0]);
+static const int x64_allocatable_count = sizeof(x64_allocatable_regs) / sizeof(x64_allocatable_regs[0]);
 
-regalloc_context_t* regalloc_new(ir_function_t* function) {
+// Available registers for ARM64 (excluding SP, FP, LR which are reserved)
+// X0-X17 are caller-saved temps, X19-X28 are callee-saved
+static const int arm64_allocatable_regs[] = {
+    0, 1, 2, 3, 4, 5, 6, 7,        // X0-X7 (argument registers)
+    9, 10, 11, 12, 13, 14, 15,     // X9-X15 (temps, excluding X8)
+    16, 17,                        // X16-X17 (IP0, IP1)
+    19, 20, 21, 22, 23, 24, 25, 26, 27, 28  // X19-X28 (callee-saved)
+};
+static const int arm64_allocatable_count = sizeof(arm64_allocatable_regs) / sizeof(arm64_allocatable_regs[0]);
+
+regalloc_context_t* regalloc_new(ir_function_t* function, regalloc_arch_t arch) {
     regalloc_context_t* ctx = (regalloc_context_t*)l_mem_alloc(sizeof(regalloc_context_t));
     ctx->function = function;
+    ctx->arch = arch;
     ctx->ranges = NULL;
     ctx->range_count = 0;
     ctx->range_capacity = 0;
 
-    ctx->available_regs = (x64_register_t*)l_mem_alloc(sizeof(x64_register_t) * allocatable_count);
-    memcpy(ctx->available_regs, allocatable_regs, sizeof(x64_register_t) * allocatable_count);
-    ctx->available_count = allocatable_count;
+    // Set up allocatable registers based on architecture
+    const int* regs;
+    int count;
+    if (arch == REGALLOC_ARCH_ARM64) {
+        regs = arm64_allocatable_regs;
+        count = arm64_allocatable_count;
+    } else {
+        regs = x64_allocatable_regs;
+        count = x64_allocatable_count;
+    }
+
+    ctx->available_regs = (int*)l_mem_alloc(sizeof(int) * count);
+    memcpy(ctx->available_regs, regs, sizeof(int) * count);
+    ctx->available_count = count;
 
     ctx->vreg_count = function->next_register;
-    ctx->vreg_to_preg = (x64_register_t*)l_mem_alloc(sizeof(x64_register_t) * ctx->vreg_count);
+    ctx->vreg_to_preg = (int*)l_mem_alloc(sizeof(int) * ctx->vreg_count);
     ctx->vreg_to_spill = (int*)l_mem_alloc(sizeof(int) * ctx->vreg_count);
 
     for (int i = 0; i < ctx->vreg_count; i++) {
-        ctx->vreg_to_preg[i] = X64_NO_REG;
+        ctx->vreg_to_preg[i] = -1;  // No register assigned
         ctx->vreg_to_spill[i] = -1;
     }
 
@@ -46,10 +69,10 @@ void regalloc_free(regalloc_context_t* ctx) {
         l_mem_free(ctx->ranges, sizeof(live_range_t) * ctx->range_capacity);
     }
     if (ctx->available_regs) {
-        l_mem_free(ctx->available_regs, sizeof(x64_register_t) * allocatable_count);
+        l_mem_free(ctx->available_regs, sizeof(int) * ctx->available_count);
     }
     if (ctx->vreg_to_preg) {
-        l_mem_free(ctx->vreg_to_preg, sizeof(x64_register_t) * ctx->vreg_count);
+        l_mem_free(ctx->vreg_to_preg, sizeof(int) * ctx->vreg_count);
     }
     if (ctx->vreg_to_spill) {
         l_mem_free(ctx->vreg_to_spill, sizeof(int) * ctx->vreg_count);
@@ -84,7 +107,7 @@ static void add_live_range(regalloc_context_t* ctx, int vreg, int pos) {
         range->vreg = vreg;
         range->start = pos;
         range->end = pos;
-        range->preg = X64_NO_REG;
+        range->preg = -1;  // No register assigned yet
         range->spill_slot = -1;
         range->is_float = false;
     } else {
@@ -141,8 +164,8 @@ static bool linear_scan_allocate(regalloc_context_t* ctx) {
     int active_count = 0;
 
     // Free registers pool
-    bool* free_regs = (bool*)l_mem_alloc(sizeof(bool) * allocatable_count);
-    for (int i = 0; i < allocatable_count; i++) {
+    bool* free_regs = (bool*)l_mem_alloc(sizeof(bool) * ctx->available_count);
+    for (int i = 0; i < ctx->available_count; i++) {
         free_regs[i] = true;
     }
 
@@ -153,9 +176,9 @@ static bool linear_scan_allocate(regalloc_context_t* ctx) {
         for (int j = 0; j < active_count; ) {
             if (active[j]->end < range->start) {
                 // This range is done, free its register
-                if (active[j]->preg != X64_NO_REG) {
-                    for (int k = 0; k < allocatable_count; k++) {
-                        if (allocatable_regs[k] == active[j]->preg) {
+                if (active[j]->preg >= 0) {
+                    for (int k = 0; k < ctx->available_count; k++) {
+                        if (ctx->available_regs[k] == active[j]->preg) {
                             free_regs[k] = true;
                             break;
                         }
@@ -171,9 +194,9 @@ static bool linear_scan_allocate(regalloc_context_t* ctx) {
 
         // Try to allocate a register
         bool allocated = false;
-        for (int j = 0; j < allocatable_count; j++) {
+        for (int j = 0; j < ctx->available_count; j++) {
             if (free_regs[j]) {
-                range->preg = allocatable_regs[j];
+                range->preg = ctx->available_regs[j];
                 ctx->vreg_to_preg[range->vreg] = range->preg;
                 free_regs[j] = false;
                 allocated = true;
@@ -190,7 +213,7 @@ static bool linear_scan_allocate(regalloc_context_t* ctx) {
     }
 
     l_mem_free(active, sizeof(live_range_t*) * ctx->range_count);
-    l_mem_free(free_regs, sizeof(bool) * allocatable_count);
+    l_mem_free(free_regs, sizeof(bool) * ctx->available_count);
 
     // Calculate frame size (spilled registers + local variables)
     ctx->frame_size = (ctx->spill_count + ctx->function->local_count) * 8;
@@ -205,11 +228,11 @@ bool regalloc_allocate(regalloc_context_t* ctx) {
     return linear_scan_allocate(ctx);
 }
 
-x64_register_t regalloc_get_register(regalloc_context_t* ctx, int vreg) {
+int regalloc_get_register(regalloc_context_t* ctx, int vreg) {
     if (vreg >= 0 && vreg < ctx->vreg_count) {
         return ctx->vreg_to_preg[vreg];
     }
-    return X64_NO_REG;
+    return -1;  // No register assigned
 }
 
 int regalloc_get_spill_slot(regalloc_context_t* ctx, int vreg) {
@@ -221,6 +244,18 @@ int regalloc_get_spill_slot(regalloc_context_t* ctx, int vreg) {
 
 bool regalloc_is_spilled(regalloc_context_t* ctx, int vreg) {
     return regalloc_get_spill_slot(ctx, vreg) >= 0;
+}
+
+// Convert generic register number to x64 register
+x64_register_t regalloc_to_x64_register(int reg) {
+    if (reg < 0 || reg >= 16) return X64_NO_REG;
+    return (x64_register_t)reg;
+}
+
+// Convert generic register number to ARM64 register
+arm64_register_t regalloc_to_arm64_register(int reg) {
+    if (reg < 0 || reg >= 32) return ARM64_NO_REG;
+    return (arm64_register_t)reg;
 }
 
 int regalloc_get_frame_size(regalloc_context_t* ctx) {
@@ -239,8 +274,12 @@ void regalloc_print(regalloc_context_t* ctx) {
         live_range_t* range = &ctx->ranges[i];
         printf("    v%d [%d-%d]: ", range->vreg, range->start, range->end);
 
-        if (range->preg != X64_NO_REG) {
-            printf("%s\n", x64_register_name(range->preg));
+        if (range->preg >= 0) {
+            if (ctx->arch == REGALLOC_ARCH_ARM64) {
+                printf("%s\n", arm64_register_name(regalloc_to_arm64_register(range->preg)));
+            } else {
+                printf("%s\n", x64_register_name(regalloc_to_x64_register(range->preg)));
+            }
         } else {
             printf("spill[%d]\n", range->spill_slot);
         }

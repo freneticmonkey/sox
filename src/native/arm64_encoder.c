@@ -251,11 +251,29 @@ void arm64_stp(arm64_assembler_t* asm_, arm64_register_t reg1, arm64_register_t 
     arm64_emit(asm_, instr);
 }
 
+void arm64_stp_pre(arm64_assembler_t* asm_, arm64_register_t reg1, arm64_register_t reg2,
+                   arm64_register_t base, int32_t offset) {
+    // STP Xt1, Xt2, [Xn, #offset]!  (pre-index with writeback)
+    // Offset must be 8-byte aligned and divided by 8
+    int32_t imm7 = (offset / 8) & 0x7F;
+    uint32_t instr = 0xA9800000 | (imm7 << 15) | (reg2 << 10) | (base << 5) | reg1;
+    arm64_emit(asm_, instr);
+}
+
 void arm64_ldp(arm64_assembler_t* asm_, arm64_register_t reg1, arm64_register_t reg2,
                arm64_register_t base, int32_t offset) {
     // LDP Xt1, Xt2, [Xn, #offset]
     int32_t imm7 = (offset / 8) & 0x7F;
     uint32_t instr = 0xA9400000 | (imm7 << 15) | (reg2 << 10) | (base << 5) | reg1;
+    arm64_emit(asm_, instr);
+}
+
+void arm64_ldp_post(arm64_assembler_t* asm_, arm64_register_t reg1, arm64_register_t reg2,
+                    arm64_register_t base, int32_t offset) {
+    // LDP Xt1, Xt2, [Xn], #offset  (post-index with writeback)
+    // Offset must be 8-byte aligned and divided by 8
+    int32_t imm7 = (offset / 8) & 0x7F;
+    uint32_t instr = 0xA8C00000 | (imm7 << 15) | (reg2 << 10) | (base << 5) | reg1;
     arm64_emit(asm_, instr);
 }
 

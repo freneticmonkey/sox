@@ -201,8 +201,12 @@ void arm64_cset(arm64_assembler_t* asm_, arm64_register_t dst, arm64_condition_t
 // Stack operations
 void arm64_stp(arm64_assembler_t* asm_, arm64_register_t reg1, arm64_register_t reg2,
                arm64_register_t base, int32_t offset);
+void arm64_stp_pre(arm64_assembler_t* asm_, arm64_register_t reg1, arm64_register_t reg2,
+                   arm64_register_t base, int32_t offset);  // Pre-index: [base, #offset]!
 void arm64_ldp(arm64_assembler_t* asm_, arm64_register_t reg1, arm64_register_t reg2,
                arm64_register_t base, int32_t offset);
+void arm64_ldp_post(arm64_assembler_t* asm_, arm64_register_t reg1, arm64_register_t reg2,
+                    arm64_register_t base, int32_t offset);  // Post-index: [base], #offset
 
 // Control flow
 void arm64_b(arm64_assembler_t* asm_, int32_t offset);
