@@ -1,4 +1,5 @@
 #include "codegen_arm64.h"
+#include "elf_writer.h"
 #include "../lib/memory.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +17,9 @@ codegen_arm64_context_t* codegen_arm64_new(ir_module_t* module) {
     ctx->jump_patches = NULL;
     ctx->patch_count = 0;
     ctx->patch_capacity = 0;
+    ctx->relocations = NULL;
+    ctx->relocation_count = 0;
+    ctx->relocation_capacity = 0;
     return ctx;
 }
 
@@ -33,6 +37,9 @@ void codegen_arm64_free(codegen_arm64_context_t* ctx) {
     }
     if (ctx->jump_patches) {
         l_mem_free(ctx->jump_patches, sizeof(jump_patch_arm64_t) * ctx->patch_capacity);
+    }
+    if (ctx->relocations) {
+        l_mem_free(ctx->relocations, sizeof(codegen_arm64_relocation_t) * ctx->relocation_capacity);
     }
 
     l_mem_free(ctx, sizeof(codegen_arm64_context_t));
@@ -70,6 +77,25 @@ static void add_jump_patch(codegen_arm64_context_t* ctx, size_t offset, int targ
     ctx->jump_patches[ctx->patch_count].offset = offset;
     ctx->jump_patches[ctx->patch_count].target_label = target_label;
     ctx->patch_count++;
+}
+
+// Add relocation entry
+static void add_relocation_arm64(codegen_arm64_context_t* ctx, size_t offset,
+                                 const char* symbol, uint32_t type, int64_t addend) {
+    if (ctx->relocation_capacity < ctx->relocation_count + 1) {
+        int old_capacity = ctx->relocation_capacity;
+        ctx->relocation_capacity = (old_capacity < 8) ? 8 : old_capacity * 2;
+        void* old_ptr = ctx->relocations;
+        size_t old_size = sizeof(codegen_arm64_relocation_t) * old_capacity;
+        size_t new_size = sizeof(codegen_arm64_relocation_t) * ctx->relocation_capacity;
+        ctx->relocations = (codegen_arm64_relocation_t*)l_mem_realloc(old_ptr, old_size, new_size);
+    }
+
+    ctx->relocations[ctx->relocation_count].offset = offset;
+    ctx->relocations[ctx->relocation_count].symbol = symbol;
+    ctx->relocations[ctx->relocation_count].type = type;
+    ctx->relocations[ctx->relocation_count].addend = addend;
+    ctx->relocation_count++;
 }
 
 // Map virtual register to ARM64 physical register
@@ -138,6 +164,72 @@ static void emit_function_epilogue_arm64(codegen_arm64_context_t* ctx) {
 
     // Return
     arm64_ret(ctx->asm_, ARM64_LR);
+}
+
+// ARM64 EABI calling convention argument marshalling
+static void marshal_arguments_arm64(codegen_arm64_context_t* ctx, ir_value_t* args, int arg_count) {
+    // ARM64 EABI integer argument registers: X0-X7
+    const arm64_register_t arg_regs[8] = {
+        ARM64_X0, ARM64_X1, ARM64_X2, ARM64_X3,
+        ARM64_X4, ARM64_X5, ARM64_X6, ARM64_X7
+    };
+
+    // First pass: marshal arguments into registers (first 8 arguments)
+    int reg_arg_count = (arg_count < 8) ? arg_count : 8;
+    for (int i = 0; i < reg_arg_count; i++) {
+        ir_value_t arg = args[i];
+        arm64_register_t dest_reg = arg_regs[i];
+
+        if (arg.type == IR_VAL_REGISTER) {
+            // Get physical register for virtual register
+            arm64_register_t src_reg = get_physical_register_arm64(ctx, arg);
+            if (src_reg != ARM64_NO_REG && src_reg != dest_reg) {
+                // Move from source register to argument register
+                arm64_mov_reg_reg(ctx->asm_, dest_reg, src_reg);
+            }
+        } else if (arg.type == IR_VAL_CONSTANT) {
+            // Load constant into argument register
+            value_t val = arg.as.constant;
+            if (IS_NUMBER(val)) {
+                int64_t num = (int64_t)AS_NUMBER(val);
+                arm64_mov_reg_imm(ctx->asm_, dest_reg, (uint64_t)num);
+            } else if (IS_BOOL(val)) {
+                uint64_t bool_val = AS_BOOL(val) ? 1 : 0;
+                arm64_mov_reg_imm(ctx->asm_, dest_reg, bool_val);
+            } else if (IS_NIL(val)) {
+                arm64_eor_reg_reg_reg(ctx->asm_, dest_reg, dest_reg, dest_reg); // XOR = 0
+            }
+        }
+    }
+
+    // Second pass: push stack arguments (arguments 9+) in reverse order
+    // ARM64 stack arguments must be 8-byte aligned
+    for (int i = arg_count - 1; i >= 8; i--) {
+        ir_value_t arg = args[i];
+
+        if (arg.type == IR_VAL_REGISTER) {
+            arm64_register_t src_reg = get_physical_register_arm64(ctx, arg);
+            if (src_reg != ARM64_NO_REG) {
+                // Store register to stack: str src, [sp, #-16]!
+                arm64_str_reg_reg_offset(ctx->asm_, src_reg, ARM64_SP, -16);
+                arm64_sub_reg_reg_imm(ctx->asm_, ARM64_SP, ARM64_SP, 16);
+            }
+        } else if (arg.type == IR_VAL_CONSTANT) {
+            // Load constant into X9 (temporary) and push
+            value_t val = arg.as.constant;
+            if (IS_NUMBER(val)) {
+                int64_t num = (int64_t)AS_NUMBER(val);
+                arm64_mov_reg_imm(ctx->asm_, ARM64_X9, (uint64_t)num);
+            } else if (IS_BOOL(val)) {
+                uint64_t bool_val = AS_BOOL(val) ? 1 : 0;
+                arm64_mov_reg_imm(ctx->asm_, ARM64_X9, bool_val);
+            } else if (IS_NIL(val)) {
+                arm64_eor_reg_reg_reg(ctx->asm_, ARM64_X9, ARM64_X9, ARM64_X9);
+            }
+            arm64_str_reg_reg_offset(ctx->asm_, ARM64_X9, ARM64_SP, -16);
+            arm64_sub_reg_reg_imm(ctx->asm_, ARM64_SP, ARM64_SP, 16);
+        }
+    }
 }
 
 static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_t* instr) {
@@ -304,8 +396,35 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
         }
 
         case IR_CALL: {
-            // Simplified call - would need proper ABI handling
-            arm64_bl(ctx->asm_, 0); // Would need to be relocated
+            // 1. Marshal arguments to correct registers/stack (ARM64 EABI)
+            if (instr->call_args && instr->call_arg_count > 0) {
+                marshal_arguments_arm64(ctx, instr->call_args, instr->call_arg_count);
+            }
+
+            // 2. Emit call instruction with placeholder offset
+            size_t call_offset = arm64_get_offset(ctx->asm_);
+            arm64_bl(ctx->asm_, 0); // Placeholder - will be relocated by linker
+
+            // 3. Record relocation if we have a target symbol
+            if (instr->call_target) {
+                // ARM64 uses R_AARCH64_CALL26 relocation type
+                add_relocation_arm64(ctx, call_offset, instr->call_target, R_AARCH64_CALL26, 0);
+            }
+
+            // 4. Clean up stack arguments if any (9+ arguments)
+            int stack_arg_count = (instr->call_arg_count > 8) ? (instr->call_arg_count - 8) : 0;
+            if (stack_arg_count > 0) {
+                int cleanup_bytes = stack_arg_count * 16; // ARM64 uses 16-byte stack slots
+                arm64_add_reg_reg_imm(ctx->asm_, ARM64_SP, ARM64_SP, cleanup_bytes);
+            }
+
+            // 5. Handle return value in X0
+            if (instr->dest.type == IR_VAL_REGISTER) {
+                arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+                if (dest != ARM64_NO_REG && dest != ARM64_X0) {
+                    arm64_mov_reg_reg(ctx->asm_, dest, ARM64_X0);
+                }
+            }
             break;
         }
 
@@ -403,6 +522,13 @@ bool codegen_arm64_generate(codegen_arm64_context_t* ctx) {
 
 uint8_t* codegen_arm64_get_code(codegen_arm64_context_t* ctx, size_t* size) {
     return arm64_get_code(ctx->asm_, size);
+}
+
+codegen_arm64_relocation_t* codegen_arm64_get_relocations(codegen_arm64_context_t* ctx, int* count) {
+    if (count) {
+        *count = ctx->relocation_count;
+    }
+    return ctx->relocations;
 }
 
 void codegen_arm64_print(codegen_arm64_context_t* ctx) {

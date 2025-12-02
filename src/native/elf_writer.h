@@ -95,6 +95,15 @@ typedef struct {
 #define R_X86_64_PC32 2
 #define R_X86_64_PLT32 4
 
+// Relocation types (ARM64 / AArch64)
+#define R_AARCH64_NONE 0
+#define R_AARCH64_ABS64 257
+#define R_AARCH64_ABS32 258
+#define R_AARCH64_CALL26 283
+#define R_AARCH64_JUMP26 282
+#define R_AARCH64_ADR_PREL_PG_HI21 275
+#define R_AARCH64_ADD_ABS_LO12_NC 277
+
 #define ELF64_R_SYM(i) ((i) >> 32)
 #define ELF64_R_TYPE(i) ((i) & 0xffffffffL)
 #define ELF64_R_INFO(s, t) (((uint64_t)(s) << 32) + ((t) & 0xffffffffL))
