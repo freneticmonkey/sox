@@ -6,6 +6,7 @@
 #include "test/serialise_test.h"
 #include "test/vm_test.h"
 #include "test/wasm_test.h"
+#include "test/calling_convention_tests.h"
 
 int main(int argc, char* argv[]) {
     printf("Starting sox unit tests...\n");
@@ -16,6 +17,7 @@ int main(int argc, char* argv[]) {
         l_scripts_test_setup(),
         l_serialise_test_setup(),
         *get_wasm_suite(),
+        l_calling_convention_test_setup(),
         NULL,
     };
 
