@@ -40,6 +40,11 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
     bool is_arm64 = (strcmp(options->target_arch, "arm64") == 0 ||
                      strcmp(options->target_arch, "aarch64") == 0);
 
+    // For x86-64: keep codegen context alive until after writing
+    codegen_context_t* codegen_x64 = NULL;
+    codegen_relocation_t* relocations_x64 = NULL;
+    int relocation_count_x64 = 0;
+
     if (is_arm64) {
         printf("[2/4] Generating ARM64 machine code...\n");
         codegen_arm64_context_t* codegen = codegen_arm64_new(module);
@@ -74,8 +79,18 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
         }
 
         code = codegen_get_code(codegen, &code_size);
+
+        // Extract relocations before freeing codegen context
+        int reloc_count;
+        codegen_relocation_t* relocs = codegen_get_relocations(codegen, &reloc_count);
+
+        // Store for later use (need to keep valid until ELF writing)
+        relocations_x64 = relocs;
+        relocation_count_x64 = reloc_count;
+
         machine_type = EM_X86_64;
-        codegen_free(codegen);
+        // Don't free codegen yet - relocations point into it
+        codegen_x64 = codegen;
     }
 
     printf("Generated %zu bytes of machine code\n", code_size);
@@ -104,8 +119,15 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
             success = macho_create_object_file(options->output_file, code, code_size,
                                                 func_name, cputype, cpusubtype);
         } else {
-            success = elf_create_object_file(options->output_file, code, code_size,
-                                              func_name, machine_type);
+            // Use relocation-aware ELF writer for x86-64
+            if (!is_arm64 && relocation_count_x64 > 0) {
+                success = elf_create_object_file_with_relocations(options->output_file, code, code_size,
+                                                                  func_name, machine_type,
+                                                                  relocations_x64, relocation_count_x64);
+            } else {
+                success = elf_create_object_file(options->output_file, code, code_size,
+                                                  func_name, machine_type);
+            }
         }
     } else {
         // Generate executable-ready object file with main entry point
@@ -122,8 +144,15 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
             success = macho_create_executable_object_file(options->output_file, code, code_size,
                                                           cputype, cpusubtype);
         } else {
-            success = elf_create_executable_object_file(options->output_file, code, code_size,
-                                                        machine_type);
+            // Use relocation-aware ELF writer for x86-64
+            if (!is_arm64 && relocation_count_x64 > 0) {
+                success = elf_create_executable_object_file_with_relocations(options->output_file, code, code_size,
+                                                                             machine_type,
+                                                                             relocations_x64, relocation_count_x64);
+            } else {
+                success = elf_create_executable_object_file(options->output_file, code, code_size,
+                                                            machine_type);
+            }
         }
     }
 
@@ -136,6 +165,11 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
 
     // Cleanup
     ir_module_free(module);
+
+    // Free x86-64 codegen context if it was used
+    if (codegen_x64) {
+        codegen_free(codegen_x64);
+    }
 
     return success;
 }

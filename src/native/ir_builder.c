@@ -374,8 +374,21 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
                 int reg = ir_function_alloc_register(ir_func);
                 ir_value_t dest = ir_value_register(reg);
                 ir_value_t func = ir_builder_peek(builder, arg_count);
-                ir_value_t argc = ir_value_constant(NUMBER_VAL(arg_count));
-                ir_builder_emit_binary(builder, IR_CALL, dest, func, argc);
+
+                // Create call instruction
+                ir_instruction_t* call = ir_builder_emit(builder, IR_CALL);
+                call->dest = dest;
+                call->operand1 = func; // Function to call
+
+                // Capture arguments from stack
+                if (arg_count > 0) {
+                    call->call_args = (ir_value_t*)l_mem_alloc(sizeof(ir_value_t) * arg_count);
+                    call->call_arg_count = arg_count;
+                    // Arguments are on stack in order (first arg is deepest)
+                    for (int i = 0; i < arg_count; i++) {
+                        call->call_args[i] = ir_builder_peek(builder, arg_count - 1 - i);
+                    }
+                }
 
                 // Pop function and arguments
                 for (int i = 0; i <= arg_count; i++) {

@@ -108,6 +108,11 @@ struct ir_instruction_t {
     ir_value_t operand2;   // Second operand
     ir_value_t operand3;   // Third operand (for some instructions)
 
+    // Call-specific data (for IR_CALL, IR_RUNTIME_CALL)
+    ir_value_t* call_args; // Array of call arguments
+    int call_arg_count;    // Number of call arguments
+    const char* call_target; // Target function name (for external calls)
+
     int line;              // Source line number for debugging
 
     ir_instruction_t* next;
