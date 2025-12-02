@@ -1,9 +1,23 @@
 # Comprehensive Plan: Calling Convention Implementation for Native Code Generation
 
-**Status**: Planning
+**Status**: In Progress (Phases 1-3 Complete, Phase 4+ in Review)
 **Date**: 2025-12-03
+**Last Updated**: 2025-12-03 (after Phase 3 completion)
 **Priority**: Critical (blocks executable functionality)
 **Estimated Scope**: 4-6 weeks of focused development
+
+## Implementation Progress
+
+| Phase | Status | Commits | Notes |
+|-------|--------|---------|-------|
+| Phase 1: Diagnosis & Foundation | ✅ COMPLETE | f2542b5 | Test suite created, critical issues identified |
+| Phase 2: x86-64 Stack Alignment | ✅ COMPLETE | 1bbd607 | Stack alignment fixed, prologue/epilogue refactored |
+| Phase 3: x86-64 External Calls | ✅ COMPLETE | 199cee3 | Argument marshalling and relocations implemented |
+| Phase 4: ARM64 Register Mapping | 🔄 IN REVIEW | — | Ready for cloud agent implementation |
+| Phase 5: ARM64 External Calls | ⏳ PENDING | — | Depends on Phase 4 |
+| Phase 6: Runtime Integration | ⏳ PENDING | — | Depends on Phase 3 & 5 |
+| Phase 7: Integration & Testing | ⏳ PENDING | — | Depends on Phase 6 |
+| Phase 8: Performance & Polish | ⏳ PENDING | — | Final optimization pass |
 
 ---
 
@@ -17,9 +31,19 @@ The Sox native code generation system can successfully generate and link executa
 4. Maintain ABI compliance with operating systems
 5. Execute predictably without crashes
 
-**Current State**: Basic machine code generation works; executables link but crash on execution due to missing calling convention implementation.
+**Current State (After Phase 3)**:
+- ✅ x86-64 stack alignment is ABI-compliant (Phase 2)
+- ✅ External function calls with relocations implemented (Phase 3)
+- ✅ Argument marshalling follows System V AMD64 ABI (Phase 3)
+- ⏳ ARM64 register mapping still broken - Phase 4 in review
+- ⏳ Return value handling framework in place, needs testing
 
-**End Goal**: Generate ABI-compliant machine code that can safely call external functions and execute as proper native binaries.
+**Immediate Next Steps (Cloud Agent)**:
+- Implement Phase 4: ARM64 register mapping fix
+- Verify x86-64 functionality with integration tests
+- Prepare Phase 5: ARM64 external calls
+
+**End Goal**: Generate ABI-compliant machine code that can safely call external functions and execute as proper native binaries on both x86-64 and ARM64 platforms.
 
 ---
 
@@ -27,15 +51,20 @@ The Sox native code generation system can successfully generate and link executa
 
 ### Why Executables Crash
 
-Current generated code:
-- ✅ Has `_main` entry point (fixed in recent changes)
+Current generated code (x86-64):
+- ✅ Has `_main` entry point
 - ✅ Generates arithmetic instructions
-- ✅ Sets up minimal stack frame
-- ❌ **Does NOT pass arguments to functions** - parameters aren't loaded into correct registers
-- ❌ **Does NOT call external functions** - no relocation/linking support
-- ❌ **Does NOT enforce stack alignment** - 16-byte alignment required before `call` instruction on x86-64
-- ❌ **Does NOT handle return values** - results from function calls aren't captured
-- ❌ **ARM64 has broken register mapping** - uses x86-64 register numbers instead of ARM64 registers
+- ✅ Sets up proper ABI-compliant stack frame (Phase 2 complete)
+- ✅ **Passes arguments to functions** - RDI, RSI, RDX, RCX, R8, R9 (Phase 3 complete)
+- ✅ **Calls external functions** - PLT32 relocations implemented (Phase 3 complete)
+- ✅ **Enforces stack alignment** - 16-byte alignment guaranteed (Phase 2 complete)
+- ✅ **Handles return values** - RAX captured to destination register (Phase 3 complete)
+
+Current generated code (ARM64):
+- ✅ Has basic instruction generation
+- ❌ **Has broken register mapping** - uses x86-64 register numbers instead of ARM64 (Phase 4 pending)
+- ❌ **Prologue/epilogue incorrect** - doesn't use proper stp/ldp (Phase 4 pending)
+- ❌ **No argument passing** - similar architecture to x86-64, needs Phase 5
 
 ### Symptom
 Running generated executable immediately faults with:
