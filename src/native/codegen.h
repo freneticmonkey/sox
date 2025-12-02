@@ -29,6 +29,10 @@ typedef struct {
     jump_patch_t* jump_patches;
     int patch_count;
     int patch_capacity;
+
+    // Stack frame tracking for alignment
+    int current_stack_offset;     // Current RSP offset from function entry
+    int current_frame_alignment;  // Frame size including alignment padding
 } codegen_context_t;
 
 // Create code generator
