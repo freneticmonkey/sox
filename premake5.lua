@@ -79,12 +79,15 @@ project "sox"
   }
 
   includedirs {
-    "src"
+    "src",
+    "ext/argtable3/src"
   }
 
   files {
     "src/**.h",
-    "src/**.c"
+    "src/**.c",
+    "ext/argtable3/src/argtable3.c",
+    "ext/argtable3/src/arg_*.c"
   }
 
   -- ignore all testing files
@@ -164,6 +167,7 @@ project "test"
 
   sysincludedirs {
     "ext",
+    "ext/argtable3/src",
     "wasm_verify"
   }
 
@@ -175,7 +179,8 @@ project "test"
   files {
     "src/**.h",
     "src/**.c",
-
+    "ext/argtable3/src/argtable3.c",
+    "ext/argtable3/src/arg_*.c"
   }
 
   -- ignore the sox main

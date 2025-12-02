@@ -284,11 +284,12 @@ bool macho_write_file(macho_builder_t* builder, const char* filename) {
     seg_cmd.cmdsize = (uint32_t)segment_cmd_size;
     memset(seg_cmd.segname, 0, 16); // Empty segment name for object files
     seg_cmd.vmaddr = 0;
-    seg_cmd.vmsize = 0;
     seg_cmd.fileoff = builder->section_count > 0 ? builder->sections[0].offset : 0;
     seg_cmd.filesize = builder->section_count > 0 ?
                        (builder->sections[builder->section_count-1].offset +
                         builder->sections[builder->section_count-1].size - seg_cmd.fileoff) : 0;
+    // For object files, vmsize must equal filesize (sections must fit within segment)
+    seg_cmd.vmsize = seg_cmd.filesize;
     seg_cmd.maxprot = 7; // rwx
     seg_cmd.initprot = 7;
     seg_cmd.nsects = builder->section_count;
@@ -389,6 +390,29 @@ bool macho_create_object_file(const char* filename, const uint8_t* code,
 
     // Add function symbol (external, defined)
     macho_add_symbol(builder, function_name, N_SECT | N_EXT, text_section + 1, 0);
+
+    bool result = macho_write_file(builder, filename);
+
+    macho_builder_free(builder);
+    return result;
+}
+
+bool macho_create_executable_object_file(const char* filename, const uint8_t* code,
+                                         size_t code_size,
+                                         uint32_t cputype, uint32_t cpusubtype) {
+    macho_builder_t* builder = macho_builder_new(cputype, cpusubtype);
+
+    // Add __text section
+    int text_section = macho_add_section(builder, "__text", "__TEXT",
+                                          S_REGULAR | S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS,
+                                          code, code_size, 4);
+
+    // Add main symbol at offset 0 (entry point for executable linking)
+    // This is the symbol the linker looks for as the executable entry point
+    macho_add_symbol(builder, "main", N_SECT | N_EXT, text_section + 1, 0);
+
+    // Also add sox_main for reference
+    macho_add_symbol(builder, "sox_main", N_SECT | N_EXT, text_section + 1, 0);
 
     bool result = macho_write_file(builder, filename);
 

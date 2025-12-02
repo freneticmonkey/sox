@@ -90,7 +90,7 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
                             closure->function->name->chars : "sox_main";
 
     if (options->emit_object) {
-        // Generate object file
+        // Generate object file with script symbol
         if (use_macho) {
             // Determine CPU type for Mach-O
             uint32_t cputype, cpusubtype;
@@ -108,11 +108,8 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
                                               func_name, machine_type);
         }
     } else {
-        // For executables, we'd need to link with runtime library
-        fprintf(stderr, "Warning: Executable generation not yet implemented, generating object file\n");
-        char obj_file[256];
-        snprintf(obj_file, sizeof(obj_file), "%s.o", options->output_file);
-
+        // Generate executable-ready object file with main entry point
+        // Note: output_file should already be set to a temp file (.tmp.o) by file.c
         if (use_macho) {
             uint32_t cputype, cpusubtype;
             if (is_arm64) {
@@ -122,23 +119,11 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
                 cputype = CPU_TYPE_X86_64;
                 cpusubtype = CPU_SUBTYPE_X86_64_ALL;
             }
-            success = macho_create_object_file(obj_file, code, code_size,
-                                                func_name, cputype, cpusubtype);
+            success = macho_create_executable_object_file(options->output_file, code, code_size,
+                                                          cputype, cpusubtype);
         } else {
-            success = elf_create_object_file(obj_file, code, code_size,
-                                              func_name, machine_type);
-        }
-
-        if (success) {
-            printf("Generated object file: %s\n", obj_file);
-            printf("\nTo create executable, link with:\n");
-            if (use_macho) {
-                printf("  clang %s -o %s -L/path/to/sox/runtime -lsox_runtime\n",
-                       obj_file, options->output_file);
-            } else {
-                printf("  gcc %s -o %s -L/path/to/sox/runtime -lsox_runtime\n",
-                       obj_file, options->output_file);
-            }
+            success = elf_create_executable_object_file(options->output_file, code, code_size,
+                                                        machine_type);
         }
     }
 

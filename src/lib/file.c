@@ -4,11 +4,13 @@
 
 #include "lib/file.h"
 #include "lib/print.h"
+#include "lib/linker.h"
 #include "serialise.h"
 #include "vm.h"
 #include "wat_generator.h"
 #include "wasm_generator.h"
 #include "compiler.h"
+#include "native/native_codegen.h"
 
 char* l_read_file(const char* path) {
     FILE* file = fopen(path, "rb");
@@ -229,6 +231,129 @@ int _generate_wasm_wat(vm_config_t *config, const char* path, const char* source
     return 0;
 }
 
+int _generate_native(vm_config_t *config, const char* path, const char* source) {
+    l_init_memory();
+
+    // Initialize VM for compilation
+    l_init_vm(config);
+
+    // Compile the source to get the function
+    obj_function_t* function = l_compile(source);
+
+    if (function == NULL) {
+        l_free_vm();
+        l_free_memory();
+        return 65; // Compile error
+    }
+
+    // Create closure for native code generation
+    // Simply wrap the compiled function in a closure structure
+    obj_closure_t closure_obj;
+    closure_obj.obj.type = OBJ_CLOSURE;
+    closure_obj.function = function;
+    closure_obj.upvalue_count = 0;
+
+    obj_closure_t* closure = &closure_obj;
+
+    // Determine output file
+    const char* final_output = config->native_output_file;
+    if (final_output == NULL) {
+        // Generate default output filename
+        static char default_output[256];
+        if (config->native_emit_object) {
+            snprintf(default_output, sizeof(default_output), "%s.o", path);
+        } else {
+            // For executables, strip the .sox extension
+            const char* last_dot = strrchr(path, '.');
+            if (last_dot != NULL && strcmp(last_dot, ".sox") == 0) {
+                snprintf(default_output, sizeof(default_output), "%.*s",
+                        (int)(last_dot - path), path);
+            } else {
+                snprintf(default_output, sizeof(default_output), "%s", path);
+            }
+        }
+        final_output = default_output;
+    }
+
+    // If we need to generate an executable, use a temp object file
+    const char* object_file = final_output;
+    char temp_object[256] = {0};
+
+    if (!config->native_emit_object) {
+        // We'll generate a temporary object file and then link it
+        snprintf(temp_object, sizeof(temp_object), "%s.tmp.o", final_output);
+        object_file = temp_object;
+    }
+
+    // Create native codegen options from config
+    native_codegen_options_t options = {
+        .output_file = object_file,
+        .target_arch = config->native_target_arch,
+        .target_os = config->native_target_os,
+        .emit_object = config->native_emit_object,  // True for object files, false for linking
+        .debug_output = config->native_debug_output,
+        .optimization_level = config->native_optimization_level
+    };
+
+    // Generate native code
+    bool success = native_codegen_generate(closure, &options);
+
+    // Cleanup VM before linking
+    l_free_vm();
+    l_free_memory();
+
+    if (!success) {
+        return 70;  // 70 = runtime error
+    }
+
+    // If we only need the object file, we're done
+    if (config->native_emit_object) {
+        return 0;
+    }
+
+    // Otherwise, try to link the object file into an executable
+    printf("[4/4] Linking object file into executable...\n");
+
+    // Detect available linker
+    linker_info_t linker = linker_get_preferred(config->native_target_os, config->native_target_arch);
+
+    if (!linker.available) {
+        fprintf(stderr, "Error: No linker available for %s-%s\n",
+                config->native_target_os, config->native_target_arch);
+        fprintf(stderr, "Available linkers: gcc, clang, ld\n");
+        fprintf(stderr, "To generate object file instead, use --native-obj flag\n");
+
+        // Clean up temp file
+        remove(object_file);
+        return 70;
+    }
+
+    printf("Using linker: %s (%s)\n", linker.name, linker.path);
+
+    // Prepare linker options
+    linker_options_t linker_opts = {
+        .input_file = object_file,
+        .output_file = final_output,
+        .target_os = config->native_target_os,
+        .target_arch = config->native_target_arch,
+        .link_runtime = false,  // TODO: Make this configurable
+        .verbose = config->native_debug_output
+    };
+
+    // Invoke the linker
+    int link_result = linker_invoke(linker, &linker_opts);
+
+    // Clean up temporary object file
+    if (link_result == 0) {
+        remove(object_file);
+        printf("Successfully linked executable: %s\n", final_output);
+    } else {
+        fprintf(stderr, "Error: Linking failed. Keeping object file: %s\n", object_file);
+    }
+
+    return link_result;
+}
+
 int _interpret_run(vm_config_t *config, const char* source) {
 
     InterpretResult result;
@@ -290,6 +415,19 @@ int l_run_file(vm_config_t *config) {
     }
 
     InterpretResult result;
+
+    // Check if we need to generate native code
+    if (config->enable_native_output) {
+        int native_result = _generate_native(config, path, source);
+        if (native_result != 0) {
+            free(source);
+            return native_result;
+        }
+
+        // If only generating native code, don't run the program
+        free(source);
+        return 0;
+    }
 
     // Check if we only need to generate WASM/WAT without running
     if (config->enable_wasm_output || config->enable_wat_output) {

@@ -228,4 +228,9 @@ bool macho_create_object_file(const char* filename, const uint8_t* code,
                                size_t code_size, const char* function_name,
                                uint32_t cputype, uint32_t cpusubtype);
 
+// High-level API: create executable-ready object file (with main entry point)
+bool macho_create_executable_object_file(const char* filename, const uint8_t* code,
+                                         size_t code_size,
+                                         uint32_t cputype, uint32_t cpusubtype);
+
 #endif

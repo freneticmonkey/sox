@@ -153,4 +153,9 @@ bool elf_create_object_file(const char* filename, const uint8_t* code,
                              size_t code_size, const char* function_name,
                              uint16_t machine_type);
 
+// High-level API: create executable-ready object file (with main entry point)
+bool elf_create_executable_object_file(const char* filename, const uint8_t* code,
+                                       size_t code_size,
+                                       uint16_t machine_type);
+
 #endif

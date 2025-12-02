@@ -269,3 +269,37 @@ bool elf_create_object_file(const char* filename, const uint8_t* code,
     elf_builder_free(builder);
     return result;
 }
+
+bool elf_create_executable_object_file(const char* filename, const uint8_t* code,
+                                       size_t code_size,
+                                       uint16_t machine_type) {
+    elf_builder_t* builder = elf_builder_new();
+
+    // Add .text section
+    int text_section = elf_add_section(builder, ".text", SHT_PROGBITS,
+                                        SHF_ALLOC | SHF_EXECINSTR, code, code_size);
+
+    // Add .strtab section
+    int strtab_section = elf_add_section(builder, ".strtab", SHT_STRTAB,
+                                          0, (uint8_t*)builder->strtab, builder->strtab_size);
+
+    // Add .symtab section
+    int symtab_section = elf_add_section(builder, ".symtab", SHT_SYMTAB,
+                                          0, (uint8_t*)builder->symtab,
+                                          builder->symtab_count * sizeof(Elf64_Sym));
+    builder->sections[symtab_section].sh_link = strtab_section;
+    builder->sections[symtab_section].sh_info = 1;
+
+    // Add main symbol at offset 0 (entry point for executable linking)
+    elf_add_symbol(builder, "main", STB_GLOBAL, STT_FUNC,
+                   text_section + 1, 0, code_size);
+
+    // Also add sox_main for reference
+    elf_add_symbol(builder, "sox_main", STB_GLOBAL, STT_FUNC,
+                   text_section + 1, 0, code_size);
+
+    bool result = elf_write_file(builder, filename, machine_type);
+
+    elf_builder_free(builder);
+    return result;
+}
