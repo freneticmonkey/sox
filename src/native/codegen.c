@@ -16,6 +16,8 @@ codegen_context_t* codegen_new(ir_module_t* module) {
     ctx->jump_patches = NULL;
     ctx->patch_count = 0;
     ctx->patch_capacity = 0;
+    ctx->current_stack_offset = 0;
+    ctx->current_frame_alignment = 0;
     return ctx;
 }
 
@@ -73,6 +75,35 @@ static void add_jump_patch(codegen_context_t* ctx, size_t offset, int target_lab
     ctx->patch_count++;
 }
 
+// Calculate aligned frame size to maintain 16-byte stack alignment
+// This accounts for all pushes in the prologue and ensures proper alignment
+static int calculate_aligned_frame_size(int locals_size, int saved_regs_count) {
+    // Frame layout after prologue:
+    // [Entry RSP]          <- RSP on function entry (must be 16n+8 due to call instruction)
+    // [Return Address]     <- 8 bytes (from call instruction)
+    // [RBP]                <- 8 bytes (first push in prologue)
+    // [Saved regs]         <- saved_regs_count * 8 bytes
+    // [Locals + padding]   <- locals_size + padding bytes
+    //
+    // After "push rbp", RSP is at 16n (aligned)
+    // After saving callee-saved registers, RSP is at 16n - (saved_regs_count * 8)
+    // We need to adjust locals_size so final RSP is 16-byte aligned
+    //
+    // Total bytes after push rbp: (saved_regs_count * 8) + locals_size
+    // This must be a multiple of 16
+
+    int after_saved_regs = saved_regs_count * 8;
+    int total_after_rbp = after_saved_regs + locals_size;
+
+    // Round up to nearest multiple of 16
+    int aligned_total = ((total_after_rbp + 15) / 16) * 16;
+
+    // Calculate padding needed for locals
+    int aligned_locals = aligned_total - after_saved_regs;
+
+    return aligned_locals;
+}
+
 static x64_register_t get_physical_register(codegen_context_t* ctx, ir_value_t value) {
     if (value.type == IR_VAL_REGISTER) {
         x64_register_t reg = regalloc_get_register(ctx->regalloc, value.as.reg);
@@ -91,42 +122,61 @@ static x64_register_t get_physical_register(codegen_context_t* ctx, ir_value_t v
 }
 
 static void emit_function_prologue(codegen_context_t* ctx) {
-    // push rbp
+    // Count how many callee-saved registers we need to save
+    // For now: save all 5 (RBX, R12-R15) - total 5 registers
+    // Later phases can optimize to save only used registers
+    int saved_regs = 5;  // RBX, R12, R13, R14, R15 (not counting RBP)
+
+    // Get frame size from register allocator (for spilled variables)
+    int locals_size = regalloc_get_frame_size(ctx->regalloc);
+
+    // Calculate aligned frame size including padding
+    int aligned_frame = calculate_aligned_frame_size(locals_size, saved_regs);
+
+    // 1. Push RBP to save it and establish previous frame pointer
+    // This creates 8-byte offset that we account for in alignment
     x64_push_reg(ctx->asm_, X64_RBP);
 
-    // mov rbp, rsp
+    // 2. Set up new frame pointer
     x64_mov_reg_reg(ctx->asm_, X64_RBP, X64_RSP);
 
-    // sub rsp, frame_size
-    int frame_size = regalloc_get_frame_size(ctx->regalloc);
-    if (frame_size > 0) {
-        x64_sub_reg_imm(ctx->asm_, X64_RSP, frame_size);
-    }
-
-    // Save callee-saved registers that we use
-    // (This is simplified - should track which registers are actually used)
+    // 3. Save callee-saved registers that we'll use
+    // These pushes are accounted for in our alignment calculation
     x64_push_reg(ctx->asm_, X64_RBX);
     x64_push_reg(ctx->asm_, X64_R12);
     x64_push_reg(ctx->asm_, X64_R13);
     x64_push_reg(ctx->asm_, X64_R14);
     x64_push_reg(ctx->asm_, X64_R15);
+
+    // 4. Allocate space for local variables and padding
+    // This ensures RSP is 16-byte aligned before any call instruction
+    if (aligned_frame > 0) {
+        x64_sub_reg_imm(ctx->asm_, X64_RSP, aligned_frame);
+    }
+
+    // Store the frame size for use in emit_epilogue and call site alignment
+    ctx->current_frame_alignment = aligned_frame;
+
+    // Track stack offset (for future call site alignment verification)
+    // After prologue: RSP = entry_RSP - 8 (ret addr) - 8 (rbp) - 40 (saved regs) - aligned_frame
+    ctx->current_stack_offset = 8 + 8 + (saved_regs * 8) + aligned_frame;
 }
 
 static void emit_function_epilogue(codegen_context_t* ctx) {
-    // Restore callee-saved registers
+    // 1. Deallocate local variables (reverse of prologue step 4)
+    if (ctx->current_frame_alignment > 0) {
+        x64_add_reg_imm(ctx->asm_, X64_RSP, ctx->current_frame_alignment);
+    }
+
+    // 2. Restore callee-saved registers (reverse order of prologue step 3)
     x64_pop_reg(ctx->asm_, X64_R15);
     x64_pop_reg(ctx->asm_, X64_R14);
     x64_pop_reg(ctx->asm_, X64_R13);
     x64_pop_reg(ctx->asm_, X64_R12);
     x64_pop_reg(ctx->asm_, X64_RBX);
 
-    // mov rsp, rbp
-    x64_mov_reg_reg(ctx->asm_, X64_RSP, X64_RBP);
-
-    // pop rbp
+    // 3. Restore frame pointer and return
     x64_pop_reg(ctx->asm_, X64_RBP);
-
-    // ret
     x64_ret(ctx->asm_);
 }
 
