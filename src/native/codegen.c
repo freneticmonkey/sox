@@ -512,6 +512,38 @@ static void emit_instruction(codegen_context_t* ctx, ir_instruction_t* instr) {
             break;
         }
 
+        case IR_RUNTIME_CALL: {
+            // Call runtime functions (sox_native_add, sox_native_print, etc.)
+            if (instr->call_args && instr->call_arg_count > 0) {
+                marshal_arguments_x64(ctx, instr->call_args, instr->call_arg_count);
+            }
+
+            // Emit call instruction with placeholder offset
+            size_t call_offset = x64_get_offset(ctx->asm_);
+            x64_call_rel32(ctx->asm_, 0); // Placeholder - will be relocated by linker
+
+            // Record relocation if we have a target symbol
+            if (instr->call_target) {
+                add_relocation(ctx, call_offset, instr->call_target, R_X86_64_PLT32, -4);
+            }
+
+            // Clean up stack arguments if any (7+ arguments)
+            int stack_arg_count = (instr->call_arg_count > 6) ? (instr->call_arg_count - 6) : 0;
+            if (stack_arg_count > 0) {
+                int cleanup_bytes = stack_arg_count * 8;
+                x64_add_reg_imm(ctx->asm_, X64_RSP, cleanup_bytes);
+            }
+
+            // Handle return value in RAX
+            if (instr->dest.type == IR_VAL_REGISTER) {
+                x64_register_t dest = get_physical_register(ctx, instr->dest);
+                if (dest != X64_NO_REG && dest != X64_RAX) {
+                    x64_mov_reg_reg(ctx->asm_, dest, X64_RAX);
+                }
+            }
+            break;
+        }
+
         default:
             // Unsupported instruction - emit nop or call runtime
             x64_emit_byte(ctx->asm_, 0x90); // NOP

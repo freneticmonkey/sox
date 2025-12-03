@@ -443,6 +443,39 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
             break;
         }
 
+        case IR_RUNTIME_CALL: {
+            // Call runtime functions (sox_native_add, sox_native_print, etc.)
+            if (instr->call_args && instr->call_arg_count > 0) {
+                marshal_arguments_arm64(ctx, instr->call_args, instr->call_arg_count);
+            }
+
+            // Emit call instruction with placeholder offset
+            size_t call_offset = arm64_get_offset(ctx->asm_);
+            arm64_bl(ctx->asm_, 0); // Placeholder - will be relocated by linker
+
+            // Record relocation if we have a target symbol
+            if (instr->call_target) {
+                // ARM64 uses R_AARCH64_CALL26 relocation type
+                add_relocation_arm64(ctx, call_offset, instr->call_target, R_AARCH64_CALL26, 0);
+            }
+
+            // Clean up stack arguments if any (9+ arguments)
+            int stack_arg_count = (instr->call_arg_count > 8) ? (instr->call_arg_count - 8) : 0;
+            if (stack_arg_count > 0) {
+                int cleanup_bytes = stack_arg_count * 16; // ARM64 uses 16-byte stack slots
+                arm64_add_reg_reg_imm(ctx->asm_, ARM64_SP, ARM64_SP, cleanup_bytes);
+            }
+
+            // Handle return value in X0
+            if (instr->dest.type == IR_VAL_REGISTER) {
+                arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+                if (dest != ARM64_NO_REG && dest != ARM64_X0) {
+                    arm64_mov_reg_reg(ctx->asm_, dest, ARM64_X0);
+                }
+            }
+            break;
+        }
+
         default:
             // Unsupported instruction - emit NOP
             arm64_emit(ctx->asm_, 0xD503201F); // NOP
