@@ -42,6 +42,10 @@ typedef struct {
     codegen_arm64_relocation_t* relocations;
     int relocation_count;
     int relocation_capacity;
+
+    // Callee-saved registers actually saved in prologue
+    arm64_register_t saved_callee_regs[10];  // Max 10 callee-saved regs (X19-X28)
+    int saved_callee_count;
 } codegen_arm64_context_t;
 
 // Create ARM64 code generator

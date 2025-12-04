@@ -68,4 +68,10 @@ int regalloc_get_frame_size(regalloc_context_t* ctx);
 // Print allocation for debugging
 void regalloc_print(regalloc_context_t* ctx);
 
+// Get list of used callee-saved registers for the target architecture
+// Returns count of used registers, and fills 'out_regs' array (caller must provide buffer)
+// For x64: checks RBX, R12-R15 (returns generic register numbers 3, 12-15)
+// For ARM64: checks X19-X28 (returns generic register numbers 19-28)
+int regalloc_get_used_callee_saved(regalloc_context_t* ctx, int* out_regs, int max_regs);
+
 #endif

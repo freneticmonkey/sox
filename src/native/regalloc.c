@@ -286,3 +286,44 @@ void regalloc_print(regalloc_context_t* ctx) {
     }
     printf("\n");
 }
+
+// Helper: Check if a register is callee-saved for the given architecture
+static bool is_callee_saved(int reg, regalloc_arch_t arch) {
+    if (arch == REGALLOC_ARCH_X64) {
+        // x64 callee-saved: RBX (3), R12-R15 (12-15)
+        return reg == 3 || (reg >= 12 && reg <= 15);
+    } else {
+        // ARM64 callee-saved: X19-X28 (19-28)
+        return reg >= 19 && reg <= 28;
+    }
+}
+
+int regalloc_get_used_callee_saved(regalloc_context_t* ctx, int* out_regs, int max_regs) {
+    if (!ctx || !out_regs || max_regs <= 0) {
+        return 0;
+    }
+
+    int count = 0;
+    bool seen[32] = {false};  // Track which registers we've already added
+
+    // Iterate through all live ranges to find callee-saved registers in use
+    for (int i = 0; i < ctx->range_count; i++) {
+        live_range_t* range = &ctx->ranges[i];
+
+        // Check if this range was assigned a physical register
+        if (range->preg >= 0 && range->preg < 32) {
+            // Check if it's a callee-saved register and we haven't seen it yet
+            if (is_callee_saved(range->preg, ctx->arch) && !seen[range->preg]) {
+                if (count < max_regs) {
+                    out_regs[count++] = range->preg;
+                    seen[range->preg] = true;
+                } else {
+                    // Buffer full
+                    return count;
+                }
+            }
+        }
+    }
+
+    return count;
+}

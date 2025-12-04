@@ -46,6 +46,10 @@ typedef struct {
     // Stack frame tracking for alignment
     int current_stack_offset;     // Current RSP offset from function entry
     int current_frame_alignment;  // Frame size including alignment padding
+
+    // Callee-saved registers actually saved in prologue
+    x64_register_t saved_callee_regs[5];  // Max 5 callee-saved regs (RBX, R12-R15)
+    int saved_callee_count;
 } codegen_context_t;
 
 // Create code generator

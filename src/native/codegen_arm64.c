@@ -20,6 +20,7 @@ codegen_arm64_context_t* codegen_arm64_new(ir_module_t* module) {
     ctx->relocations = NULL;
     ctx->relocation_count = 0;
     ctx->relocation_capacity = 0;
+    ctx->saved_callee_count = 0;
     return ctx;
 }
 
@@ -122,12 +123,22 @@ static arm64_register_t get_physical_register_arm64(codegen_arm64_context_t* ctx
 
 static void emit_function_prologue_arm64(codegen_arm64_context_t* ctx) {
     // ARM64 function prologue (AArch64 calling convention)
+    // Query register allocator for which callee-saved registers are actually used
+    int used_callee_saved[10];  // Max 10 for ARM64: X19-X28
+    int used_count = regalloc_get_used_callee_saved(ctx->regalloc, used_callee_saved, 10);
+
+    // Convert generic register numbers to ARM64 registers and store for epilogue
+    ctx->saved_callee_count = 0;
+    for (int i = 0; i < used_count; i++) {
+        arm64_register_t reg = regalloc_to_arm64_register(used_callee_saved[i]);
+        if (reg != ARM64_NO_REG) {
+            ctx->saved_callee_regs[ctx->saved_callee_count++] = reg;
+        }
+    }
+
     // Calculate total frame size: saved regs + locals + alignment
     int locals_size = regalloc_get_frame_size(ctx->regalloc);
-
-    // Need to save callee-saved registers if used
-    // For now, always save X19-X22 (32 bytes) if we have locals
-    int callee_saved_size = (locals_size > 0) ? 32 : 0;
+    int callee_saved_size = ctx->saved_callee_count * 8;  // Each register is 8 bytes
     int total_frame_size = locals_size + callee_saved_size + 16; // +16 for FP/LR
 
     // Ensure 16-byte alignment
@@ -139,24 +150,42 @@ static void emit_function_prologue_arm64(codegen_arm64_context_t* ctx) {
     // Set up frame pointer: mov x29, sp
     arm64_mov_reg_reg(ctx->asm_, ARM64_FP, ARM64_SP);
 
-    // Save callee-saved registers if needed
-    if (callee_saved_size > 0) {
-        arm64_stp(ctx->asm_, ARM64_X19, ARM64_X20, ARM64_SP, 16);
-        arm64_stp(ctx->asm_, ARM64_X21, ARM64_X22, ARM64_SP, 32);
+    // Save callee-saved registers that are actually used
+    // ARM64 STP instruction saves pairs of registers efficiently
+    int offset = 16;  // Start after FP/LR
+    for (int i = 0; i < ctx->saved_callee_count; i += 2) {
+        if (i + 1 < ctx->saved_callee_count) {
+            // Save pair
+            arm64_stp(ctx->asm_, ctx->saved_callee_regs[i], ctx->saved_callee_regs[i+1], ARM64_SP, offset);
+            offset += 16;
+        } else {
+            // Save single register (odd count)
+            arm64_str_reg_reg_offset(ctx->asm_, ctx->saved_callee_regs[i], ARM64_SP, offset);
+            offset += 8;
+        }
     }
 }
 
 static void emit_function_epilogue_arm64(codegen_arm64_context_t* ctx) {
     // ARM64 function epilogue
     int locals_size = regalloc_get_frame_size(ctx->regalloc);
-    int callee_saved_size = (locals_size > 0) ? 32 : 0;
+    int callee_saved_size = ctx->saved_callee_count * 8;
     int total_frame_size = locals_size + callee_saved_size + 16;
     total_frame_size = (total_frame_size + 15) & ~15;
 
-    // Restore callee-saved registers if they were saved
-    if (callee_saved_size > 0) {
-        arm64_ldp(ctx->asm_, ARM64_X21, ARM64_X22, ARM64_SP, 32);
-        arm64_ldp(ctx->asm_, ARM64_X19, ARM64_X20, ARM64_SP, 16);
+    // Restore callee-saved registers that were saved (in reverse order for pairs)
+    // Note: ARM64 LDP loads pairs, so we iterate backwards through pairs
+    int offset = 16 + ((ctx->saved_callee_count / 2) * 16);
+    if (ctx->saved_callee_count % 2 == 1) {
+        // Restore odd register first (if any)
+        offset -= 8;
+        arm64_ldr_reg_reg_offset(ctx->asm_, ctx->saved_callee_regs[ctx->saved_callee_count - 1], ARM64_SP, offset);
+    }
+
+    // Restore register pairs in reverse order
+    for (int i = ctx->saved_callee_count - (ctx->saved_callee_count % 2) - 2; i >= 0; i -= 2) {
+        offset -= 16;
+        arm64_ldp(ctx->asm_, ctx->saved_callee_regs[i], ctx->saved_callee_regs[i+1], ARM64_SP, offset);
     }
 
     // Restore FP and LR with post-index: ldp x29, x30, [sp], #frame_size
