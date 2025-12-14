@@ -60,7 +60,7 @@ void runtime_print_value(value_t value)
             runtime_print_object(value);
             break;
         default:
-            runtime_printf("unknown value type");
+            runtime_printf("unknown value type (type=%d, bits=%llx)", (int)value.type, *(unsigned long long*)&value);
     }
 }
 

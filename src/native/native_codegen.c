@@ -66,7 +66,9 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
         code = codegen_arm64_get_code(codegen, &code_size);
 
         // Extract relocations before freeing codegen context
+        fprintf(stderr, "[NATIVE-CODEGEN] About to extract ARM64 relocations...\n");
         relocations_arm64 = codegen_arm64_get_relocations(codegen, &relocation_count_arm64);
+        fprintf(stderr, "[NATIVE-CODEGEN] Extracted relocations_arm64=%p, count=%d\n", relocations_arm64, relocation_count_arm64);
 
         machine_type = EM_AARCH64;
         // Don't free codegen yet - code and relocations point into it
@@ -121,9 +123,12 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
                 cputype = CPU_TYPE_ARM64;
                 cpusubtype = CPU_SUBTYPE_ARM64_ALL;
                 // Use relocation-aware Mach-O writer for ARM64
+                fprintf(stderr, "[NATIVE-CODEGEN] Calling macho_create_object_file_with_arm64_relocs: file=%s, code_size=%zu, relocations_arm64=%p, reloc_count=%d\n",
+                       options->output_file, code_size, relocations_arm64, relocation_count_arm64);
                 success = macho_create_object_file_with_arm64_relocs(options->output_file, code, code_size,
                                                                      func_name, cputype, cpusubtype,
                                                                      relocations_arm64, relocation_count_arm64);
+                fprintf(stderr, "[NATIVE-CODEGEN] macho_create_object_file_with_arm64_relocs returned: %s\n", success ? "true" : "false");
             } else {
                 cputype = CPU_TYPE_X86_64;
                 cpusubtype = CPU_SUBTYPE_X86_64_ALL;
@@ -150,9 +155,12 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
                 cputype = CPU_TYPE_ARM64;
                 cpusubtype = CPU_SUBTYPE_ARM64_ALL;
                 // Use relocation-aware Mach-O writer for ARM64
+                fprintf(stderr, "[NATIVE-CODEGEN] Calling macho_create_executable_object_file_with_arm64_relocs: file=%s, code_size=%zu, relocations_arm64=%p, reloc_count=%d\n",
+                       options->output_file, code_size, relocations_arm64, relocation_count_arm64);
                 success = macho_create_executable_object_file_with_arm64_relocs(options->output_file, code, code_size,
                                                                                  cputype, cpusubtype,
                                                                                  relocations_arm64, relocation_count_arm64);
+                fprintf(stderr, "[NATIVE-CODEGEN] macho_create_executable_object_file_with_arm64_relocs returned: %s\n", success ? "true" : "false");
             } else {
                 cputype = CPU_TYPE_X86_64;
                 cpusubtype = CPU_SUBTYPE_X86_64_ALL;

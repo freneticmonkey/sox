@@ -275,6 +275,12 @@ static int _link_linux(linker_info_t linker, const linker_options_t* options) {
 // Build linker command for macOS systems
 static int _link_macos(linker_info_t linker, const linker_options_t* options) {
     char cmd[MAX_CMD_LEN];
+    char cwd[512];
+
+    if (getcwd(cwd, sizeof(cwd)) == NULL) {
+        strcpy(cwd, "<unknown>");
+    }
+    fprintf(stderr, "[LINKER] macOS linking from: %s\n", cwd);
 
     if (linker.type == LINKER_CLANG || linker.type == LINKER_GCC) {
         // Using compiler wrapper (clang or gcc) - simplest and most reliable
@@ -285,8 +291,39 @@ static int _link_macos(linker_info_t linker, const linker_options_t* options) {
 
         // Add runtime library if needed
         if (options->link_runtime) {
-            strncat(cmd, " -L./build -lsox_runtime", sizeof(cmd) - strlen(cmd) - 1);
+            // Try to find the runtime library
+            // Common locations to search for libsox_runtime.a
+            const char* candidates[] = {
+                "./build",
+                "/Users/scott/development/projects/sox/build",
+                NULL
+            };
+
+            char link_cmd[256] = "";
+            struct stat st;
+            for (int i = 0; candidates[i] != NULL; i++) {
+                char lib_path[512];
+                snprintf(lib_path, sizeof(lib_path), "%s/libsox_runtime.a", candidates[i]);
+                if (stat(lib_path, &st) == 0) {
+                    snprintf(link_cmd, sizeof(link_cmd), " -L%s -lsox_runtime", candidates[i]);
+                    fprintf(stderr, "[LINKER] Found runtime library at: %s\n", lib_path);
+                    break;
+                }
+            }
+
+            if (strlen(link_cmd) == 0) {
+                // Fallback to -L./build if we can't find it
+                strcpy(link_cmd, " -L./build -lsox_runtime");
+                fprintf(stderr, "[LINKER] Using fallback path for runtime library\n");
+            }
+
+            fprintf(stderr, "[LINKER] Adding runtime library: %s\n", link_cmd);
+            strncat(cmd, link_cmd, sizeof(cmd) - strlen(cmd) - 1);
+        } else {
+            fprintf(stderr, "[LINKER] NOT adding runtime library (link_runtime=false)\n");
         }
+
+        fprintf(stderr, "[LINKER] Full command: %s\n", cmd);
     } else {
         // Using ld64 (system linker for macOS) - more complex
         const char* arch_flag = "arm64";

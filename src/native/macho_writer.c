@@ -280,6 +280,20 @@ bool macho_write_file(macho_builder_t* builder, const char* filename) {
         }
     }
 
+    // Relocation table offset (comes after section data)
+    size_t reloc_offset = current_offset;
+    size_t reloc_size = builder->reloc_count * sizeof(relocation_info_t);
+    fprintf(stderr, "DEBUG: Relocation offset=%zu, count=%d, size=%zu\n", reloc_offset, builder->reloc_count, reloc_size);
+
+    // Update section relocation offsets
+    // For now, put all relocations in the first section (text section)
+    if (builder->section_count > 0 && builder->reloc_count > 0) {
+        builder->sections[0].reloff = (uint32_t)reloc_offset;
+        builder->sections[0].nreloc = builder->reloc_count;
+        fprintf(stderr, "DEBUG: Section 0 reloff=%u, nreloc=%u\n", builder->sections[0].reloff, builder->sections[0].nreloc);
+        current_offset += reloc_size;
+    }
+
     // Symbol table offset
     size_t symtab_offset = current_offset;
     size_t symtab_size = builder->symtab_count * sizeof(nlist_64_t);
@@ -369,6 +383,18 @@ bool macho_write_file(macho_builder_t* builder, const char* filename) {
         }
     }
 
+    // Write relocations (if any)
+    if (builder->reloc_count > 0) {
+        fprintf(stderr, "DEBUG: Writing %d relocations at offset %zu\n", builder->reloc_count, builder->size);
+        align_to(builder, 8);
+        for (int i = 0; i < builder->reloc_count; i++) {
+            relocation_info_t* reloc = &builder->relocs[i];
+            fprintf(stderr, "DEBUG:   [%d] address=%d, symbolnum=%u, type=%u, pcrel=%u, length=%u, external=%u\n",
+                   i, reloc->r_address, reloc->r_symbolnum, reloc->r_type, reloc->r_pcrel, reloc->r_length, reloc->r_extern);
+        }
+        write_data(builder, builder->relocs, builder->reloc_count * sizeof(relocation_info_t));
+    }
+
     // Write symbol table
     align_to(builder, 8);
     write_data(builder, builder->symtab, builder->symtab_count * sizeof(nlist_64_t));
@@ -451,15 +477,36 @@ bool macho_create_object_file_with_arm64_relocs(const char* filename, const uint
     macho_add_symbol(builder, function_name, N_SECT | N_EXT, text_section + 1, 0);
 
     // Process relocations
+    fprintf(stderr, "[RELOC] Processing %d relocations\n", relocation_count);
     if (arm64_relocs && relocation_count > 0) {
         // First pass: collect all undefined external symbols and map names to indices
         // We'll build a simple map of symbol names to their indices
+        fprintf(stderr, "[RELOC] Allocating buffers for relocation processing\n");
         const char** symbol_names = (const char**)malloc(relocation_count * sizeof(char*));
         uint32_t* symbol_indices = (uint32_t*)malloc(relocation_count * sizeof(uint32_t));
+
+        if (!symbol_names || !symbol_indices) {
+            fprintf(stderr, "[RELOC] ERROR: Failed to allocate relocation buffers\n");
+            free(symbol_names);
+            free(symbol_indices);
+            macho_builder_free(builder);
+            return false;
+        }
+
         int unique_symbols = 0;
 
+        fprintf(stderr, "[RELOC] First pass: collecting unique symbols\n");
         for (int i = 0; i < relocation_count; i++) {
             const arm64_relocation_t* reloc = &arm64_relocs[i];
+            fprintf(stderr, "[RELOC]   [%d] offset=%u, type=%d, symbol=%s\n", i, reloc->offset, reloc->type, reloc->symbol ? reloc->symbol : "<NULL>");
+
+            if (!reloc || !reloc->symbol) {
+                fprintf(stderr, "[RELOC] ERROR: NULL relocation or symbol at index %d\n", i);
+                free(symbol_names);
+                free(symbol_indices);
+                macho_builder_free(builder);
+                return false;
+            }
 
             // Check if we've already added this symbol
             int symbol_index = -1;
@@ -472,16 +519,29 @@ bool macho_create_object_file_with_arm64_relocs(const char* filename, const uint
 
             // If not found, add it
             if (symbol_index == -1) {
+                fprintf(stderr, "[RELOC]   Adding symbol: %s\n", reloc->symbol);
                 symbol_index = macho_add_symbol(builder, reloc->symbol, N_UNDF | N_EXT, 0, 0);
+                fprintf(stderr, "[RELOC]   Symbol index: %d\n", symbol_index);
                 symbol_names[unique_symbols] = reloc->symbol;
                 symbol_indices[unique_symbols] = symbol_index;
                 unique_symbols++;
             }
         }
 
+        fprintf(stderr, "[RELOC] Found %d unique symbols\n", unique_symbols);
+
         // Second pass: add relocations in Mach-O format
+        fprintf(stderr, "[RELOC] Second pass: adding Mach-O relocations\n");
         for (int i = 0; i < relocation_count; i++) {
             const arm64_relocation_t* reloc = &arm64_relocs[i];
+
+            if (!reloc || !reloc->symbol) {
+                fprintf(stderr, "[RELOC] ERROR: NULL relocation/symbol in second pass at index %d\n", i);
+                free(symbol_names);
+                free(symbol_indices);
+                macho_builder_free(builder);
+                return false;
+            }
 
             // Find the symbol index for this relocation
             uint32_t symbol_index = 0;
@@ -492,6 +552,8 @@ bool macho_create_object_file_with_arm64_relocs(const char* filename, const uint
                 }
             }
 
+            fprintf(stderr, "[RELOC]   [%d] symbol %s -> index %d\n", i, reloc->symbol, symbol_index);
+
             // Convert ARM64 relocation types to Mach-O relocation types
             uint32_t macho_reloc_type = 0;
 
@@ -499,19 +561,24 @@ bool macho_create_object_file_with_arm64_relocs(const char* filename, const uint
                 case ARM64_RELOC_CALL26:
                     // ARM64_RELOC_BRANCH26 = 2 in Mach-O
                     macho_reloc_type = 2;
+                    fprintf(stderr, "[RELOC]   Type: ARM64_RELOC_CALL26 -> Mach-O type 2\n");
                     break;
                 case ARM64_RELOC_JUMP26:
                     // Use same type as CALL26 for now
                     macho_reloc_type = 2;
+                    fprintf(stderr, "[RELOC]   Type: ARM64_RELOC_JUMP26 -> Mach-O type 2\n");
                     break;
                 default:
                     // Skip unknown relocation types
+                    fprintf(stderr, "[RELOC]   Type: UNKNOWN (%d), skipping\n", reloc->type);
                     continue;
             }
 
             // For BL instruction: PC-relative, 32-bit field (actually 26 bits in the instruction)
             // reloc->offset is in instructions, need to convert to bytes
             int32_t byte_offset = (int32_t)(reloc->offset * 4);
+            fprintf(stderr, "[RELOC]   Adding relocation: offset=%d (instr offset %u * 4), symbol_index=%d, type=%d\n",
+                   byte_offset, reloc->offset, symbol_index, macho_reloc_type);
 
             macho_add_relocation(builder, byte_offset,
                                 symbol_index,  // Use the correct symbol index
@@ -521,9 +588,13 @@ bool macho_create_object_file_with_arm64_relocs(const char* filename, const uint
                                 macho_reloc_type);
         }
 
+        fprintf(stderr, "[RELOC] Relocation processing complete, freeing buffers\n");
         // Clean up temporary buffers
         free(symbol_names);
         free(symbol_indices);
+        fprintf(stderr, "[RELOC] Buffers freed\n");
+    } else {
+        fprintf(stderr, "[RELOC] No relocations to process (arm64_relocs=%p, count=%d)\n", arm64_relocs, relocation_count);
     }
 
     bool result = macho_write_file(builder, filename);
@@ -553,14 +624,35 @@ bool macho_create_executable_object_file_with_arm64_relocs(const char* filename,
     macho_add_symbol(builder, "sox_main", N_SECT | N_EXT, text_section + 1, 0);
 
     // Process relocations
+    fprintf(stderr, "[RELOC-EXE] Processing %d relocations for executable\n", relocation_count);
     if (arm64_relocs && relocation_count > 0) {
         // First pass: collect all undefined external symbols and map names to indices
+        fprintf(stderr, "[RELOC-EXE] Allocating buffers for relocation processing\n");
         const char** symbol_names = (const char**)malloc(relocation_count * sizeof(char*));
         uint32_t* symbol_indices = (uint32_t*)malloc(relocation_count * sizeof(uint32_t));
+
+        if (!symbol_names || !symbol_indices) {
+            fprintf(stderr, "[RELOC-EXE] ERROR: Failed to allocate relocation buffers\n");
+            free(symbol_names);
+            free(symbol_indices);
+            macho_builder_free(builder);
+            return false;
+        }
+
         int unique_symbols = 0;
 
+        fprintf(stderr, "[RELOC-EXE] First pass: collecting unique symbols\n");
         for (int i = 0; i < relocation_count; i++) {
             const arm64_relocation_t* reloc = &arm64_relocs[i];
+            fprintf(stderr, "[RELOC-EXE]   [%d] offset=%u, type=%d, symbol=%s\n", i, reloc->offset, reloc->type, reloc->symbol ? reloc->symbol : "<NULL>");
+
+            if (!reloc || !reloc->symbol) {
+                fprintf(stderr, "[RELOC-EXE] ERROR: NULL relocation or symbol at index %d\n", i);
+                free(symbol_names);
+                free(symbol_indices);
+                macho_builder_free(builder);
+                return false;
+            }
 
             // Check if we've already added this symbol
             int symbol_index = -1;
@@ -573,16 +665,29 @@ bool macho_create_executable_object_file_with_arm64_relocs(const char* filename,
 
             // If not found, add it
             if (symbol_index == -1) {
+                fprintf(stderr, "[RELOC-EXE]   Adding symbol: %s\n", reloc->symbol);
                 symbol_index = macho_add_symbol(builder, reloc->symbol, N_UNDF | N_EXT, 0, 0);
+                fprintf(stderr, "[RELOC-EXE]   Symbol index: %d\n", symbol_index);
                 symbol_names[unique_symbols] = reloc->symbol;
                 symbol_indices[unique_symbols] = symbol_index;
                 unique_symbols++;
             }
         }
 
+        fprintf(stderr, "[RELOC-EXE] Found %d unique symbols\n", unique_symbols);
+
         // Second pass: add relocations in Mach-O format
+        fprintf(stderr, "[RELOC-EXE] Second pass: adding Mach-O relocations\n");
         for (int i = 0; i < relocation_count; i++) {
             const arm64_relocation_t* reloc = &arm64_relocs[i];
+
+            if (!reloc || !reloc->symbol) {
+                fprintf(stderr, "[RELOC-EXE] ERROR: NULL relocation/symbol in second pass at index %d\n", i);
+                free(symbol_names);
+                free(symbol_indices);
+                macho_builder_free(builder);
+                return false;
+            }
 
             // Find the symbol index for this relocation
             uint32_t symbol_index = 0;
@@ -593,21 +698,28 @@ bool macho_create_executable_object_file_with_arm64_relocs(const char* filename,
                 }
             }
 
+            fprintf(stderr, "[RELOC-EXE]   [%d] symbol %s -> index %d\n", i, reloc->symbol, symbol_index);
+
             // Convert ARM64 relocation types to Mach-O relocation types
             uint32_t macho_reloc_type = 0;
 
             switch (reloc->type) {
                 case ARM64_RELOC_CALL26:
                     macho_reloc_type = 2;
+                    fprintf(stderr, "[RELOC-EXE]   Type: ARM64_RELOC_CALL26 -> Mach-O type 2\n");
                     break;
                 case ARM64_RELOC_JUMP26:
                     macho_reloc_type = 2;
+                    fprintf(stderr, "[RELOC-EXE]   Type: ARM64_RELOC_JUMP26 -> Mach-O type 2\n");
                     break;
                 default:
+                    fprintf(stderr, "[RELOC-EXE]   Type: UNKNOWN (%d), skipping\n", reloc->type);
                     continue;
             }
 
             int32_t byte_offset = (int32_t)(reloc->offset * 4);
+            fprintf(stderr, "[RELOC-EXE]   Adding relocation: offset=%d (instr offset %u * 4), symbol_index=%d, type=%d\n",
+                   byte_offset, reloc->offset, symbol_index, macho_reloc_type);
 
             macho_add_relocation(builder, byte_offset,
                                 symbol_index,  // Use the correct symbol index
@@ -617,12 +729,18 @@ bool macho_create_executable_object_file_with_arm64_relocs(const char* filename,
                                 macho_reloc_type);
         }
 
+        fprintf(stderr, "[RELOC-EXE] Relocation processing complete, freeing buffers\n");
         // Clean up temporary buffers
         free(symbol_names);
         free(symbol_indices);
+        fprintf(stderr, "[RELOC-EXE] Buffers freed\n");
+    } else {
+        fprintf(stderr, "[RELOC-EXE] No relocations to process (arm64_relocs=%p, count=%d)\n", arm64_relocs, relocation_count);
     }
 
+    fprintf(stderr, "[RELOC-EXE] Writing Mach-O file...\n");
     bool result = macho_write_file(builder, filename);
+    fprintf(stderr, "[RELOC-EXE] File write %s, freeing builder\n", result ? "succeeded" : "failed");
 
     macho_builder_free(builder);
     return result;

@@ -132,6 +132,8 @@ value_t sox_native_not(value_t operand) {
  * ==================================================================== */
 
 void sox_native_print(value_t value) {
+    fprintf(stderr, "[RUNTIME] sox_native_print called with value: type=%d (%u), bits=%llx\n",
+            (int)value.type, (unsigned)value.type, *(unsigned long long*)&value.as);
     runtime_print_value(value);
     printf("\n");
 }
