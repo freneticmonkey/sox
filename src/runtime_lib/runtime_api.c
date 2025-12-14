@@ -190,11 +190,11 @@ value_t sox_native_get_index(value_t object, value_t index) {
         if (!array) return NIL_VAL;
         
         int idx = (int)AS_NUMBER(index);
-        if (idx < 0 || idx >= array->count) {
+        if (idx < 0 || idx >= (int)array->values.count) {
             return NIL_VAL;
         }
         
-        return array->values[idx];
+        return array->values.values[idx];
     }
     
     /* Table indexing */
@@ -226,8 +226,8 @@ void sox_native_set_index(value_t object, value_t index, value_t value) {
         if (!array) return;
         
         int idx = (int)AS_NUMBER(index);
-        if (idx >= 0 && idx < array->count) {
-            array->values[idx] = value;
+        if (idx >= 0 && idx < (int)array->values.count) {
+            array->values.values[idx] = value;
         }
         return;
     }
@@ -270,9 +270,9 @@ value_t sox_native_alloc_array(void) {
     if (!array) return NIL_VAL;
     
     array->obj.type = RUNTIME_OBJ_ARRAY;
-    array->count = 0;
-    array->capacity = 0;
-    array->values = NULL;
+    array->start = 0;
+    array->end = 0;
+    runtime_init_value_array(&array->values);
     
     return OBJ_VAL(array);
 }
