@@ -429,3 +429,201 @@ bool macho_create_executable_object_file(const char* filename, const uint8_t* co
     macho_builder_free(builder);
     return result;
 }
+
+// Include arm64_encoder.h for relocation types
+#include "arm64_encoder.h"
+
+bool macho_create_object_file_with_arm64_relocs(const char* filename, const uint8_t* code,
+                                                 size_t code_size, const char* function_name,
+                                                 uint32_t cputype, uint32_t cpusubtype,
+                                                 const arm64_relocation* relocations,
+                                                 int relocation_count) {
+    // Cast the opaque void* pointer to the actual arm64_relocation_t
+    const arm64_relocation_t* arm64_relocs = (const arm64_relocation_t*)relocations;
+    macho_builder_t* builder = macho_builder_new(cputype, cpusubtype);
+
+    // Add __text section
+    int text_section = macho_add_section(builder, "__text", "__TEXT",
+                                          S_REGULAR | S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS,
+                                          code, code_size, 4);
+
+    // Add function symbol (external, defined)
+    macho_add_symbol(builder, function_name, N_SECT | N_EXT, text_section + 1, 0);
+
+    // Process relocations
+    if (arm64_relocs && relocation_count > 0) {
+        // First pass: collect all undefined external symbols and map names to indices
+        // We'll build a simple map of symbol names to their indices
+        const char** symbol_names = (const char**)malloc(relocation_count * sizeof(char*));
+        uint32_t* symbol_indices = (uint32_t*)malloc(relocation_count * sizeof(uint32_t));
+        int unique_symbols = 0;
+
+        for (int i = 0; i < relocation_count; i++) {
+            const arm64_relocation_t* reloc = &arm64_relocs[i];
+
+            // Check if we've already added this symbol
+            int symbol_index = -1;
+            for (int j = 0; j < unique_symbols; j++) {
+                if (strcmp(symbol_names[j], reloc->symbol) == 0) {
+                    symbol_index = j;
+                    break;
+                }
+            }
+
+            // If not found, add it
+            if (symbol_index == -1) {
+                symbol_index = macho_add_symbol(builder, reloc->symbol, N_UNDF | N_EXT, 0, 0);
+                symbol_names[unique_symbols] = reloc->symbol;
+                symbol_indices[unique_symbols] = symbol_index;
+                unique_symbols++;
+            }
+        }
+
+        // Second pass: add relocations in Mach-O format
+        for (int i = 0; i < relocation_count; i++) {
+            const arm64_relocation_t* reloc = &arm64_relocs[i];
+
+            // Find the symbol index for this relocation
+            uint32_t symbol_index = 0;
+            for (int j = 0; j < unique_symbols; j++) {
+                if (strcmp(symbol_names[j], reloc->symbol) == 0) {
+                    symbol_index = symbol_indices[j];
+                    break;
+                }
+            }
+
+            // Convert ARM64 relocation types to Mach-O relocation types
+            uint32_t macho_reloc_type = 0;
+
+            switch (reloc->type) {
+                case ARM64_RELOC_CALL26:
+                    // ARM64_RELOC_BRANCH26 = 2 in Mach-O
+                    macho_reloc_type = 2;
+                    break;
+                case ARM64_RELOC_JUMP26:
+                    // Use same type as CALL26 for now
+                    macho_reloc_type = 2;
+                    break;
+                default:
+                    // Skip unknown relocation types
+                    continue;
+            }
+
+            // For BL instruction: PC-relative, 32-bit field (actually 26 bits in the instruction)
+            // reloc->offset is in instructions, need to convert to bytes
+            int32_t byte_offset = (int32_t)(reloc->offset * 4);
+
+            macho_add_relocation(builder, byte_offset,
+                                symbol_index,  // Use the correct symbol index
+                                true,  // PC-relative
+                                2,  // 32-bit field
+                                true,  // external
+                                macho_reloc_type);
+        }
+
+        // Clean up temporary buffers
+        free(symbol_names);
+        free(symbol_indices);
+    }
+
+    bool result = macho_write_file(builder, filename);
+
+    macho_builder_free(builder);
+    return result;
+}
+
+bool macho_create_executable_object_file_with_arm64_relocs(const char* filename, const uint8_t* code,
+                                                            size_t code_size,
+                                                            uint32_t cputype, uint32_t cpusubtype,
+                                                            const arm64_relocation* relocations,
+                                                            int relocation_count) {
+    // Cast the opaque void* pointer to the actual arm64_relocation_t
+    const arm64_relocation_t* arm64_relocs = (const arm64_relocation_t*)relocations;
+    macho_builder_t* builder = macho_builder_new(cputype, cpusubtype);
+
+    // Add __text section
+    int text_section = macho_add_section(builder, "__text", "__TEXT",
+                                          S_REGULAR | S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS,
+                                          code, code_size, 4);
+
+    // Add main symbol at offset 0 (entry point for executable linking)
+    macho_add_symbol(builder, "main", N_SECT | N_EXT, text_section + 1, 0);
+
+    // Also add sox_main for reference
+    macho_add_symbol(builder, "sox_main", N_SECT | N_EXT, text_section + 1, 0);
+
+    // Process relocations
+    if (arm64_relocs && relocation_count > 0) {
+        // First pass: collect all undefined external symbols and map names to indices
+        const char** symbol_names = (const char**)malloc(relocation_count * sizeof(char*));
+        uint32_t* symbol_indices = (uint32_t*)malloc(relocation_count * sizeof(uint32_t));
+        int unique_symbols = 0;
+
+        for (int i = 0; i < relocation_count; i++) {
+            const arm64_relocation_t* reloc = &arm64_relocs[i];
+
+            // Check if we've already added this symbol
+            int symbol_index = -1;
+            for (int j = 0; j < unique_symbols; j++) {
+                if (strcmp(symbol_names[j], reloc->symbol) == 0) {
+                    symbol_index = j;
+                    break;
+                }
+            }
+
+            // If not found, add it
+            if (symbol_index == -1) {
+                symbol_index = macho_add_symbol(builder, reloc->symbol, N_UNDF | N_EXT, 0, 0);
+                symbol_names[unique_symbols] = reloc->symbol;
+                symbol_indices[unique_symbols] = symbol_index;
+                unique_symbols++;
+            }
+        }
+
+        // Second pass: add relocations in Mach-O format
+        for (int i = 0; i < relocation_count; i++) {
+            const arm64_relocation_t* reloc = &arm64_relocs[i];
+
+            // Find the symbol index for this relocation
+            uint32_t symbol_index = 0;
+            for (int j = 0; j < unique_symbols; j++) {
+                if (strcmp(symbol_names[j], reloc->symbol) == 0) {
+                    symbol_index = symbol_indices[j];
+                    break;
+                }
+            }
+
+            // Convert ARM64 relocation types to Mach-O relocation types
+            uint32_t macho_reloc_type = 0;
+
+            switch (reloc->type) {
+                case ARM64_RELOC_CALL26:
+                    macho_reloc_type = 2;
+                    break;
+                case ARM64_RELOC_JUMP26:
+                    macho_reloc_type = 2;
+                    break;
+                default:
+                    continue;
+            }
+
+            int32_t byte_offset = (int32_t)(reloc->offset * 4);
+
+            macho_add_relocation(builder, byte_offset,
+                                symbol_index,  // Use the correct symbol index
+                                true,  // PC-relative
+                                2,  // 32-bit field
+                                true,  // external
+                                macho_reloc_type);
+        }
+
+        // Clean up temporary buffers
+        free(symbol_names);
+        free(symbol_indices);
+    }
+
+    bool result = macho_write_file(builder, filename);
+
+    macho_builder_free(builder);
+    return result;
+}

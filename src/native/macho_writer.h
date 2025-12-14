@@ -233,4 +233,21 @@ bool macho_create_executable_object_file(const char* filename, const uint8_t* co
                                          size_t code_size,
                                          uint32_t cputype, uint32_t cpusubtype);
 
+// Forward declaration - opaque type (actual definition in arm64_encoder.h as arm64_relocation_t)
+typedef void* arm64_relocation;
+
+// High-level API: create object file with ARM64 relocations
+bool macho_create_object_file_with_arm64_relocs(const char* filename, const uint8_t* code,
+                                                 size_t code_size, const char* function_name,
+                                                 uint32_t cputype, uint32_t cpusubtype,
+                                                 const arm64_relocation* relocations,
+                                                 int relocation_count);
+
+// High-level API: create executable-ready object file with ARM64 relocations
+bool macho_create_executable_object_file_with_arm64_relocs(const char* filename, const uint8_t* code,
+                                                            size_t code_size,
+                                                            uint32_t cputype, uint32_t cpusubtype,
+                                                            const arm64_relocation* relocations,
+                                                            int relocation_count);
+
 #endif

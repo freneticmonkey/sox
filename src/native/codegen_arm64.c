@@ -427,6 +427,15 @@ uint8_t* codegen_arm64_get_code(codegen_arm64_context_t* ctx, size_t* size) {
     return arm64_get_code(ctx->asm_, size);
 }
 
+arm64_relocation_t* codegen_arm64_get_relocations(codegen_arm64_context_t* ctx, int* count) {
+    if (!ctx || !ctx->asm_) {
+        *count = 0;
+        return NULL;
+    }
+    *count = (int)ctx->asm_->reloc_count;
+    return ctx->asm_->relocations;
+}
+
 void codegen_arm64_print(codegen_arm64_context_t* ctx) {
     size_t size;
     uint8_t* code = arm64_get_code(ctx->asm_, &size);

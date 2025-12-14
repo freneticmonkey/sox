@@ -44,6 +44,9 @@ bool codegen_arm64_generate_function(codegen_arm64_context_t* ctx, ir_function_t
 // Get generated code
 uint8_t* codegen_arm64_get_code(codegen_arm64_context_t* ctx, size_t* size);
 
+// Get relocations from generated code
+arm64_relocation_t* codegen_arm64_get_relocations(codegen_arm64_context_t* ctx, int* count);
+
 // Print generated code (disassembly)
 void codegen_arm64_print(codegen_arm64_context_t* ctx);
 
