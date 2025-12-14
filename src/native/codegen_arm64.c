@@ -94,6 +94,41 @@ static arm64_register_t get_physical_register_arm64(codegen_arm64_context_t* ctx
     return ARM64_NO_REG;
 }
 
+// Load a 16-byte composite value into X0:X1 for function argument passing
+// ARM64 ABI: 16-byte composite types (like value_t) go in X0:X1
+static void load_16byte_argument_x0x1(codegen_arm64_context_t* ctx, ir_value_t value) {
+    if (value.type == IR_VAL_REGISTER) {
+        // Get the physical register where the value is stored
+        arm64_register_t src_reg = regalloc_arm64_get_register(ctx->regalloc, value.as.reg);
+
+        if (src_reg == ARM64_NO_REG) {
+            // Value is spilled on stack - load from stack
+            int spill_slot = regalloc_arm64_get_spill_slot(ctx->regalloc, value.as.reg);
+            if (spill_slot >= 0) {
+                // Load first 8 bytes to X0
+                int stack_offset = -((spill_slot + 1) * 8);
+                arm64_ldr_reg_reg_offset(ctx->asm_, ARM64_X0, ARM64_FP, stack_offset);
+                // Load second 8 bytes to X1
+                int stack_offset_x1 = stack_offset - 8;
+                arm64_ldr_reg_reg_offset(ctx->asm_, ARM64_X1, ARM64_FP, stack_offset_x1);
+                return;
+            }
+        }
+
+        // Value is in a register - ensure both X0 and X1 are set
+        // Move value to X0
+        if (src_reg != ARM64_X0) {
+            arm64_mov_reg_reg(ctx->asm_, ARM64_X0, src_reg);
+        }
+
+        // For a 16-byte value in a single register, we need to also set X1
+        // Copy X0 to X1 (both halves come from same register)
+        if (ARM64_X0 != ARM64_X1) {
+            arm64_mov_reg_reg(ctx->asm_, ARM64_X1, ARM64_X0);
+        }
+    }
+}
+
 static void emit_function_prologue_arm64(codegen_arm64_context_t* ctx) {
     // ARM64 function prologue (AArch64 calling convention)
     // stp x29, x30, [sp, #-16]!  ; Save FP and LR
@@ -331,27 +366,8 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
             // ARM64 ABI: value_t is 16 bytes and goes in X0:X1
             // value_t is: {ValueType type(4) + padding(4) + union as(8)} = 16 bytes
 
-            // 1. Move value to X0:X1 (argument registers for 16-byte composite type)
-            arm64_register_t src_reg = get_physical_register_arm64(ctx, instr->operand1);
-
-            if (src_reg != ARM64_X0) {
-                // Move lower 8 bytes to X0
-                arm64_mov_reg_reg(ctx->asm_, ARM64_X0, src_reg);
-            }
-
-            // Move upper 8 bytes to X1
-            // For a 128-bit virtual register, we need to move the upper half
-            // Using LDP/STP or moving consecutive registers
-            // Since we only have the virtual reg in src_reg, we need to use LSR to get upper bits
-            // Actually, the physical register should already be split if needed
-            // For now, we'll emit a dummy move to x1 (the actual data should already be there)
-            // Or we can emit: MOV X1, X0; ROR X1, X1, #64 (rotate) to get upper bits
-            // Better: use STP to store 16 bytes at once, but that's for stack
-            // Actually for passing composite types, ARM64 ABI requires both X0 and X1
-            // The source register allocation should give us something in X0:X1 already
-            // We just ensure X0 has the lower 8 bytes
-
-            fprintf(stderr, "[CODEGEN] IR_PRINT: src_reg=%d, moving to X0 for value_t (16 bytes)\n", src_reg);
+            // 1. Load 16-byte value into X0:X1 (argument registers)
+            load_16byte_argument_x0x1(ctx, instr->operand1);
 
             // 2. Call sox_native_print with relocation
             size_t call_offset = arm64_get_offset(ctx->asm_);
