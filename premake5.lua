@@ -90,10 +90,11 @@ project "sox"
     "ext/argtable3/src/arg_*.c"
   }
 
-  -- ignore all testing files
+  -- ignore all testing files and old runtime implementation
   removefiles {
     "src/test/**",
-    "src/**_test.*"
+    "src/**_test.*",
+    "src/native/runtime.c"  -- Replaced by libsox_runtime
   }
 
   -- enable tracing for debug builds

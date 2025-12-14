@@ -336,7 +336,7 @@ int _generate_native(vm_config_t *config, const char* path, const char* source) 
         .output_file = final_output,
         .target_os = config->native_target_os,
         .target_arch = config->native_target_arch,
-        .link_runtime = false,  // TODO: Requires building a proper libsox_runtime library
+        .link_runtime = true,  // Link with libsox_runtime for runtime functions
         .verbose = config->native_debug_output
     };
 

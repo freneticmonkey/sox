@@ -236,7 +236,7 @@ static int _link_linux(linker_info_t linker, const linker_options_t* options) {
 
         // Add runtime library if needed
         if (options->link_runtime) {
-            strncat(cmd, " -L. -lsox_runtime", sizeof(cmd) - strlen(cmd) - 1);
+            strncat(cmd, " -L./build -lsox_runtime", sizeof(cmd) - strlen(cmd) - 1);
         }
     } else {
         // Using system linker (ld) - more complex, platform-specific
@@ -259,7 +259,7 @@ static int _link_linux(linker_info_t linker, const linker_options_t* options) {
 
         // Add runtime library if needed
         if (options->link_runtime) {
-            strncat(cmd, " -L. -lsox_runtime", sizeof(cmd) - strlen(cmd) - 1);
+            strncat(cmd, " -L./build -lsox_runtime", sizeof(cmd) - strlen(cmd) - 1);
         }
     }
 
@@ -285,7 +285,7 @@ static int _link_macos(linker_info_t linker, const linker_options_t* options) {
 
         // Add runtime library if needed
         if (options->link_runtime) {
-            strncat(cmd, " -L. -lsox_runtime", sizeof(cmd) - strlen(cmd) - 1);
+            strncat(cmd, " -L./build -lsox_runtime", sizeof(cmd) - strlen(cmd) - 1);
         }
     } else {
         // Using ld64 (system linker for macOS) - more complex
@@ -303,7 +303,7 @@ static int _link_macos(linker_info_t linker, const linker_options_t* options) {
 
         // Add runtime library if needed
         if (options->link_runtime) {
-            strncat(cmd, " -L. -lsox_runtime", sizeof(cmd) - strlen(cmd) - 1);
+            strncat(cmd, " -L./build -lsox_runtime", sizeof(cmd) - strlen(cmd) - 1);
         }
     }
 
