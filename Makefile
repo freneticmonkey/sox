@@ -169,3 +169,48 @@ build-tools:
 
 ui:
 	cd sox_ui && wails dev
+
+build-runtime-static: gen
+ifeq (${THIS_OS},darwin)
+	xcodebuild -configuration "Release" ARCHS="${THIS_ARCH}" \
+	  -destination 'platform=macOS' \
+	  -project "projects/sox_runtime.xcodeproj" -target sox_runtime
+endif
+ifeq (${THIS_OS},linux)
+	make -C projects sox_runtime config=release_linux64
+endif
+ifeq (${THIS_OS},windows)
+	msbuild.exe ./projects/sox_runtime.sln -p:Platform="windows";Configuration=Release -target:sox_runtime
+endif
+
+build-runtime-shared: gen
+ifeq (${THIS_OS},darwin)
+	xcodebuild -configuration "Release" ARCHS="${THIS_ARCH}" \
+	  -destination 'platform=macOS' \
+	  -project "projects/sox_runtime_shared.xcodeproj" -target sox_runtime_shared
+endif
+ifeq (${THIS_OS},linux)
+	make -C projects sox_runtime_shared config=release_linux64
+endif
+ifeq (${THIS_OS},windows)
+	msbuild.exe ./projects/sox_runtime_shared.sln -p:Platform="windows";Configuration=Release -target:sox_runtime_shared
+endif
+
+build-runtime: build-runtime-static build-runtime-shared
+
+install-runtime: build-runtime
+	@echo "Installing Sox runtime library..."
+	mkdir -p /usr/local/lib /usr/local/include/sox
+	cp build/libsox_runtime.a /usr/local/lib/
+ifeq (${THIS_OS},darwin)
+	cp build/libsox_runtime.dylib /usr/local/lib/
+	install_name_tool -id /usr/local/lib/libsox_runtime.dylib \
+	  /usr/local/lib/libsox_runtime.dylib
+endif
+ifeq (${THIS_OS},linux)
+	cp build/libsox_runtime.so /usr/local/lib/
+	ldconfig
+endif
+	cp src/runtime_lib/runtime_api.h /usr/local/include/sox/
+	@echo "Runtime library installed successfully"
+

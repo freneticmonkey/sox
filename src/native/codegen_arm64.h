@@ -3,7 +3,7 @@
 
 #include "ir.h"
 #include "arm64_encoder.h"
-#include "regalloc.h"
+#include "regalloc_arm64.h"
 
 // Patch location for forward jumps (ARM64)
 typedef struct {
@@ -15,7 +15,7 @@ typedef struct {
 typedef struct {
     ir_module_t* module;
     arm64_assembler_t* asm_;
-    regalloc_context_t* regalloc;
+    regalloc_arm64_context_t* regalloc;
 
     // Current function being generated
     ir_function_t* current_function;

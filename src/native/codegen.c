@@ -507,8 +507,23 @@ static void emit_instruction(codegen_context_t* ctx, ir_instruction_t* instr) {
         }
 
         case IR_PRINT: {
-            // Would need to call runtime print function
-            x64_call_rel32(ctx->asm_, 0); // Placeholder
+            // Print a value: call sox_native_print(value)
+            // System V AMD64 ABI: First argument goes in RDI
+
+            // 1. Move value to RDI (argument register)
+            x64_register_t src_reg = get_physical_register(ctx, instr->operand1);
+            if (src_reg != X64_NO_REG && src_reg != X64_RDI) {
+                x64_mov_reg_reg(ctx->asm_, X64_RDI, src_reg);
+            }
+
+            // 2. Call sox_native_print with relocation
+            size_t call_offset = x64_get_offset(ctx->asm_);
+            x64_call_rel32(ctx->asm_, 0); // Placeholder - will be relocated by linker
+
+            // 3. Record relocation for the linker
+            // PLT32 relocation for branch call
+            add_relocation(ctx, call_offset + 1, "sox_native_print", R_X86_64_PLT32, -4);
+
             break;
         }
 

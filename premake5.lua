@@ -243,3 +243,66 @@ project "winstd"
 
   files { "ext/winstd/**" }
 end
+-- Static Runtime Library
+project "sox_runtime"
+  kind "StaticLib"
+  language "C"
+  targetdir("build")
+  
+  defines { "SOX_RUNTIME_BUILD" }
+  
+  includedirs {
+    "src",
+    "src/runtime_lib"
+  }
+  
+  files {
+    "src/runtime_lib/**.h",
+    "src/runtime_lib/**.c"
+  }
+  
+  filter "system:macosx"
+    defines { "SOX_RUNTIME_MACOS" }
+    buildoptions { "-fvisibility=hidden" }
+  
+  filter "system:linux"
+    defines { "SOX_RUNTIME_LINUX" }
+    buildoptions { "-fvisibility=hidden", "-fPIC" }
+  
+  filter "system:windows"
+    defines { "SOX_RUNTIME_WINDOWS" }
+  
+  filter {}
+
+-- Shared Runtime Library  
+project "sox_runtime_shared"
+  kind "SharedLib"
+  language "C"
+  targetdir("build")
+  
+  defines { "SOX_RUNTIME_BUILD", "SOX_RUNTIME_SHARED" }
+  
+  includedirs {
+    "src",
+    "src/runtime_lib"
+  }
+  
+  files {
+    "src/runtime_lib/**.h",
+    "src/runtime_lib/**.c"
+  }
+  
+  filter "system:macosx"
+    defines { "SOX_RUNTIME_MACOS" }
+    buildoptions { "-fvisibility=hidden" }
+    linkoptions { "-dynamiclib" }
+  
+  filter "system:linux"
+    defines { "SOX_RUNTIME_LINUX" }
+    buildoptions { "-fvisibility=hidden", "-fPIC" }
+    linkoptions { "-shared" }
+  
+  filter "system:windows"
+    defines { "SOX_RUNTIME_WINDOWS", "_WINDLL" }
+  
+  filter {}

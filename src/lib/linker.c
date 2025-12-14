@@ -233,6 +233,11 @@ static int _link_linux(linker_info_t linker, const linker_options_t* options) {
                  linker.path,
                  options->input_file,
                  options->output_file);
+
+        // Add runtime library if needed
+        if (options->link_runtime) {
+            strncat(cmd, " -L. -lsox_runtime", sizeof(cmd) - strlen(cmd) - 1);
+        }
     } else {
         // Using system linker (ld) - more complex, platform-specific
         const char* ld_script = "";
@@ -277,6 +282,11 @@ static int _link_macos(linker_info_t linker, const linker_options_t* options) {
                  linker.path,
                  options->input_file,
                  options->output_file);
+
+        // Add runtime library if needed
+        if (options->link_runtime) {
+            strncat(cmd, " -L. -lsox_runtime", sizeof(cmd) - strlen(cmd) - 1);
+        }
     } else {
         // Using ld64 (system linker for macOS) - more complex
         const char* arch_flag = "arm64";

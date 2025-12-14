@@ -65,9 +65,20 @@ void arm64_emit(arm64_assembler_t* asm_, uint32_t instruction) {
 // Data movement
 void arm64_mov_reg_reg(arm64_assembler_t* asm_, arm64_register_t dst, arm64_register_t src) {
     if (dst == src) return; // Optimize out self-moves
-    // MOV (register) is an alias for ORR Xd, XZR, Xm
-    uint32_t instr = 0xAA0003E0 | (src << 16) | dst;
-    arm64_emit(asm_, instr);
+
+    // When SP (register 31) is involved, we must use ADD Xd, Xn, #0
+    // instead of ORR, because in ORR context, register 31 means XZR, not SP
+    if (src == ARM64_SP || dst == ARM64_SP) {
+        // MOV dst, src is encoded as ADD dst, src, #0
+        // Format: sf=1 (bit 31) | op=00 (bits 30:29) | S=0 (bit 28) | op2=010 (bits 27:24) |
+        //         sh=00 (bits 23:22) | imm12=0 (bits 21:10) | Rn (bits 9:5) | Rd (bits 4:0)
+        uint32_t instr = 0x91000000 | (src << 5) | dst;
+        arm64_emit(asm_, instr);
+    } else {
+        // MOV (register) is an alias for ORR Xd, XZR, Xm
+        uint32_t instr = 0xAA0003E0 | (src << 16) | dst;
+        arm64_emit(asm_, instr);
+    }
 }
 
 void arm64_movz(arm64_assembler_t* asm_, arm64_register_t dst, uint16_t imm, uint8_t shift) {

@@ -40,7 +40,8 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
     bool is_arm64 = (strcmp(options->target_arch, "arm64") == 0 ||
                      strcmp(options->target_arch, "aarch64") == 0);
 
-    // For x86-64: keep codegen context alive until after writing
+    // Keep codegen contexts alive until after writing (code and relocations point into them)
+    codegen_arm64_context_t* codegen_arm64 = NULL;
     codegen_context_t* codegen_x64 = NULL;
     codegen_relocation_t* relocations_x64 = NULL;
     int relocation_count_x64 = 0;
@@ -62,7 +63,8 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
 
         code = codegen_arm64_get_code(codegen, &code_size);
         machine_type = EM_AARCH64;
-        codegen_arm64_free(codegen);
+        // Don't free codegen yet - code pointer points into it
+        codegen_arm64 = codegen;
     } else {
         printf("[2/4] Generating x86-64 machine code...\n");
         codegen_context_t* codegen = codegen_new(module);
@@ -165,6 +167,11 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
 
     // Cleanup
     ir_module_free(module);
+
+    // Free ARM64 codegen context if it was used
+    if (codegen_arm64) {
+        codegen_arm64_free(codegen_arm64);
+    }
 
     // Free x86-64 codegen context if it was used
     if (codegen_x64) {

@@ -26,7 +26,7 @@ void codegen_arm64_free(codegen_arm64_context_t* ctx) {
         arm64_assembler_free(ctx->asm_);
     }
     if (ctx->regalloc) {
-        regalloc_free(ctx->regalloc);
+        regalloc_arm64_free(ctx->regalloc);
     }
     if (ctx->label_offsets) {
         l_mem_free(ctx->label_offsets, sizeof(int) * ctx->label_capacity);
@@ -75,13 +75,12 @@ static void add_jump_patch(codegen_arm64_context_t* ctx, size_t offset, int targ
 // Map virtual register to ARM64 physical register
 static arm64_register_t get_physical_register_arm64(codegen_arm64_context_t* ctx, ir_value_t value) {
     if (value.type == IR_VAL_REGISTER) {
-        x64_register_t x64_reg = regalloc_get_register(ctx->regalloc, value.as.reg);
+        arm64_register_t arm64_reg = regalloc_arm64_get_register(ctx->regalloc, value.as.reg);
 
-        // Map x64 register numbers to ARM64 registers
-        // This is a simplified mapping
-        if (x64_reg == X64_NO_REG) {
+        // Check if register was allocated
+        if (arm64_reg == ARM64_NO_REG) {
             // Handle spilled registers
-            int spill_slot = regalloc_get_spill_slot(ctx->regalloc, value.as.reg);
+            int spill_slot = regalloc_arm64_get_spill_slot(ctx->regalloc, value.as.reg);
             if (spill_slot >= 0) {
                 // Load from stack into temporary register X9
                 arm64_ldr_reg_reg_offset(ctx->asm_, ARM64_X9, ARM64_FP, -((spill_slot + 1) * 8));
@@ -90,11 +89,7 @@ static arm64_register_t get_physical_register_arm64(codegen_arm64_context_t* ctx
             return ARM64_NO_REG;
         }
 
-        // Simple mapping: use same register number
-        // This works because we have 32 ARM64 registers and allocatable x64 registers fit
-        if (x64_reg < ARM64_REG_COUNT) {
-            return (arm64_register_t)x64_reg;
-        }
+        return arm64_reg;
     }
     return ARM64_NO_REG;
 }
@@ -113,7 +108,7 @@ static void emit_function_prologue_arm64(codegen_arm64_context_t* ctx) {
     arm64_mov_reg_reg(ctx->asm_, ARM64_FP, ARM64_SP);
 
     // Allocate stack frame
-    int frame_size = regalloc_get_frame_size(ctx->regalloc);
+    int frame_size = regalloc_arm64_get_frame_size(ctx->regalloc);
     if (frame_size > 0) {
         if (frame_size < 4096) {
             arm64_sub_reg_reg_imm(ctx->asm_, ARM64_SP, ARM64_SP, (uint16_t)frame_size);
@@ -134,7 +129,7 @@ static void emit_function_prologue_arm64(codegen_arm64_context_t* ctx) {
 
 static void emit_function_epilogue_arm64(codegen_arm64_context_t* ctx) {
     // ARM64 function epilogue
-    int frame_size = regalloc_get_frame_size(ctx->regalloc);
+    int frame_size = regalloc_arm64_get_frame_size(ctx->regalloc);
 
     // Restore callee-saved registers
     if (frame_size > 64) {
@@ -332,8 +327,23 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
         }
 
         case IR_PRINT: {
-            // Would need to call runtime print function
-            arm64_bl(ctx->asm_, 0); // Placeholder
+            // Print a value: call sox_native_print(value)
+            // ARM64 ABI: First argument goes in X0
+
+            // 1. Move value to X0 (argument register)
+            arm64_register_t src_reg = get_physical_register_arm64(ctx, instr->operand1);
+            if (src_reg != ARM64_X0) {
+                arm64_mov_reg_reg(ctx->asm_, ARM64_X0, src_reg);
+            }
+
+            // 2. Call sox_native_print with relocation
+            size_t call_offset = arm64_get_offset(ctx->asm_);
+            arm64_bl(ctx->asm_, 0); // Placeholder - will be relocated by linker
+
+            // 3. Record relocation for the linker
+            // Mach-O ARM64_RELOC_CALL26 for branch link
+            arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26, "sox_native_print", 0);
+
             break;
         }
 
@@ -348,14 +358,13 @@ bool codegen_arm64_generate_function(codegen_arm64_context_t* ctx, ir_function_t
     ctx->current_function = func;
 
     // Perform register allocation
-    ctx->regalloc = regalloc_new(func);
-    if (!regalloc_allocate(ctx->regalloc)) {
+    ctx->regalloc = regalloc_arm64_new(func);
+    if (!regalloc_arm64_allocate(ctx->regalloc)) {
         return false;
     }
 
     // Debug: print allocation
-    printf("ARM64 ");
-    regalloc_print(ctx->regalloc);
+    regalloc_arm64_print(ctx->regalloc);
 
     // Emit function prologue
     emit_function_prologue_arm64(ctx);

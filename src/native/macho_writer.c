@@ -236,6 +236,16 @@ bool macho_write_file(macho_builder_t* builder, const char* filename) {
     size_t load_commands_size = segment_cmd_size + symtab_cmd_size +
                                  dysymtab_cmd_size + build_version_cmd_size;
 
+    // Debug: Log section data
+    if (builder->section_count > 0 && builder->section_data[0]) {
+        fprintf(stderr, "DEBUG: Section 0 has %zu bytes of data\n", builder->section_sizes[0]);
+        fprintf(stderr, "DEBUG: First 8 bytes: ");
+        for (int j = 0; j < 8 && j < builder->section_sizes[0]; j++) {
+            fprintf(stderr, "%02x ", builder->section_data[0][j]);
+        }
+        fprintf(stderr, "\n");
+    }
+
     // Write Mach-O header
     mach_header_64_t header;
     memset(&header, 0, sizeof(header));
