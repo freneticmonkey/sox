@@ -72,6 +72,85 @@ static void add_jump_patch(codegen_arm64_context_t* ctx, size_t offset, int targ
     ctx->patch_count++;
 }
 
+// Structure for register pairs
+typedef struct {
+    arm64_register_t low;
+    arm64_register_t high;  // ARM64_NO_REG if not a pair
+    bool is_pair;
+    bool is_spilled;
+    int spill_offset;  // Byte offset from FP if spilled
+} arm64_reg_pair_t;
+
+// Get register pair for a value (handles both single registers and pairs)
+static arm64_reg_pair_t get_register_pair_arm64(codegen_arm64_context_t* ctx, ir_value_t value) {
+    arm64_reg_pair_t result = {ARM64_NO_REG, ARM64_NO_REG, false, false, -1};
+
+    if (value.type == IR_VAL_REGISTER) {
+        arm64_register_t low_reg = regalloc_arm64_get_register(ctx->regalloc, value.as.reg);
+
+        if (low_reg != ARM64_NO_REG) {
+            // Value is in registers
+            result.low = low_reg;
+            result.is_spilled = false;
+
+            // Check if this is a 16-byte pair by checking the live range
+            if (value.size == IR_SIZE_16BYTE) {
+                // For 16-byte values, we expect preg_high to be set
+                // This would require access to the live range structure
+                // For now, we'll use a simple heuristic:
+                // ARM64 calling convention pairs are consecutive (X0:X1, X2:X3, etc.)
+                if ((low_reg + 1) <= ARM64_X28) {
+                    result.high = (arm64_register_t)(low_reg + 1);
+                    result.is_pair = true;
+                }
+            }
+            return result;
+        } else {
+            // Value is spilled
+            int spill_slot = regalloc_arm64_get_spill_slot(ctx->regalloc, value.as.reg);
+            if (spill_slot >= 0) {
+                result.is_spilled = true;
+                result.spill_offset = spill_slot;
+
+                // Determine if it's a pair based on value size
+                if (value.size == IR_SIZE_16BYTE) {
+                    result.is_pair = true;
+                }
+                return result;
+            }
+        }
+    }
+
+    return result;
+}
+
+// Load a value from stack using LDP (pair) or LDR (single)
+static void load_value_from_spill(codegen_arm64_context_t* ctx, int vreg, int spill_offset, ir_value_size_t size, arm64_register_t dest_low, arm64_register_t dest_high) {
+    if (size == IR_SIZE_16BYTE) {
+        // Load 16-byte pair using LDP
+        // Stack offset: FP - ((spill_offset + 2) * 8) for first register
+        int offset = -((spill_offset + 2) * 8);
+        arm64_ldp(ctx->asm_, dest_low, dest_high, ARM64_FP, offset);
+    } else {
+        // Load 8-byte single using LDR
+        int offset = -((spill_offset + 1) * 8);
+        arm64_ldr_reg_reg_offset(ctx->asm_, dest_low, ARM64_FP, offset);
+    }
+}
+
+// Store a value to stack using STP (pair) or STR (single)
+static void store_value_to_spill(codegen_arm64_context_t* ctx, int vreg, int spill_offset, ir_value_size_t size, arm64_register_t src_low, arm64_register_t src_high) {
+    if (size == IR_SIZE_16BYTE) {
+        // Store 16-byte pair using STP
+        int offset = -((spill_offset + 2) * 8);
+        arm64_stp(ctx->asm_, src_low, src_high, ARM64_FP, offset);
+    } else {
+        // Store 8-byte single using STR
+        int offset = -((spill_offset + 1) * 8);
+        arm64_str_reg_reg_offset(ctx->asm_, src_low, ARM64_FP, offset);
+    }
+}
+
 // Map virtual register to ARM64 physical register
 static arm64_register_t get_physical_register_arm64(codegen_arm64_context_t* ctx, ir_value_t value) {
     if (value.type == IR_VAL_REGISTER) {

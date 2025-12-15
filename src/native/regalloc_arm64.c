@@ -48,6 +48,7 @@ regalloc_arm64_context_t* regalloc_arm64_new(ir_function_t* function) {
 
     ctx->frame_size = 0;
     ctx->spill_count = 0;
+    ctx->spill_byte_offset = 0;
 
     return ctx;
 }
@@ -71,7 +72,10 @@ void regalloc_arm64_free(regalloc_arm64_context_t* ctx) {
     l_mem_free(ctx, sizeof(regalloc_arm64_context_t));
 }
 
-static void add_live_range(regalloc_arm64_context_t* ctx, int vreg, int pos) {
+static void add_live_range(regalloc_arm64_context_t* ctx, ir_value_t value, int pos) {
+    int vreg = value.as.reg;
+    ir_value_size_t size = value.size;
+
     // Find existing range or create new one
     live_range_arm64_t* range = NULL;
     for (int i = 0; i < ctx->range_count; i++) {
@@ -97,8 +101,11 @@ static void add_live_range(regalloc_arm64_context_t* ctx, int vreg, int pos) {
         range->vreg = vreg;
         range->start = pos;
         range->end = pos;
+        range->size = size;  // Store value size
         range->preg = ARM64_NO_REG;
+        range->preg_high = ARM64_NO_REG;  // Initialize high register
         range->spill_slot = -1;
+        range->spill_offset = -1;  // No spill offset yet
         range->is_float = false;
     } else {
         // Extend existing range
@@ -115,20 +122,20 @@ static void compute_live_ranges(regalloc_arm64_context_t* ctx) {
         ir_instruction_t* instr = block->first;
 
         while (instr) {
-            // Record uses of source operands
+            // Record uses of source operands (pass full ir_value_t for size info)
             if (instr->operand1.type == IR_VAL_REGISTER) {
-                add_live_range(ctx, instr->operand1.as.reg, pos);
+                add_live_range(ctx, instr->operand1, pos);
             }
             if (instr->operand2.type == IR_VAL_REGISTER) {
-                add_live_range(ctx, instr->operand2.as.reg, pos);
+                add_live_range(ctx, instr->operand2, pos);
             }
             if (instr->operand3.type == IR_VAL_REGISTER) {
-                add_live_range(ctx, instr->operand3.as.reg, pos);
+                add_live_range(ctx, instr->operand3, pos);
             }
 
-            // Record definition of destination
+            // Record definition of destination (pass full ir_value_t for size info)
             if (instr->dest.type == IR_VAL_REGISTER) {
-                add_live_range(ctx, instr->dest.as.reg, pos);
+                add_live_range(ctx, instr->dest, pos);
             }
 
             pos++;
@@ -181,10 +188,19 @@ static bool linear_scan_allocate(regalloc_arm64_context_t* ctx) {
         // Expire old ranges
         for (int j = 0; j < active_count; ) {
             if (active[j]->end < range->start) {
-                // This range is done, free its register
+                // This range is done, free its register(s)
                 if (active[j]->preg != ARM64_NO_REG) {
                     for (int k = 0; k < allocatable_count; k++) {
                         if (allocatable_regs[k] == active[j]->preg) {
+                            free_regs[k] = true;
+                            break;
+                        }
+                    }
+                }
+                // Also free high register if this is a pair
+                if (active[j]->preg_high != ARM64_NO_REG) {
+                    for (int k = 0; k < allocatable_count; k++) {
+                        if (allocatable_regs[k] == active[j]->preg_high) {
                             free_regs[k] = true;
                             break;
                         }
@@ -198,33 +214,87 @@ static bool linear_scan_allocate(regalloc_arm64_context_t* ctx) {
             }
         }
 
-        // Try to allocate a register
+        // Try to allocate register(s)
         bool allocated = false;
-        for (int j = 0; j < allocatable_count; j++) {
-            if (free_regs[j]) {
-                range->preg = allocatable_regs[j];
-                ctx->vreg_to_preg[range->vreg] = range->preg;
-                free_regs[j] = false;
 
-                // Track if we're using a callee-saved register
-                if (is_callee_saved(range->preg)) {
-                    for (int k = 0; k < callee_saved_count; k++) {
-                        if (callee_saved[k] == range->preg) {
-                            used_callee_saved[k] = true;
-                            break;
+        if (range->size == IR_SIZE_16BYTE) {
+            // Need to allocate a register pair (consecutive registers)
+            for (int j = 0; j < allocatable_count - 1; j++) {
+                // Check if we have two consecutive free registers
+                if (free_regs[j] && free_regs[j + 1]) {
+                    arm64_register_t low_reg = allocatable_regs[j];
+                    arm64_register_t high_reg = allocatable_regs[j + 1];
+
+                    // Check if registers are actually consecutive (X0:X1, X2:X3, etc.)
+                    if ((low_reg + 1) == high_reg) {
+                        range->preg = low_reg;
+                        range->preg_high = high_reg;
+                        ctx->vreg_to_preg[range->vreg] = low_reg;
+                        free_regs[j] = false;
+                        free_regs[j + 1] = false;
+
+                        // Track if we're using callee-saved registers
+                        if (is_callee_saved(low_reg)) {
+                            for (int k = 0; k < callee_saved_count; k++) {
+                                if (callee_saved[k] == low_reg) {
+                                    used_callee_saved[k] = true;
+                                    break;
+                                }
+                            }
                         }
+                        if (is_callee_saved(high_reg)) {
+                            for (int k = 0; k < callee_saved_count; k++) {
+                                if (callee_saved[k] == high_reg) {
+                                    used_callee_saved[k] = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        allocated = true;
+                        active[active_count++] = range;
+                        break;
                     }
                 }
+            }
+        } else {
+            // Allocate single register for 8-byte values
+            for (int j = 0; j < allocatable_count; j++) {
+                if (free_regs[j]) {
+                    range->preg = allocatable_regs[j];
+                    range->preg_high = ARM64_NO_REG;
+                    ctx->vreg_to_preg[range->vreg] = range->preg;
+                    free_regs[j] = false;
 
-                allocated = true;
-                active[active_count++] = range;
-                break;
+                    // Track if we're using a callee-saved register
+                    if (is_callee_saved(range->preg)) {
+                        for (int k = 0; k < callee_saved_count; k++) {
+                            if (callee_saved[k] == range->preg) {
+                                used_callee_saved[k] = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    allocated = true;
+                    active[active_count++] = range;
+                    break;
+                }
             }
         }
 
         if (!allocated) {
             // Need to spill
-            range->spill_slot = ctx->spill_count++;
+            range->spill_offset = ctx->spill_byte_offset;
+
+            if (range->size == IR_SIZE_16BYTE) {
+                range->spill_slot = ctx->spill_count;
+                ctx->spill_count += 2;  // Reserve 2 slots for 16-byte value
+                ctx->spill_byte_offset += 16;  // 16 bytes for pair
+            } else {
+                range->spill_slot = ctx->spill_count++;
+                ctx->spill_byte_offset += 8;  // 8 bytes for single register
+            }
             ctx->vreg_to_spill[range->vreg] = range->spill_slot;
         }
     }
@@ -243,7 +313,9 @@ static bool linear_scan_allocate(regalloc_arm64_context_t* ctx) {
 
     l_mem_free(used_callee_saved, sizeof(bool) * callee_saved_count);
 
-    ctx->frame_size = (ctx->spill_count + ctx->function->local_count) * 8 + callee_saved_area;
+    // Frame size: spilled bytes + locals (8 bytes each) + callee-saved area
+    // spill_byte_offset already accounts for 8 or 16 byte allocations per value
+    ctx->frame_size = ctx->spill_byte_offset + (ctx->function->local_count * 8) + callee_saved_area;
     // Align to 16 bytes (required by ARM64 ABI)
     ctx->frame_size = (ctx->frame_size + 15) & ~15;
 
@@ -281,18 +353,26 @@ void regalloc_arm64_print(regalloc_arm64_context_t* ctx) {
     printf("ARM64 Register Allocation for %s:\n", ctx->function->name);
     printf("  Virtual registers: %d\n", ctx->vreg_count);
     printf("  Live ranges: %d\n", ctx->range_count);
-    printf("  Spilled registers: %d\n", ctx->spill_count);
+    printf("  Spilled registers: %d (total %d bytes)\n", ctx->spill_count, ctx->spill_byte_offset);
     printf("  Frame size: %d bytes\n\n", ctx->frame_size);
 
     printf("  Allocations:\n");
     for (int i = 0; i < ctx->range_count; i++) {
         live_range_arm64_t* range = &ctx->ranges[i];
-        printf("    v%d [%d-%d]: ", range->vreg, range->start, range->end);
+        printf("    v%d [%d-%d] (%s): ", range->vreg, range->start, range->end,
+               range->size == IR_SIZE_16BYTE ? "16byte" : "8byte");
 
         if (range->preg != ARM64_NO_REG) {
-            printf("%s\n", arm64_register_name(range->preg));
+            if (range->preg_high != ARM64_NO_REG) {
+                // Register pair
+                printf("%s:%s\n", arm64_register_name(range->preg),
+                       arm64_register_name(range->preg_high));
+            } else {
+                // Single register
+                printf("%s\n", arm64_register_name(range->preg));
+            }
         } else {
-            printf("spill[%d]\n", range->spill_slot);
+            printf("spill[slot=%d, offset=%d]\n", range->spill_slot, range->spill_offset);
         }
     }
     printf("\n");
