@@ -307,6 +307,20 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
                     default: ir_op = IR_ADD;
                 }
 
+                // Infer destination register size based on operation type
+                if (instruction == OP_EQUAL || instruction == OP_GREATER || instruction == OP_LESS) {
+                    // Comparisons always return boolean (8-byte)
+                    dest.size = IR_SIZE_8BYTE;
+                } else {
+                    // Arithmetic operations (ADD, SUB, MUL, DIV):
+                    // Result is 16-byte if any operand is 16-byte, else 8-byte
+                    if (left.size == IR_SIZE_16BYTE || right.size == IR_SIZE_16BYTE) {
+                        dest.size = IR_SIZE_16BYTE;
+                    } else {
+                        dest.size = IR_SIZE_8BYTE;
+                    }
+                }
+
                 ir_builder_emit_binary(builder, ir_op, dest, left, right);
                 ir_builder_push(builder, dest);
                 break;
@@ -318,6 +332,16 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
                 int reg = ir_function_alloc_register(ir_func);
                 ir_value_t dest = ir_value_register(reg);
                 ir_op_t ir_op = (instruction == OP_NEGATE) ? IR_NEG : IR_NOT;
+
+                // Infer destination register size based on operation type
+                if (instruction == OP_NOT) {
+                    // NOT always returns boolean (8-byte)
+                    dest.size = IR_SIZE_8BYTE;
+                } else {
+                    // NEGATE inherits operand size
+                    dest.size = operand.size;
+                }
+
                 ir_builder_emit_unary(builder, ir_op, dest, operand);
                 ir_builder_push(builder, dest);
                 break;
