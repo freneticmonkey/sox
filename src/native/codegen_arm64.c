@@ -318,55 +318,301 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
         }
 
         case IR_ADD: {
-            arm64_register_t left = get_physical_register_arm64(ctx, instr->operand1);
-            arm64_register_t right = get_physical_register_arm64(ctx, instr->operand2);
-            arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+            if (instr->dest.size == IR_SIZE_16BYTE) {
+                // 16-byte composite type: marshal to X0:X1 and X2:X3, call sox_add
+                arm64_reg_pair_t op1_pair = get_register_pair_arm64(ctx, instr->operand1);
+                arm64_reg_pair_t op2_pair = get_register_pair_arm64(ctx, instr->operand2);
+                arm64_reg_pair_t dest_pair = get_register_pair_arm64(ctx, instr->dest);
 
-            if (dest != ARM64_NO_REG && left != ARM64_NO_REG && right != ARM64_NO_REG) {
-                arm64_add_reg_reg_reg(ctx->asm_, dest, left, right);
+                // Load operand1 into X0:X1
+                if (op1_pair.is_spilled) {
+                    load_value_from_spill(ctx, instr->operand1.as.reg, op1_pair.spill_offset,
+                                         IR_SIZE_16BYTE, ARM64_X0, ARM64_X1);
+                } else if (op1_pair.low != ARM64_NO_REG && op1_pair.is_pair) {
+                    if (op1_pair.low != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X0, op1_pair.low);
+                    }
+                    if (op1_pair.high != ARM64_X1) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X1, op1_pair.high);
+                    }
+                }
+
+                // Load operand2 into X2:X3
+                if (op2_pair.is_spilled) {
+                    load_value_from_spill(ctx, instr->operand2.as.reg, op2_pair.spill_offset,
+                                         IR_SIZE_16BYTE, ARM64_X2, ARM64_X3);
+                } else if (op2_pair.low != ARM64_NO_REG && op2_pair.is_pair) {
+                    if (op2_pair.low != ARM64_X2) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X2, op2_pair.low);
+                    }
+                    if (op2_pair.high != ARM64_X3) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X3, op2_pair.high);
+                    }
+                }
+
+                // Call sox_add - result comes back in X0:X1
+                size_t call_offset = arm64_get_offset(ctx->asm_);
+                arm64_bl(ctx->asm_, 0);
+                arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26, "sox_add", 0);
+
+                // Copy result from X0:X1 to dest pair
+                if (dest_pair.is_spilled) {
+                    store_value_to_spill(ctx, instr->dest.as.reg, dest_pair.spill_offset,
+                                        IR_SIZE_16BYTE, ARM64_X0, ARM64_X1);
+                } else if (dest_pair.low != ARM64_NO_REG && dest_pair.is_pair) {
+                    if (dest_pair.low != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, dest_pair.low, ARM64_X0);
+                    }
+                    if (dest_pair.high != ARM64_X1) {
+                        arm64_mov_reg_reg(ctx->asm_, dest_pair.high, ARM64_X1);
+                    }
+                }
+            } else {
+                // 8-byte scalar: existing single-register logic
+                arm64_register_t left = get_physical_register_arm64(ctx, instr->operand1);
+                arm64_register_t right = get_physical_register_arm64(ctx, instr->operand2);
+                arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+
+                if (dest != ARM64_NO_REG && left != ARM64_NO_REG && right != ARM64_NO_REG) {
+                    arm64_add_reg_reg_reg(ctx->asm_, dest, left, right);
+                }
             }
             break;
         }
 
         case IR_SUB: {
-            arm64_register_t left = get_physical_register_arm64(ctx, instr->operand1);
-            arm64_register_t right = get_physical_register_arm64(ctx, instr->operand2);
-            arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+            if (instr->dest.size == IR_SIZE_16BYTE) {
+                // 16-byte composite type: marshal to X0:X1 and X2:X3, call sox_sub
+                arm64_reg_pair_t op1_pair = get_register_pair_arm64(ctx, instr->operand1);
+                arm64_reg_pair_t op2_pair = get_register_pair_arm64(ctx, instr->operand2);
+                arm64_reg_pair_t dest_pair = get_register_pair_arm64(ctx, instr->dest);
 
-            if (dest != ARM64_NO_REG && left != ARM64_NO_REG && right != ARM64_NO_REG) {
-                arm64_sub_reg_reg_reg(ctx->asm_, dest, left, right);
+                // Load operand1 into X0:X1
+                if (op1_pair.is_spilled) {
+                    load_value_from_spill(ctx, instr->operand1.as.reg, op1_pair.spill_offset,
+                                         IR_SIZE_16BYTE, ARM64_X0, ARM64_X1);
+                } else if (op1_pair.low != ARM64_NO_REG && op1_pair.is_pair) {
+                    if (op1_pair.low != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X0, op1_pair.low);
+                    }
+                    if (op1_pair.high != ARM64_X1) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X1, op1_pair.high);
+                    }
+                }
+
+                // Load operand2 into X2:X3
+                if (op2_pair.is_spilled) {
+                    load_value_from_spill(ctx, instr->operand2.as.reg, op2_pair.spill_offset,
+                                         IR_SIZE_16BYTE, ARM64_X2, ARM64_X3);
+                } else if (op2_pair.low != ARM64_NO_REG && op2_pair.is_pair) {
+                    if (op2_pair.low != ARM64_X2) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X2, op2_pair.low);
+                    }
+                    if (op2_pair.high != ARM64_X3) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X3, op2_pair.high);
+                    }
+                }
+
+                // Call sox_sub - result comes back in X0:X1
+                size_t call_offset = arm64_get_offset(ctx->asm_);
+                arm64_bl(ctx->asm_, 0);
+                arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26, "sox_sub", 0);
+
+                // Copy result from X0:X1 to dest pair
+                if (dest_pair.is_spilled) {
+                    store_value_to_spill(ctx, instr->dest.as.reg, dest_pair.spill_offset,
+                                        IR_SIZE_16BYTE, ARM64_X0, ARM64_X1);
+                } else if (dest_pair.low != ARM64_NO_REG && dest_pair.is_pair) {
+                    if (dest_pair.low != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, dest_pair.low, ARM64_X0);
+                    }
+                    if (dest_pair.high != ARM64_X1) {
+                        arm64_mov_reg_reg(ctx->asm_, dest_pair.high, ARM64_X1);
+                    }
+                }
+            } else {
+                // 8-byte scalar: existing single-register logic
+                arm64_register_t left = get_physical_register_arm64(ctx, instr->operand1);
+                arm64_register_t right = get_physical_register_arm64(ctx, instr->operand2);
+                arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+
+                if (dest != ARM64_NO_REG && left != ARM64_NO_REG && right != ARM64_NO_REG) {
+                    arm64_sub_reg_reg_reg(ctx->asm_, dest, left, right);
+                }
             }
             break;
         }
 
         case IR_MUL: {
-            arm64_register_t left = get_physical_register_arm64(ctx, instr->operand1);
-            arm64_register_t right = get_physical_register_arm64(ctx, instr->operand2);
-            arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+            if (instr->dest.size == IR_SIZE_16BYTE) {
+                // 16-byte composite type: marshal to X0:X1 and X2:X3, call sox_mul
+                arm64_reg_pair_t op1_pair = get_register_pair_arm64(ctx, instr->operand1);
+                arm64_reg_pair_t op2_pair = get_register_pair_arm64(ctx, instr->operand2);
+                arm64_reg_pair_t dest_pair = get_register_pair_arm64(ctx, instr->dest);
 
-            if (dest != ARM64_NO_REG && left != ARM64_NO_REG && right != ARM64_NO_REG) {
-                arm64_mul_reg_reg_reg(ctx->asm_, dest, left, right);
+                // Load operand1 into X0:X1
+                if (op1_pair.is_spilled) {
+                    load_value_from_spill(ctx, instr->operand1.as.reg, op1_pair.spill_offset,
+                                         IR_SIZE_16BYTE, ARM64_X0, ARM64_X1);
+                } else if (op1_pair.low != ARM64_NO_REG && op1_pair.is_pair) {
+                    if (op1_pair.low != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X0, op1_pair.low);
+                    }
+                    if (op1_pair.high != ARM64_X1) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X1, op1_pair.high);
+                    }
+                }
+
+                // Load operand2 into X2:X3
+                if (op2_pair.is_spilled) {
+                    load_value_from_spill(ctx, instr->operand2.as.reg, op2_pair.spill_offset,
+                                         IR_SIZE_16BYTE, ARM64_X2, ARM64_X3);
+                } else if (op2_pair.low != ARM64_NO_REG && op2_pair.is_pair) {
+                    if (op2_pair.low != ARM64_X2) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X2, op2_pair.low);
+                    }
+                    if (op2_pair.high != ARM64_X3) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X3, op2_pair.high);
+                    }
+                }
+
+                // Call sox_mul - result comes back in X0:X1
+                size_t call_offset = arm64_get_offset(ctx->asm_);
+                arm64_bl(ctx->asm_, 0);
+                arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26, "sox_mul", 0);
+
+                // Copy result from X0:X1 to dest pair
+                if (dest_pair.is_spilled) {
+                    store_value_to_spill(ctx, instr->dest.as.reg, dest_pair.spill_offset,
+                                        IR_SIZE_16BYTE, ARM64_X0, ARM64_X1);
+                } else if (dest_pair.low != ARM64_NO_REG && dest_pair.is_pair) {
+                    if (dest_pair.low != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, dest_pair.low, ARM64_X0);
+                    }
+                    if (dest_pair.high != ARM64_X1) {
+                        arm64_mov_reg_reg(ctx->asm_, dest_pair.high, ARM64_X1);
+                    }
+                }
+            } else {
+                // 8-byte scalar: existing single-register logic
+                arm64_register_t left = get_physical_register_arm64(ctx, instr->operand1);
+                arm64_register_t right = get_physical_register_arm64(ctx, instr->operand2);
+                arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+
+                if (dest != ARM64_NO_REG && left != ARM64_NO_REG && right != ARM64_NO_REG) {
+                    arm64_mul_reg_reg_reg(ctx->asm_, dest, left, right);
+                }
             }
             break;
         }
 
         case IR_DIV: {
-            arm64_register_t left = get_physical_register_arm64(ctx, instr->operand1);
-            arm64_register_t right = get_physical_register_arm64(ctx, instr->operand2);
-            arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+            if (instr->dest.size == IR_SIZE_16BYTE) {
+                // 16-byte composite type: marshal to X0:X1 and X2:X3, call sox_div
+                arm64_reg_pair_t op1_pair = get_register_pair_arm64(ctx, instr->operand1);
+                arm64_reg_pair_t op2_pair = get_register_pair_arm64(ctx, instr->operand2);
+                arm64_reg_pair_t dest_pair = get_register_pair_arm64(ctx, instr->dest);
 
-            if (dest != ARM64_NO_REG && left != ARM64_NO_REG && right != ARM64_NO_REG) {
-                arm64_sdiv_reg_reg_reg(ctx->asm_, dest, left, right);
+                // Load operand1 into X0:X1
+                if (op1_pair.is_spilled) {
+                    load_value_from_spill(ctx, instr->operand1.as.reg, op1_pair.spill_offset,
+                                         IR_SIZE_16BYTE, ARM64_X0, ARM64_X1);
+                } else if (op1_pair.low != ARM64_NO_REG && op1_pair.is_pair) {
+                    if (op1_pair.low != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X0, op1_pair.low);
+                    }
+                    if (op1_pair.high != ARM64_X1) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X1, op1_pair.high);
+                    }
+                }
+
+                // Load operand2 into X2:X3
+                if (op2_pair.is_spilled) {
+                    load_value_from_spill(ctx, instr->operand2.as.reg, op2_pair.spill_offset,
+                                         IR_SIZE_16BYTE, ARM64_X2, ARM64_X3);
+                } else if (op2_pair.low != ARM64_NO_REG && op2_pair.is_pair) {
+                    if (op2_pair.low != ARM64_X2) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X2, op2_pair.low);
+                    }
+                    if (op2_pair.high != ARM64_X3) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X3, op2_pair.high);
+                    }
+                }
+
+                // Call sox_div - result comes back in X0:X1
+                size_t call_offset = arm64_get_offset(ctx->asm_);
+                arm64_bl(ctx->asm_, 0);
+                arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26, "sox_div", 0);
+
+                // Copy result from X0:X1 to dest pair
+                if (dest_pair.is_spilled) {
+                    store_value_to_spill(ctx, instr->dest.as.reg, dest_pair.spill_offset,
+                                        IR_SIZE_16BYTE, ARM64_X0, ARM64_X1);
+                } else if (dest_pair.low != ARM64_NO_REG && dest_pair.is_pair) {
+                    if (dest_pair.low != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, dest_pair.low, ARM64_X0);
+                    }
+                    if (dest_pair.high != ARM64_X1) {
+                        arm64_mov_reg_reg(ctx->asm_, dest_pair.high, ARM64_X1);
+                    }
+                }
+            } else {
+                // 8-byte scalar: existing single-register logic
+                arm64_register_t left = get_physical_register_arm64(ctx, instr->operand1);
+                arm64_register_t right = get_physical_register_arm64(ctx, instr->operand2);
+                arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+
+                if (dest != ARM64_NO_REG && left != ARM64_NO_REG && right != ARM64_NO_REG) {
+                    arm64_sdiv_reg_reg_reg(ctx->asm_, dest, left, right);
+                }
             }
             break;
         }
 
         case IR_NEG: {
-            arm64_register_t src = get_physical_register_arm64(ctx, instr->operand1);
-            arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+            if (instr->dest.size == IR_SIZE_16BYTE) {
+                // 16-byte composite type: marshal to X0:X1, call sox_neg
+                arm64_reg_pair_t op1_pair = get_register_pair_arm64(ctx, instr->operand1);
+                arm64_reg_pair_t dest_pair = get_register_pair_arm64(ctx, instr->dest);
 
-            if (dest != ARM64_NO_REG && src != ARM64_NO_REG) {
-                arm64_neg_reg_reg(ctx->asm_, dest, src);
+                // Load operand into X0:X1
+                if (op1_pair.is_spilled) {
+                    load_value_from_spill(ctx, instr->operand1.as.reg, op1_pair.spill_offset,
+                                         IR_SIZE_16BYTE, ARM64_X0, ARM64_X1);
+                } else if (op1_pair.low != ARM64_NO_REG && op1_pair.is_pair) {
+                    if (op1_pair.low != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X0, op1_pair.low);
+                    }
+                    if (op1_pair.high != ARM64_X1) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X1, op1_pair.high);
+                    }
+                }
+
+                // Call sox_neg - result comes back in X0:X1
+                size_t call_offset = arm64_get_offset(ctx->asm_);
+                arm64_bl(ctx->asm_, 0);
+                arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26, "sox_neg", 0);
+
+                // Copy result from X0:X1 to dest pair
+                if (dest_pair.is_spilled) {
+                    store_value_to_spill(ctx, instr->dest.as.reg, dest_pair.spill_offset,
+                                        IR_SIZE_16BYTE, ARM64_X0, ARM64_X1);
+                } else if (dest_pair.low != ARM64_NO_REG && dest_pair.is_pair) {
+                    if (dest_pair.low != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, dest_pair.low, ARM64_X0);
+                    }
+                    if (dest_pair.high != ARM64_X1) {
+                        arm64_mov_reg_reg(ctx->asm_, dest_pair.high, ARM64_X1);
+                    }
+                }
+            } else {
+                // 8-byte scalar: existing single-register logic
+                arm64_register_t src = get_physical_register_arm64(ctx, instr->operand1);
+                arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+
+                if (dest != ARM64_NO_REG && src != ARM64_NO_REG) {
+                    arm64_neg_reg_reg(ctx->asm_, dest, src);
+                }
             }
             break;
         }
@@ -377,36 +623,130 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
         case IR_LE:
         case IR_GT:
         case IR_GE: {
-            arm64_register_t left = get_physical_register_arm64(ctx, instr->operand1);
-            arm64_register_t right = get_physical_register_arm64(ctx, instr->operand2);
-            arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+            // For comparisons, check operand size to determine if we need runtime call
+            if (instr->operand1.size == IR_SIZE_16BYTE) {
+                // 16-byte composite type: marshal to X0:X1 and X2:X3, call runtime
+                arm64_reg_pair_t op1_pair = get_register_pair_arm64(ctx, instr->operand1);
+                arm64_reg_pair_t op2_pair = get_register_pair_arm64(ctx, instr->operand2);
 
-            if (dest != ARM64_NO_REG && left != ARM64_NO_REG && right != ARM64_NO_REG) {
-                arm64_cmp_reg_reg(ctx->asm_, left, right);
-
-                arm64_condition_t cond;
-                switch (instr->op) {
-                    case IR_EQ: cond = ARM64_CC_EQ; break;
-                    case IR_NE: cond = ARM64_CC_NE; break;
-                    case IR_LT: cond = ARM64_CC_LT; break;
-                    case IR_LE: cond = ARM64_CC_LE; break;
-                    case IR_GT: cond = ARM64_CC_GT; break;
-                    case IR_GE: cond = ARM64_CC_GE; break;
-                    default: cond = ARM64_CC_EQ;
+                // Load operand1 into X0:X1
+                if (op1_pair.is_spilled) {
+                    load_value_from_spill(ctx, instr->operand1.as.reg, op1_pair.spill_offset,
+                                         IR_SIZE_16BYTE, ARM64_X0, ARM64_X1);
+                } else if (op1_pair.low != ARM64_NO_REG && op1_pair.is_pair) {
+                    if (op1_pair.low != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X0, op1_pair.low);
+                    }
+                    if (op1_pair.high != ARM64_X1) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X1, op1_pair.high);
+                    }
                 }
 
-                arm64_cset(ctx->asm_, dest, cond);
+                // Load operand2 into X2:X3
+                if (op2_pair.is_spilled) {
+                    load_value_from_spill(ctx, instr->operand2.as.reg, op2_pair.spill_offset,
+                                         IR_SIZE_16BYTE, ARM64_X2, ARM64_X3);
+                } else if (op2_pair.low != ARM64_NO_REG && op2_pair.is_pair) {
+                    if (op2_pair.low != ARM64_X2) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X2, op2_pair.low);
+                    }
+                    if (op2_pair.high != ARM64_X3) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X3, op2_pair.high);
+                    }
+                }
+
+                // Call the appropriate runtime function
+                const char* func_name;
+                switch (instr->op) {
+                    case IR_EQ: func_name = "sox_eq"; break;
+                    case IR_NE: func_name = "sox_ne"; break;
+                    case IR_LT: func_name = "sox_lt"; break;
+                    case IR_LE: func_name = "sox_le"; break;
+                    case IR_GT: func_name = "sox_gt"; break;
+                    case IR_GE: func_name = "sox_ge"; break;
+                    default: func_name = "sox_eq";
+                }
+
+                size_t call_offset = arm64_get_offset(ctx->asm_);
+                arm64_bl(ctx->asm_, 0);
+                arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26, func_name, 0);
+
+                // Result comes back in X0:X1 as a value_t (boolean)
+                // For comparison dest, it's typically 8-byte boolean result
+                arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+                if (dest != ARM64_NO_REG) {
+                    // Copy result from X0 to dest (boolean result is in low register)
+                    if (dest != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, dest, ARM64_X0);
+                    }
+                }
+            } else {
+                // 8-byte scalar: existing single-register logic
+                arm64_register_t left = get_physical_register_arm64(ctx, instr->operand1);
+                arm64_register_t right = get_physical_register_arm64(ctx, instr->operand2);
+                arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+
+                if (dest != ARM64_NO_REG && left != ARM64_NO_REG && right != ARM64_NO_REG) {
+                    arm64_cmp_reg_reg(ctx->asm_, left, right);
+
+                    arm64_condition_t cond;
+                    switch (instr->op) {
+                        case IR_EQ: cond = ARM64_CC_EQ; break;
+                        case IR_NE: cond = ARM64_CC_NE; break;
+                        case IR_LT: cond = ARM64_CC_LT; break;
+                        case IR_LE: cond = ARM64_CC_LE; break;
+                        case IR_GT: cond = ARM64_CC_GT; break;
+                        case IR_GE: cond = ARM64_CC_GE; break;
+                        default: cond = ARM64_CC_EQ;
+                    }
+
+                    arm64_cset(ctx->asm_, dest, cond);
+                }
             }
             break;
         }
 
         case IR_NOT: {
-            arm64_register_t src = get_physical_register_arm64(ctx, instr->operand1);
-            arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+            if (instr->operand1.size == IR_SIZE_16BYTE) {
+                // 16-byte composite type: marshal to X0:X1, call sox_not
+                arm64_reg_pair_t op1_pair = get_register_pair_arm64(ctx, instr->operand1);
 
-            if (dest != ARM64_NO_REG && src != ARM64_NO_REG) {
-                arm64_cmp_reg_imm(ctx->asm_, src, 0);
-                arm64_cset(ctx->asm_, dest, ARM64_CC_EQ); // Set if zero
+                // Load operand into X0:X1
+                if (op1_pair.is_spilled) {
+                    load_value_from_spill(ctx, instr->operand1.as.reg, op1_pair.spill_offset,
+                                         IR_SIZE_16BYTE, ARM64_X0, ARM64_X1);
+                } else if (op1_pair.low != ARM64_NO_REG && op1_pair.is_pair) {
+                    if (op1_pair.low != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X0, op1_pair.low);
+                    }
+                    if (op1_pair.high != ARM64_X1) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X1, op1_pair.high);
+                    }
+                }
+
+                // Call sox_not - result comes back in X0:X1
+                size_t call_offset = arm64_get_offset(ctx->asm_);
+                arm64_bl(ctx->asm_, 0);
+                arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26, "sox_not", 0);
+
+                // Result comes back in X0:X1 as a value_t (boolean)
+                // For logical NOT dest, it's typically 8-byte boolean result
+                arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+                if (dest != ARM64_NO_REG) {
+                    // Copy result from X0 to dest (boolean result is in low register)
+                    if (dest != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, dest, ARM64_X0);
+                    }
+                }
+            } else {
+                // 8-byte scalar: existing single-register logic
+                arm64_register_t src = get_physical_register_arm64(ctx, instr->operand1);
+                arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+
+                if (dest != ARM64_NO_REG && src != ARM64_NO_REG) {
+                    arm64_cmp_reg_imm(ctx->asm_, src, 0);
+                    arm64_cset(ctx->asm_, dest, ARM64_CC_EQ); // Set if zero
+                }
             }
             break;
         }
@@ -471,9 +811,29 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
         }
 
         case IR_RETURN: {
-            arm64_register_t ret = get_physical_register_arm64(ctx, instr->operand1);
-            if (ret != ARM64_NO_REG && ret != ARM64_X0) {
-                arm64_mov_reg_reg(ctx->asm_, ARM64_X0, ret);
+            if (instr->operand1.size == IR_SIZE_16BYTE) {
+                // 16-byte composite type: move to X0:X1 pair
+                arm64_reg_pair_t ret_pair = get_register_pair_arm64(ctx, instr->operand1);
+
+                if (ret_pair.is_spilled) {
+                    // Load from spill directly to X0:X1
+                    load_value_from_spill(ctx, instr->operand1.as.reg, ret_pair.spill_offset,
+                                         IR_SIZE_16BYTE, ARM64_X0, ARM64_X1);
+                } else if (ret_pair.low != ARM64_NO_REG && ret_pair.is_pair) {
+                    // Move pair to X0:X1
+                    if (ret_pair.low != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X0, ret_pair.low);
+                    }
+                    if (ret_pair.high != ARM64_X1) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X1, ret_pair.high);
+                    }
+                }
+            } else {
+                // 8-byte scalar: existing single-register logic
+                arm64_register_t ret = get_physical_register_arm64(ctx, instr->operand1);
+                if (ret != ARM64_NO_REG && ret != ARM64_X0) {
+                    arm64_mov_reg_reg(ctx->asm_, ARM64_X0, ret);
+                }
             }
             emit_function_epilogue_arm64(ctx);
             break;
@@ -484,14 +844,33 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
             // ARM64 ABI: value_t is 16 bytes and goes in X0:X1
             // value_t is: {ValueType type(4) + padding(4) + union as(8)} = 16 bytes
 
-            // 1. Load 16-byte value into X0:X1 (argument registers)
-            load_16byte_argument_x0x1(ctx, instr->operand1);
+            if (instr->operand1.size == IR_SIZE_16BYTE) {
+                // 16-byte composite type: load pair into X0:X1
+                arm64_reg_pair_t op1_pair = get_register_pair_arm64(ctx, instr->operand1);
 
-            // 2. Call sox_native_print with relocation
+                if (op1_pair.is_spilled) {
+                    // Load from spill directly to X0:X1
+                    load_value_from_spill(ctx, instr->operand1.as.reg, op1_pair.spill_offset,
+                                         IR_SIZE_16BYTE, ARM64_X0, ARM64_X1);
+                } else if (op1_pair.low != ARM64_NO_REG && op1_pair.is_pair) {
+                    // Move pair to X0:X1
+                    if (op1_pair.low != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X0, op1_pair.low);
+                    }
+                    if (op1_pair.high != ARM64_X1) {
+                        arm64_mov_reg_reg(ctx->asm_, ARM64_X1, op1_pair.high);
+                    }
+                }
+            } else {
+                // 8-byte scalar: use existing helper (falls back for scalars)
+                load_16byte_argument_x0x1(ctx, instr->operand1);
+            }
+
+            // Call sox_native_print with relocation
             size_t call_offset = arm64_get_offset(ctx->asm_);
             arm64_bl(ctx->asm_, 0); // Placeholder - will be relocated by linker
 
-            // 3. Record relocation for the linker
+            // Record relocation for the linker
             // Mach-O ARM64_RELOC_CALL26 for branch link
             arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26, "sox_native_print", 0);
 
