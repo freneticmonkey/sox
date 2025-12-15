@@ -272,16 +272,18 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
             if (instr->dest.type == IR_VAL_REGISTER) {
                 if (instr->dest.size == IR_SIZE_16BYTE) {
                     // Load 16-byte value_t composite type into register pair
+                    // ARM64 ABI: 16-byte values go in register pairs (low:high)
+                    // value_t layout: bytes [0-3]=type, [4-7]=padding, [8-15]=union as (double)
+                    // Register pair layout: low register = bytes [0-7], high register = bytes [8-15]
                     arm64_reg_pair_t pair = get_register_pair_arm64(ctx, instr->dest);
                     if (pair.low != ARM64_NO_REG && pair.is_pair) {
-                        // Get value_t from IR operand
                         value_t v = instr->operand1.as.constant;
 
-                        // Load low register (first 8 bytes: type + padding + partial data)
+                        // Load low register (first 8 bytes: type + padding)
                         uint64_t low_val = *(uint64_t*)(&v);
                         arm64_mov_reg_imm(ctx->asm_, pair.low, low_val);
 
-                        // Load high register (remaining 8 bytes)
+                        // Load high register (remaining 8 bytes: the double value)
                         uint64_t high_val = *((uint64_t*)(&v) + 1);
                         arm64_mov_reg_imm(ctx->asm_, pair.high, high_val);
                     }
