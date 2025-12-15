@@ -196,6 +196,7 @@ void ir_instruction_free(ir_instruction_t* instr) {
 ir_value_t ir_value_register(int reg) {
     ir_value_t val;
     val.type = IR_VAL_REGISTER;
+    val.size = IR_SIZE_16BYTE;  // Virtual registers hold value_t (16 bytes)
     val.as.reg = reg;
     return val;
 }
@@ -203,6 +204,7 @@ ir_value_t ir_value_register(int reg) {
 ir_value_t ir_value_constant(value_t val) {
     ir_value_t irval;
     irval.type = IR_VAL_CONSTANT;
+    irval.size = IR_SIZE_16BYTE;  // Constants are value_t (16 bytes)
     irval.as.constant = val;
     return irval;
 }
@@ -210,6 +212,7 @@ ir_value_t ir_value_constant(value_t val) {
 ir_value_t ir_value_label(int label) {
     ir_value_t val;
     val.type = IR_VAL_LABEL;
+    val.size = IR_SIZE_8BYTE;  // Labels are just block identifiers
     val.as.label = label;
     return val;
 }
@@ -217,6 +220,7 @@ ir_value_t ir_value_label(int label) {
 ir_value_t ir_value_function(ir_function_t* func) {
     ir_value_t val;
     val.type = IR_VAL_FUNCTION;
+    val.size = IR_SIZE_16BYTE;  // Function references are wrapped in value_t (16 bytes)
     val.as.func = func;
     return val;
 }

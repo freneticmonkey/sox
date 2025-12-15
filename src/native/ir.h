@@ -81,6 +81,12 @@ typedef enum {
     IR_MOVE,           // Move value between registers
 } ir_op_t;
 
+// IR value size classification
+typedef enum {
+    IR_SIZE_8BYTE,   // Scalar value: fits in single 64-bit register
+    IR_SIZE_16BYTE,  // Composite value (value_t): requires register pair
+} ir_value_size_t;
+
 // IR value types
 typedef enum {
     IR_VAL_REGISTER,   // Virtual register
@@ -92,6 +98,7 @@ typedef enum {
 // IR value representation
 typedef struct {
     ir_value_type_t type;
+    ir_value_size_t size;  // Size classification (8-byte or 16-byte)
     union {
         int reg;           // Virtual register number
         value_t constant;  // Constant value
