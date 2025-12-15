@@ -29,6 +29,9 @@
 /* Get object types and structures */
 #include "runtime_object.h"
 
+/* Get ARM64 register pair operations */
+#include "runtime_ops.h"
+
 /* Forward declaration for context (avoid circular dependency) */
 typedef struct sox_runtime_context_t sox_runtime_context_t;
 
