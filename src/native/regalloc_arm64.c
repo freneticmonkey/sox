@@ -111,6 +111,11 @@ static void add_live_range(regalloc_arm64_context_t* ctx, ir_value_t value, int 
         // Extend existing range
         if (pos < range->start) range->start = pos;
         if (pos > range->end) range->end = pos;
+        // CRITICAL FIX: Update size to maximum seen across all uses
+        // If any use of this register requires 16 bytes, the whole range needs 16 bytes
+        if (size > range->size) {
+            range->size = size;
+        }
     }
 }
 
