@@ -51,11 +51,15 @@ bool regalloc_arm64_allocate(regalloc_arm64_context_t* ctx);
 
 // Query allocation results
 arm64_register_t regalloc_arm64_get_register(regalloc_arm64_context_t* ctx, int vreg);
+arm64_register_t regalloc_arm64_get_high_register(regalloc_arm64_context_t* ctx, int vreg);
 int regalloc_arm64_get_spill_slot(regalloc_arm64_context_t* ctx, int vreg);
 bool regalloc_arm64_is_spilled(regalloc_arm64_context_t* ctx, int vreg);
 
 // Get frame size for prologue/epilogue
 int regalloc_arm64_get_frame_size(regalloc_arm64_context_t* ctx);
+
+// Get spill byte offset (for calculating local variable offsets)
+int regalloc_arm64_get_spill_byte_offset(regalloc_arm64_context_t* ctx);
 
 // Print allocation for debugging
 void regalloc_arm64_print(regalloc_arm64_context_t* ctx);

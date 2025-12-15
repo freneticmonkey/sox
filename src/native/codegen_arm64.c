@@ -93,14 +93,12 @@ static arm64_reg_pair_t get_register_pair_arm64(codegen_arm64_context_t* ctx, ir
             result.low = low_reg;
             result.is_spilled = false;
 
-            // Check if this is a 16-byte pair by checking the live range
+            // Check if this is a 16-byte pair by checking the allocator
             if (value.size == IR_SIZE_16BYTE) {
-                // For 16-byte values, we expect preg_high to be set
-                // This would require access to the live range structure
-                // For now, we'll use a simple heuristic:
-                // ARM64 calling convention pairs are consecutive (X0:X1, X2:X3, etc.)
-                if ((low_reg + 1) <= ARM64_X28) {
-                    result.high = (arm64_register_t)(low_reg + 1);
+                // Query the allocator for the actual high register
+                arm64_register_t high_reg = regalloc_arm64_get_high_register(ctx->regalloc, value.as.reg);
+                if (high_reg != ARM64_NO_REG) {
+                    result.high = high_reg;
                     result.is_pair = true;
                 }
             }
@@ -194,16 +192,21 @@ static void load_16byte_argument_x0x1(codegen_arm64_context_t* ctx, ir_value_t v
             }
         }
 
-        // Value is in a register - ensure both X0 and X1 are set
-        // Move value to X0
+        // Value is in a register pair - move both halves to X0:X1
+        // For 16-byte values, we expect both low and high registers
+        arm64_register_t high_reg = regalloc_arm64_get_high_register(ctx->regalloc, value.as.reg);
+
+        // Move low register to X0
         if (src_reg != ARM64_X0) {
             arm64_mov_reg_reg(ctx->asm_, ARM64_X0, src_reg);
         }
 
-        // For a 16-byte value in a single register, we need to also set X1
-        // Copy X0 to X1 (both halves come from same register)
-        if (ARM64_X0 != ARM64_X1) {
-            arm64_mov_reg_reg(ctx->asm_, ARM64_X1, ARM64_X0);
+        // Move high register to X1
+        if (high_reg != ARM64_NO_REG) {
+            // Use the actual high register from allocator
+            if (high_reg != ARM64_X1) {
+                arm64_mov_reg_reg(ctx->asm_, ARM64_X1, high_reg);
+            }
         }
     }
 }
@@ -314,6 +317,90 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
                     arm64_eor_reg_reg_reg(ctx->asm_, dest, dest, dest); // XOR = 0
                 }
             }
+            break;
+        }
+
+        case IR_LOAD_LOCAL: {
+            // Load a local variable from stack
+            // operand1 contains the local variable index (as constant)
+            // dest is where the loaded value should go
+            if (instr->dest.type == IR_VAL_REGISTER && instr->operand1.type == IR_VAL_CONSTANT) {
+                int local_slot = (int)AS_NUMBER(instr->operand1.as.constant);
+
+                // Calculate offset from FP: -(spill_offset + (slot + 1) * 8)
+                int spill_offset = regalloc_arm64_get_spill_byte_offset(ctx->regalloc);
+                int stack_offset = -(spill_offset + (local_slot + 1) * 8);
+
+                if (instr->dest.size == IR_SIZE_16BYTE) {
+                    // Load 16-byte value into register pair
+                    arm64_reg_pair_t dest_pair = get_register_pair_arm64(ctx, instr->dest);
+
+                    if (dest_pair.low != ARM64_NO_REG && dest_pair.is_pair) {
+                        // Load 16-byte value using LDP
+                        arm64_ldp(ctx->asm_, dest_pair.low, dest_pair.high, ARM64_FP, stack_offset);
+                    } else if (dest_pair.is_spilled) {
+                        // Load to temporary and then spill
+                        arm64_ldp(ctx->asm_, ARM64_X9, ARM64_X10, ARM64_FP, stack_offset);
+                        store_value_to_spill(ctx, instr->dest.as.reg, dest_pair.spill_offset,
+                                            IR_SIZE_16BYTE, ARM64_X9, ARM64_X10);
+                    }
+                } else {
+                    // Load 8-byte scalar value
+                    arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+                    if (dest != ARM64_NO_REG) {
+                        arm64_ldr_reg_reg_offset(ctx->asm_, dest, ARM64_FP, stack_offset);
+                    }
+                }
+            }
+            break;
+        }
+
+        case IR_STORE_LOCAL: {
+            // Store a local variable to stack
+            // operand1 contains the local variable index (as constant)
+            // operand2 is the value to store
+            if (instr->operand1.type == IR_VAL_CONSTANT && instr->operand2.type == IR_VAL_REGISTER) {
+                int local_slot = (int)AS_NUMBER(instr->operand1.as.constant);
+
+                // Calculate offset from FP: -(spill_offset + (slot + 1) * 8)
+                int spill_offset = regalloc_arm64_get_spill_byte_offset(ctx->regalloc);
+                int stack_offset = -(spill_offset + (local_slot + 1) * 8);
+
+                if (instr->operand2.size == IR_SIZE_16BYTE) {
+                    // Store 16-byte value from register pair
+                    arm64_reg_pair_t src_pair = get_register_pair_arm64(ctx, instr->operand2);
+
+                    if (src_pair.low != ARM64_NO_REG && src_pair.is_pair) {
+                        // Store 16-byte value using STP
+                        arm64_stp(ctx->asm_, src_pair.low, src_pair.high, ARM64_FP, stack_offset);
+                    } else if (src_pair.is_spilled) {
+                        // Load from spill and store to local
+                        load_value_from_spill(ctx, instr->operand2.as.reg, src_pair.spill_offset,
+                                             IR_SIZE_16BYTE, ARM64_X9, ARM64_X10);
+                        arm64_stp(ctx->asm_, ARM64_X9, ARM64_X10, ARM64_FP, stack_offset);
+                    }
+                } else {
+                    // Store 8-byte scalar value
+                    arm64_register_t src = get_physical_register_arm64(ctx, instr->operand2);
+                    if (src != ARM64_NO_REG) {
+                        arm64_str_reg_reg_offset(ctx->asm_, src, ARM64_FP, stack_offset);
+                    }
+                }
+            }
+            break;
+        }
+
+        case IR_LOAD_GLOBAL: {
+            // Load a global variable - currently not fully implemented
+            // Would need to load from globals table, for now emit NOP
+            arm64_emit(ctx->asm_, 0xD503201F); // NOP
+            break;
+        }
+
+        case IR_STORE_GLOBAL: {
+            // Store a global variable - currently not fully implemented
+            // Would need to store to globals table, for now emit NOP
+            arm64_emit(ctx->asm_, 0xD503201F); // NOP
             break;
         }
 

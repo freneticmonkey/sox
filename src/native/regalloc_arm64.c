@@ -334,6 +334,18 @@ arm64_register_t regalloc_arm64_get_register(regalloc_arm64_context_t* ctx, int 
     return ARM64_NO_REG;
 }
 
+arm64_register_t regalloc_arm64_get_high_register(regalloc_arm64_context_t* ctx, int vreg) {
+    // Return the high register of a pair (only valid for 16-byte values)
+    if (vreg >= 0 && vreg < ctx->vreg_count) {
+        for (int i = 0; i < ctx->range_count; i++) {
+            if (ctx->ranges[i].vreg == vreg) {
+                return ctx->ranges[i].preg_high;
+            }
+        }
+    }
+    return ARM64_NO_REG;
+}
+
 int regalloc_arm64_get_spill_slot(regalloc_arm64_context_t* ctx, int vreg) {
     if (vreg >= 0 && vreg < ctx->vreg_count) {
         return ctx->vreg_to_spill[vreg];
@@ -347,6 +359,10 @@ bool regalloc_arm64_is_spilled(regalloc_arm64_context_t* ctx, int vreg) {
 
 int regalloc_arm64_get_frame_size(regalloc_arm64_context_t* ctx) {
     return ctx->frame_size;
+}
+
+int regalloc_arm64_get_spill_byte_offset(regalloc_arm64_context_t* ctx) {
+    return ctx->spill_byte_offset;
 }
 
 void regalloc_arm64_print(regalloc_arm64_context_t* ctx) {
