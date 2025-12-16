@@ -68,7 +68,18 @@ void macho_builder_free(macho_builder_t* builder) {
 }
 
 static uint32_t add_string(macho_builder_t* builder, const char* str) {
+    // Defensive check: validate input
+    if (!str) {
+        fprintf(stderr, "[STRTAB] ERROR: NULL string pointer in add_string!\n");
+        return 0;
+    }
+
     size_t len = strlen(str) + 1;
+
+    // Defensive check: ensure string is not unreasonably long
+    if (len > 4096) {
+        fprintf(stderr, "[STRTAB] WARNING: Unusually long string (%zu bytes)\n", len);
+    }
 
     if (builder->strtab_capacity < builder->strtab_size + len) {
         size_t old_capacity = builder->strtab_capacity;
@@ -78,6 +89,13 @@ static uint32_t add_string(macho_builder_t* builder, const char* str) {
             old_capacity,
             builder->strtab_capacity
         );
+    }
+
+    // Defensive check: ensure buffer can fit the string
+    if (builder->strtab_size + len > builder->strtab_capacity) {
+        fprintf(stderr, "[STRTAB] ERROR: Buffer overflow! size=%zu + len=%zu > capacity=%zu\n",
+                builder->strtab_size, len, builder->strtab_capacity);
+        return 0;
     }
 
     uint32_t offset = (uint32_t)builder->strtab_size;
@@ -137,6 +155,18 @@ int macho_add_section(macho_builder_t* builder, const char* sectname,
 
 int macho_add_symbol(macho_builder_t* builder, const char* name,
                      uint8_t type, uint8_t sect, uint64_t value) {
+    // Defensive check: validate symbol name
+    if (!name || !name[0]) {
+        fprintf(stderr, "[MACHO-SYM] ERROR: NULL or empty symbol name!\n");
+        return -1;
+    }
+
+    // Defensive check: ensure name is not too long
+    if (strlen(name) > 250) {  // 256 - 2 for underscore and null terminator
+        fprintf(stderr, "[MACHO-SYM] ERROR: Symbol name too long (%zu bytes)\n", strlen(name));
+        return -1;
+    }
+
     if (builder->symtab_capacity < builder->symtab_count + 1) {
         int old_capacity = builder->symtab_capacity;
         builder->symtab_capacity = (old_capacity < 8) ? 8 : old_capacity * 2;
@@ -151,7 +181,13 @@ int macho_add_symbol(macho_builder_t* builder, const char* name,
 
     // Add underscore prefix for macOS (C calling convention)
     char prefixed_name[256];
-    snprintf(prefixed_name, sizeof(prefixed_name), "_%s", name);
+    int prefix_result = snprintf(prefixed_name, sizeof(prefixed_name), "_%s", name);
+
+    // Defensive check: ensure snprintf succeeded
+    if (prefix_result < 0 || prefix_result >= (int)sizeof(prefixed_name)) {
+        fprintf(stderr, "[MACHO-SYM] ERROR: Failed to create prefixed symbol name\n");
+        return -1;
+    }
     sym->n_strx = add_string(builder, prefixed_name);
     sym->n_type = type;
     sym->n_sect = sect;
