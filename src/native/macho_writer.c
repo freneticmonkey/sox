@@ -272,6 +272,11 @@ bool macho_write_file(macho_builder_t* builder, const char* filename) {
     size_t load_commands_size = segment_cmd_size + symtab_cmd_size +
                                  dysymtab_cmd_size + build_version_cmd_size;
 
+    fprintf(stderr, "DEBUG: header_size=%zu, segment_cmd=%zu, symtab_cmd=%zu, dysymtab_cmd=%zu, build_version_cmd=%zu\n",
+            header_size, segment_cmd_size, symtab_cmd_size, dysymtab_cmd_size, build_version_cmd_size);
+    fprintf(stderr, "DEBUG: total load_commands_size=%zu\n", load_commands_size);
+    fprintf(stderr, "DEBUG: header_size + load_commands_size = %zu\n", header_size + load_commands_size);
+
     // Debug: Log section data
     if (builder->section_count > 0 && builder->section_data[0]) {
         fprintf(stderr, "DEBUG: Section 0 has %zu bytes of data\n", builder->section_sizes[0]);
@@ -309,10 +314,12 @@ bool macho_write_file(macho_builder_t* builder, const char* filename) {
         builder->sections[i].addr = 0; // Object files have no VM addresses
         current_offset += builder->sections[i].size;
 
-        // Align each section
-        if (current_offset % (1 << builder->sections[i].align) != 0) {
-            size_t alignment = 1 << builder->sections[i].align;
-            current_offset += alignment - (current_offset % alignment);
+        // Align each section (only if not the last section, matches write code at line 429)
+        if (i < builder->section_count - 1) {
+            if (current_offset % (1 << builder->sections[i].align) != 0) {
+                size_t alignment = 1 << builder->sections[i].align;
+                current_offset += alignment - (current_offset % alignment);
+            }
         }
     }
 
@@ -328,14 +335,26 @@ bool macho_write_file(macho_builder_t* builder, const char* filename) {
         builder->sections[0].nreloc = builder->reloc_count;
         fprintf(stderr, "DEBUG: Section 0 reloff=%u, nreloc=%u\n", builder->sections[0].reloff, builder->sections[0].nreloc);
         current_offset += reloc_size;
+        fprintf(stderr, "DEBUG: After adding reloc_size, current_offset=%zu\n", current_offset);
+    }
+
+    // Align to 8 bytes before symbol table (matches align_to(builder, 8) during write)
+    size_t pre_align_offset = current_offset;
+    if (current_offset % 8 != 0) {
+        current_offset += 8 - (current_offset % 8);
+        fprintf(stderr, "DEBUG: Aligned from %zu to %zu (added %zu bytes)\n", pre_align_offset, current_offset, current_offset - pre_align_offset);
+    } else {
+        fprintf(stderr, "DEBUG: No alignment needed (already aligned to 8)\n");
     }
 
     // Symbol table offset
     size_t symtab_offset = current_offset;
     size_t symtab_size = builder->symtab_count * sizeof(nlist_64_t);
+    fprintf(stderr, "DEBUG: symtab_offset=%zu, symtab_size=%zu\n", symtab_offset, symtab_size);
 
     // String table offset
     size_t strtab_offset = symtab_offset + symtab_size;
+    fprintf(stderr, "DEBUG: strtab_offset=%zu\n", strtab_offset);
 
     // Write segment command with sections
     segment_command_64_t seg_cmd;
@@ -403,9 +422,12 @@ bool macho_write_file(macho_builder_t* builder, const char* filename) {
     write_data(builder, &tool, sizeof(tool));
 
     // Align to section offset
+    fprintf(stderr, "DEBUG: Before padding: builder->size=%zu, section[0].offset=%u\n",
+            builder->size, builder->section_count > 0 ? builder->sections[0].offset : 0);
     while (builder->size < (builder->section_count > 0 ? builder->sections[0].offset : 0)) {
         write_zeros(builder, 1);
     }
+    fprintf(stderr, "DEBUG: After padding: builder->size=%zu\n", builder->size);
 
     // Write section data
     for (int i = 0; i < builder->section_count; i++) {
@@ -432,19 +454,37 @@ bool macho_write_file(macho_builder_t* builder, const char* filename) {
     }
 
     // Write symbol table
+    size_t pre_symtab_size = builder->size;
     align_to(builder, 8);
-    write_data(builder, builder->symtab, builder->symtab_count * sizeof(nlist_64_t));
+    size_t symtab_size_written = builder->symtab_count * sizeof(nlist_64_t);
+    write_data(builder, builder->symtab, symtab_size_written);
+    fprintf(stderr, "[MACHO-WRITE] Wrote symtab: pre_align=%zu, post_align=%zu, count=%d, size_written=%zu\n",
+            pre_symtab_size, builder->size - symtab_size_written, builder->symtab_count, symtab_size_written);
 
     // Write string table
+    size_t pre_strtab_size = builder->size;
+    fprintf(stderr, "[MACHO-WRITE] Writing strtab: builder->strtab_size=%zu, builder->strtab=%p\n",
+            builder->strtab_size, (void*)builder->strtab);
+    if (builder->strtab && builder->strtab_size > 0) {
+        fprintf(stderr, "[MACHO-WRITE] First 32 bytes of strtab: ");
+        for (size_t i = 0; i < (builder->strtab_size < 32 ? builder->strtab_size : 32); i++) {
+            fprintf(stderr, "%02x ", (unsigned char)builder->strtab[i]);
+        }
+        fprintf(stderr, "\n");
+    }
     write_data(builder, builder->strtab, builder->strtab_size);
+    fprintf(stderr, "[MACHO-WRITE] Wrote strtab: pre_size=%zu, post_size=%zu, bytes_written=%zu\n",
+            pre_strtab_size, builder->size, builder->strtab_size);
 
     // Write to file
+    fprintf(stderr, "[MACHO-WRITE] Final builder->size=%zu before file write\n", builder->size);
     FILE* fp = fopen(filename, "wb");
     if (!fp) {
         return false;
     }
 
-    fwrite(builder->data, 1, builder->size, fp);
+    size_t bytes_written = fwrite(builder->data, 1, builder->size, fp);
+    fprintf(stderr, "[MACHO-WRITE] fwrite: requested=%zu, written=%zu\n", builder->size, bytes_written);
     fclose(fp);
 
     return true;
