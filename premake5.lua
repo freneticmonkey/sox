@@ -184,14 +184,18 @@ project "test"
     "ext/argtable3/src/arg_*.c"
   }
 
-  -- ignore the sox main
+  -- ignore the sox main and simplified native runtime (duplicate symbols with runtime_api.c)
   removefiles {
-    "src/main.c"
+    "src/main.c",
+    "src/native/runtime.c"
   }
 
   if (system == macosx) then
     links {
       "c"
+    }
+    linkoptions {
+      "-rpath", "@loader_path"
     }
   end
 

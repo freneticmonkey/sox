@@ -61,7 +61,7 @@ run:
 	./build/${PROJECT_NAME} ${SCRIPT}
 
 run-test:
-	./build/test
+	DYLD_LIBRARY_PATH=./build:$$DYLD_LIBRARY_PATH ./build/test
 
 gen: details
 	@echo "Setting Versions: Commit: ${COMMIT} Branch: ${BRANCH}"
