@@ -125,7 +125,7 @@ typedef enum {
 typedef struct {
     size_t offset;           // Offset in instruction stream
     arm64_reloc_type_t type;
-    const char* symbol;
+    char* symbol;            // Owned copy of symbol string
     int64_t addend;
 } arm64_relocation_t;
 

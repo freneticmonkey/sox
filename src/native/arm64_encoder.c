@@ -21,6 +21,13 @@ void arm64_assembler_free(arm64_assembler_t* asm_) {
         l_mem_free(asm_->code.code, asm_->code.capacity * sizeof(uint32_t));
     }
     if (asm_->relocations) {
+        // Free symbol strings that were copied in arm64_add_relocation
+        for (size_t i = 0; i < asm_->reloc_count; i++) {
+            if (asm_->relocations[i].symbol) {
+                size_t symbol_len = strlen(asm_->relocations[i].symbol) + 1;
+                l_mem_free(asm_->relocations[i].symbol, symbol_len);
+            }
+        }
         l_mem_free(asm_->relocations, sizeof(arm64_relocation_t) * asm_->reloc_capacity);
     }
     l_mem_free(asm_, sizeof(arm64_assembler_t));
@@ -44,7 +51,19 @@ void arm64_add_relocation(arm64_assembler_t* asm_, size_t offset,
 
     asm_->relocations[asm_->reloc_count].offset = offset;
     asm_->relocations[asm_->reloc_count].type = type;
-    asm_->relocations[asm_->reloc_count].symbol = symbol;
+
+    // Copy symbol string to ensure it remains valid throughout object file generation
+    // The original pointer may reference temporary memory that gets freed later
+    size_t symbol_len = strlen(symbol) + 1;
+    char* symbol_copy = (char*)l_mem_alloc(symbol_len);
+    if (symbol_copy) {
+        memcpy(symbol_copy, symbol, symbol_len);
+        asm_->relocations[asm_->reloc_count].symbol = symbol_copy;
+    } else {
+        // Fallback to original pointer if allocation fails (degrades safely)
+        asm_->relocations[asm_->reloc_count].symbol = (char*)symbol;
+    }
+
     asm_->relocations[asm_->reloc_count].addend = addend;
     asm_->reloc_count++;
 }
