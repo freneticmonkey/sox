@@ -157,14 +157,12 @@ typedef struct {
     uint64_t n_value;
 } nlist_64_t;
 
-// Relocation entry
+// Relocation entry (Apple's official Mach-O format)
+// 8 bytes total: 4-byte address + 4-byte packed info word
+// Bit fields are NOT used because they are platform-dependent and unreliable for binary formats
 typedef struct {
-    int32_t r_address;
-    uint32_t r_symbolnum:24,
-             r_pcrel:1,
-             r_length:2,
-             r_extern:1,
-             r_type:4;
+    int32_t r_address;    // Offset in section where relocation occurs
+    uint32_t r_info;      // Packed: bits[0-23]=symbolnum, [24]=pcrel, [25-26]=length, [27]=extern, [28-31]=type
 } relocation_info_t;
 
 // Mach-O builder context

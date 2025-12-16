@@ -211,12 +211,18 @@ void macho_add_relocation(macho_builder_t* builder, int32_t address,
     }
 
     relocation_info_t* reloc = &builder->relocs[builder->reloc_count++];
+
     reloc->r_address = address;
-    reloc->r_symbolnum = symbolnum;
-    reloc->r_pcrel = pcrel ? 1 : 0;
-    reloc->r_length = length;
-    reloc->r_extern = external ? 1 : 0;
-    reloc->r_type = type;
+
+    // Construct the info word directly to avoid bit field issues
+    uint32_t info = 0;
+    info |= (symbolnum & 0xFFFFFF);        // bits 0-23: symbol number (24 bits)
+    info |= ((pcrel ? 1 : 0) << 24);       // bit 24: PC-relative flag
+    info |= ((length & 0x3) << 25);        // bits 25-26: length encoding
+    info |= ((external ? 1 : 0) << 27);    // bit 27: external symbol flag
+    info |= ((type & 0xF) << 28);          // bits 28-31: relocation type (4 bits)
+
+    reloc->r_info = info;
 }
 
 static void write_data(macho_builder_t* builder, const void* data, size_t size) {
@@ -325,8 +331,12 @@ bool macho_write_file(macho_builder_t* builder, const char* filename) {
 
     // Relocation table offset (comes after section data)
     size_t reloc_offset = current_offset;
+    // Account for relocation alignment (they are written 8-byte aligned at line 453)
+    if (reloc_offset % 8 != 0) {
+        reloc_offset += 8 - (reloc_offset % 8);
+    }
     size_t reloc_size = builder->reloc_count * sizeof(relocation_info_t);
-    fprintf(stderr, "DEBUG: Relocation offset=%zu, count=%d, size=%zu\n", reloc_offset, builder->reloc_count, reloc_size);
+    fprintf(stderr, "DEBUG: Relocation offset=%zu (after alignment), count=%d, size=%zu\n", reloc_offset, builder->reloc_count, reloc_size);
 
     // Update section relocation offsets
     // For now, put all relocations in the first section (text section)
@@ -334,8 +344,8 @@ bool macho_write_file(macho_builder_t* builder, const char* filename) {
         builder->sections[0].reloff = (uint32_t)reloc_offset;
         builder->sections[0].nreloc = builder->reloc_count;
         fprintf(stderr, "DEBUG: Section 0 reloff=%u, nreloc=%u\n", builder->sections[0].reloff, builder->sections[0].nreloc);
-        current_offset += reloc_size;
-        fprintf(stderr, "DEBUG: After adding reloc_size, current_offset=%zu\n", current_offset);
+        current_offset += (reloc_offset - current_offset) + reloc_size;
+        fprintf(stderr, "DEBUG: After adding alignment + reloc_size, current_offset=%zu\n", current_offset);
     }
 
     // Align to 8 bytes before symbol table (matches align_to(builder, 8) during write)
@@ -447,8 +457,8 @@ bool macho_write_file(macho_builder_t* builder, const char* filename) {
         align_to(builder, 8);
         for (int i = 0; i < builder->reloc_count; i++) {
             relocation_info_t* reloc = &builder->relocs[i];
-            fprintf(stderr, "DEBUG:   [%d] address=%d, symbolnum=%u, type=%u, pcrel=%u, length=%u, external=%u\n",
-                   i, reloc->r_address, reloc->r_symbolnum, reloc->r_type, reloc->r_pcrel, reloc->r_length, reloc->r_extern);
+            fprintf(stderr, "DEBUG:   [%d] address=%d, info=0x%08x\n",
+                   i, reloc->r_address, reloc->r_info);
         }
         write_data(builder, builder->relocs, builder->reloc_count * sizeof(relocation_info_t));
     }
