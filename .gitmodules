@@ -1,0 +1,3 @@
+[submodule "ext/argtable3"]
+	path = ext/argtable3
+	url = https://github.com/argtable/argtable3.git
