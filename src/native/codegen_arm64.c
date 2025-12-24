@@ -354,10 +354,26 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
 
         case IR_CONST_BOOL: {
             if (instr->dest.type == IR_VAL_REGISTER) {
-                arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
-                if (dest != ARM64_NO_REG) {
-                    uint64_t val = AS_BOOL(instr->operand1.as.constant) ? 1 : 0;
-                    arm64_mov_reg_imm(ctx->asm_, dest, val);
+                if (instr->dest.size == IR_SIZE_16BYTE) {
+                    // Load 16-byte value_t for boolean into register pair
+                    arm64_reg_pair_t pair = get_register_pair_arm64(ctx, instr->dest);
+                    if (pair.low != ARM64_NO_REG && pair.is_pair) {
+                        value_t v = instr->operand1.as.constant;
+
+                        // Load low register (first 8 bytes: type + padding)
+                        uint64_t low_val = *(uint64_t*)(&v);
+                        arm64_mov_reg_imm(ctx->asm_, pair.low, low_val);
+
+                        // Load high register (remaining 8 bytes: the boolean value)
+                        uint64_t high_val = *((uint64_t*)(&v) + 1);
+                        arm64_mov_reg_imm(ctx->asm_, pair.high, high_val);
+                    }
+                } else {
+                    arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+                    if (dest != ARM64_NO_REG) {
+                        uint64_t val = AS_BOOL(instr->operand1.as.constant) ? 1 : 0;
+                        arm64_mov_reg_imm(ctx->asm_, dest, val);
+                    }
                 }
             }
             break;
@@ -365,9 +381,26 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
 
         case IR_CONST_NIL: {
             if (instr->dest.type == IR_VAL_REGISTER) {
-                arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
-                if (dest != ARM64_NO_REG) {
-                    arm64_eor_reg_reg_reg(ctx->asm_, dest, dest, dest); // XOR = 0
+                if (instr->dest.size == IR_SIZE_16BYTE) {
+                    // Load 16-byte value_t for nil into register pair
+                    arm64_reg_pair_t pair = get_register_pair_arm64(ctx, instr->dest);
+                    if (pair.low != ARM64_NO_REG && pair.is_pair) {
+                        // NIL_VAL: type=VAL_NIL (1), value doesn't matter
+                        value_t v = NIL_VAL;
+
+                        // Load low register (first 8 bytes: type + padding)
+                        uint64_t low_val = *(uint64_t*)(&v);
+                        arm64_mov_reg_imm(ctx->asm_, pair.low, low_val);
+
+                        // Load high register (remaining 8 bytes: unused for nil)
+                        uint64_t high_val = *((uint64_t*)(&v) + 1);
+                        arm64_mov_reg_imm(ctx->asm_, pair.high, high_val);
+                    }
+                } else {
+                    arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+                    if (dest != ARM64_NO_REG) {
+                        arm64_eor_reg_reg_reg(ctx->asm_, dest, dest, dest); // XOR = 0
+                    }
                 }
             }
             break;
