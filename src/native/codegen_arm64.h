@@ -11,6 +11,12 @@ typedef struct {
     int target_label;
 } jump_patch_arm64_t;
 
+// Global variable mapping entry
+typedef struct {
+    value_t name;  // Variable name (as value_t constant)
+    int index;     // Stack index for this global
+} global_var_entry_t;
+
 // ARM64 code generation context
 typedef struct {
     ir_module_t* module;
@@ -29,6 +35,11 @@ typedef struct {
     jump_patch_arm64_t* jump_patches;
     int patch_count;
     int patch_capacity;
+
+    // Global variable tracking
+    global_var_entry_t* global_vars;
+    int global_count;
+    int global_capacity;
 } codegen_arm64_context_t;
 
 // Create ARM64 code generator

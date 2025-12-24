@@ -16,6 +16,9 @@ codegen_arm64_context_t* codegen_arm64_new(ir_module_t* module) {
     ctx->jump_patches = NULL;
     ctx->patch_count = 0;
     ctx->patch_capacity = 0;
+    ctx->global_vars = NULL;
+    ctx->global_count = 0;
+    ctx->global_capacity = 0;
     return ctx;
 }
 
@@ -33,6 +36,9 @@ void codegen_arm64_free(codegen_arm64_context_t* ctx) {
     }
     if (ctx->jump_patches) {
         l_mem_free(ctx->jump_patches, sizeof(jump_patch_arm64_t) * ctx->patch_capacity);
+    }
+    if (ctx->global_vars) {
+        l_mem_free(ctx->global_vars, sizeof(global_var_entry_t) * ctx->global_capacity);
     }
 
     l_mem_free(ctx, sizeof(codegen_arm64_context_t));
@@ -169,6 +175,51 @@ static arm64_register_t get_physical_register_arm64(codegen_arm64_context_t* ctx
         return arm64_reg;
     }
     return ARM64_NO_REG;
+}
+
+// Helper function to compare two value_t constants (for global variable lookup)
+static bool values_equal(value_t a, value_t b) {
+    if (a.type != b.type) return false;
+    if (a.type == VAL_NUMBER) {
+        return a.as.number == b.as.number;
+    } else if (a.type == VAL_OBJ) {
+        // For object types (like strings), compare pointers
+        return a.as.obj == b.as.obj;
+    } else if (a.type == VAL_BOOL) {
+        return a.as.boolean == b.as.boolean;
+    } else if (a.type == VAL_NIL) {
+        return true;  // All nil values are equal
+    }
+    return false;
+}
+
+// Get or allocate a global variable index
+// Returns the stack index for the given global variable name
+static int get_or_allocate_global_index(codegen_arm64_context_t* ctx, value_t var_name) {
+    // First, check if we already have this global
+    for (int i = 0; i < ctx->global_count; i++) {
+        if (values_equal(ctx->global_vars[i].name, var_name)) {
+            return ctx->global_vars[i].index;
+        }
+    }
+
+    // Not found, allocate a new index
+    if (ctx->global_count >= ctx->global_capacity) {
+        int old_capacity = ctx->global_capacity;
+        ctx->global_capacity = old_capacity == 0 ? 8 : old_capacity * 2;
+        ctx->global_vars = (global_var_entry_t*)l_mem_realloc(
+            ctx->global_vars,
+            sizeof(global_var_entry_t) * old_capacity,
+            sizeof(global_var_entry_t) * ctx->global_capacity
+        );
+    }
+
+    int new_index = ctx->global_count;
+    ctx->global_vars[new_index].name = var_name;
+    ctx->global_vars[new_index].index = new_index;
+    ctx->global_count++;
+
+    return new_index;
 }
 
 // Load a 16-byte composite value into X0:X1 for function argument passing
@@ -394,14 +445,13 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
 
         case IR_LOAD_GLOBAL: {
             // Load a global variable from stack (stored like locals for native codegen)
-            // operand1 contains the variable name (as constant, but we'll use a hash for stack offset)
+            // operand1 contains the variable name (as constant)
             // For single-function native compilation, allocate globals on stack
             if (instr->dest.type == IR_VAL_REGISTER && instr->operand1.type == IR_VAL_CONSTANT) {
                 value_t var_name_val = instr->operand1.as.constant;
 
-                // Simple approach: use first 8 bytes of name as hash for stack offset
-                // Store globals in a fixed location after locals
-                int global_index = 0; // In a real implementation, would maintain global var index
+                // Get the global variable index (lookup or allocate)
+                int global_index = get_or_allocate_global_index(ctx, var_name_val);
                 int spill_offset = regalloc_arm64_get_spill_byte_offset(ctx->regalloc);
                 int stack_offset = -(spill_offset +
                                    (ctx->current_function->local_count + 1) * 8 + global_index * 16);
@@ -423,8 +473,8 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
             if (instr->dest.type == IR_VAL_CONSTANT && instr->operand1.type == IR_VAL_REGISTER) {
                 value_t var_name_val = instr->dest.as.constant;
 
-                // Simple approach: use first 8 bytes of name as hash for stack offset
-                int global_index = 0; // In a real implementation, would maintain global var index
+                // Get the global variable index (lookup or allocate)
+                int global_index = get_or_allocate_global_index(ctx, var_name_val);
                 int spill_offset = regalloc_arm64_get_spill_byte_offset(ctx->regalloc);
                 int stack_offset = -(spill_offset +
                                    (ctx->current_function->local_count + 1) * 8 + global_index * 16);

@@ -318,9 +318,11 @@ static bool linear_scan_allocate(regalloc_arm64_context_t* ctx) {
 
     l_mem_free(used_callee_saved, sizeof(bool) * callee_saved_count);
 
-    // Frame size: spilled bytes + locals (8 bytes each) + callee-saved area
+    // Frame size: spilled bytes + locals (8 bytes each) + globals (16 bytes each) + callee-saved area
     // spill_byte_offset already accounts for 8 or 16 byte allocations per value
-    ctx->frame_size = ctx->spill_byte_offset + (ctx->function->local_count * 8) + callee_saved_area;
+    // Reserve space for up to 16 global variables (256 bytes)
+    int global_space = 256;  // 16 globals * 16 bytes each
+    ctx->frame_size = ctx->spill_byte_offset + (ctx->function->local_count * 8) + global_space + callee_saved_area;
     // Align to 16 bytes (required by ARM64 ABI)
     ctx->frame_size = (ctx->frame_size + 15) & ~15;
 
