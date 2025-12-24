@@ -309,8 +309,8 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
 
                 // Infer destination register size based on operation type
                 if (instruction == OP_EQUAL || instruction == OP_GREATER || instruction == OP_LESS) {
-                    // Comparisons always return boolean (8-byte)
-                    dest.size = IR_SIZE_8BYTE;
+                    // Comparisons always return value_t (16-byte) from runtime functions
+                    dest.size = IR_SIZE_16BYTE;
                 } else {
                     // Arithmetic operations (ADD, SUB, MUL, DIV):
                     // Result is 16-byte if any operand is 16-byte, else 8-byte
@@ -335,8 +335,8 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
 
                 // Infer destination register size based on operation type
                 if (instruction == OP_NOT) {
-                    // NOT always returns boolean (8-byte)
-                    dest.size = IR_SIZE_8BYTE;
+                    // NOT always returns value_t (16-byte) from runtime functions
+                    dest.size = IR_SIZE_16BYTE;
                 } else {
                     // NEGATE inherits operand size
                     dest.size = operand.size;

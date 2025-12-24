@@ -877,12 +877,25 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
                 arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26, func_name, 0);
 
                 // Result comes back in X0:X1 as a value_t (boolean)
-                // For comparison dest, it's typically 8-byte boolean result
-                arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
-                if (dest != ARM64_NO_REG) {
-                    // Copy result from X0 to dest (boolean result is in low register)
-                    if (dest != ARM64_X0) {
-                        arm64_mov_reg_reg(ctx->asm_, dest, ARM64_X0);
+                // Destination should be 16-byte register pair
+                if (instr->dest.size == IR_SIZE_16BYTE) {
+                    arm64_reg_pair_t dest_pair = get_register_pair_arm64(ctx, instr->dest);
+                    if (dest_pair.low != ARM64_NO_REG && dest_pair.is_pair) {
+                        // Copy X0:X1 to destination pair
+                        if (dest_pair.low != ARM64_X0) {
+                            arm64_mov_reg_reg(ctx->asm_, dest_pair.low, ARM64_X0);
+                        }
+                        if (dest_pair.high != ARM64_X1) {
+                            arm64_mov_reg_reg(ctx->asm_, dest_pair.high, ARM64_X1);
+                        }
+                    }
+                } else {
+                    // Fallback for 8-byte destination (legacy)
+                    arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+                    if (dest != ARM64_NO_REG) {
+                        if (dest != ARM64_X0) {
+                            arm64_mov_reg_reg(ctx->asm_, dest, ARM64_X0);
+                        }
                     }
                 }
             } else {
@@ -935,12 +948,25 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
                 arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26, "sox_not", 0);
 
                 // Result comes back in X0:X1 as a value_t (boolean)
-                // For logical NOT dest, it's typically 8-byte boolean result
-                arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
-                if (dest != ARM64_NO_REG) {
-                    // Copy result from X0 to dest (boolean result is in low register)
-                    if (dest != ARM64_X0) {
-                        arm64_mov_reg_reg(ctx->asm_, dest, ARM64_X0);
+                // Destination should be 16-byte register pair
+                if (instr->dest.size == IR_SIZE_16BYTE) {
+                    arm64_reg_pair_t dest_pair = get_register_pair_arm64(ctx, instr->dest);
+                    if (dest_pair.low != ARM64_NO_REG && dest_pair.is_pair) {
+                        // Copy X0:X1 to destination pair
+                        if (dest_pair.low != ARM64_X0) {
+                            arm64_mov_reg_reg(ctx->asm_, dest_pair.low, ARM64_X0);
+                        }
+                        if (dest_pair.high != ARM64_X1) {
+                            arm64_mov_reg_reg(ctx->asm_, dest_pair.high, ARM64_X1);
+                        }
+                    }
+                } else {
+                    // Fallback for 8-byte destination (legacy)
+                    arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+                    if (dest != ARM64_NO_REG) {
+                        if (dest != ARM64_X0) {
+                            arm64_mov_reg_reg(ctx->asm_, dest, ARM64_X0);
+                        }
                     }
                 }
             } else {
