@@ -1,0 +1,4 @@
+// Test string constants
+print("Hello");
+print("World");
+print("Native compilation works!");

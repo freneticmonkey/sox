@@ -1,0 +1,12 @@
+// Test multiple variable declarations and operations
+var a = 5;
+var b = 10;
+var c = 15;
+
+print(a);
+print(b);
+print(c);
+
+print(a + b);
+print(b + c);
+print(a + b + c);
