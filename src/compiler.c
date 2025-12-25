@@ -61,7 +61,8 @@ typedef enum FunctionType {
     TYPE_DEFER,
     TYPE_INITIALIZER,
     TYPE_METHOD,
-    TYPE_SCRIPT
+    TYPE_SCRIPT,
+    TYPE_MODULE
 } FunctionType;
 
 // bringing loop tracking across from Wren for break and continue functionality
@@ -1414,6 +1415,8 @@ static void _return_statement() {
         _error("Can't return from top-level code.");
     }
 
+    // Modules can return values (their exports)
+
     if (_match(TOKEN_SEMICOLON)) {
         _emit_return();
     } else {
@@ -1655,7 +1658,7 @@ obj_function_t* l_compile(const char* source) {
     _parser.had_error = false;
     _parser.panic_mode = false;
 
-    
+
 
     _advance();
 
@@ -1679,7 +1682,27 @@ obj_function_t* l_compile(const char* source) {
 
     obj_function_t* function = _end_compiler();
 
-    return _parser.had_error ? NULL : function;    
+    return _parser.had_error ? NULL : function;
+}
+
+obj_function_t* l_compile_module(const char* source) {
+    l_init_scanner(source);
+    compiler_t compiler;
+
+    l_init_compiler(&compiler, TYPE_MODULE);
+
+    _parser.had_error = false;
+    _parser.panic_mode = false;
+
+    _advance();
+
+    while (!_match(TOKEN_EOF)) {
+        _declaration();
+    }
+
+    obj_function_t* function = _end_compiler();
+
+    return _parser.had_error ? NULL : function;
 }
 
 void l_mark_compiler_roots() {

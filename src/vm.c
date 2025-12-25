@@ -1,5 +1,6 @@
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "lib/debug.h"
@@ -542,8 +543,8 @@ static InterpretResult _run() {
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
-                // Compile the module
-                obj_function_t* module_fn = l_compile(source);
+                // Compile the module (use l_compile_module to allow return statements)
+                obj_function_t* module_fn = l_compile_module(source);
                 free(source);
 
                 if (!module_fn) {
