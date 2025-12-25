@@ -386,6 +386,7 @@ static void _end_scope() {
 static void          _expression();
 static void          _statement();
 static void          _declaration();
+static void          _import_declaration();
 static parse_rule_t* _get_rule(TokenType type);
 static void          _parse_precedence(Precedence precedence);
 
@@ -1468,9 +1469,94 @@ static void _synchronize() {
     }
 }
 
+// Helper function to derive module name from path
+// "math" -> "math", "lib/math" -> "math", "./utils/helpers" -> "helpers"
+static char* _derive_module_name(const char* path, int length) {
+    // Find the last '/' in the path
+    const char* last_slash = NULL;
+    for (int i = length - 1; i >= 0; i--) {
+        if (path[i] == '/') {
+            last_slash = path + i + 1;
+            break;
+        }
+    }
+
+    const char* name_start = last_slash ? last_slash : path;
+    int name_length = length - (name_start - path);
+
+    // Remove .sox extension if present
+    if (name_length > 4 &&
+        name_start[name_length-4] == '.' &&
+        name_start[name_length-3] == 's' &&
+        name_start[name_length-2] == 'o' &&
+        name_start[name_length-1] == 'x') {
+        name_length -= 4;
+    }
+
+    // Create a copy of the name
+    char* result = ALLOCATE(char, name_length + 1);
+    memcpy(result, name_start, name_length);
+    result[name_length] = '\0';
+    return result;
+}
+
+static void _import_declaration() {
+    // For Phase 1: Simple single import only
+    // Syntax: import "path"
+
+    // Consume the module path string
+    _consume(TOKEN_STRING, "Expect module path string after 'import'.");
+
+    // Get the path from the token (without quotes)
+    const char* path = _parser.previous.start + 1;  // Skip opening quote
+    int path_length = _parser.previous.length - 2;   // Remove quotes
+
+    // Create string constant for the path
+    value_t path_value = OBJ_VAL(l_copy_string(path, path_length));
+    uint8_t path_constant = _make_constant(path_value);
+
+    // Derive module name from path
+    char* module_name = _derive_module_name(path, path_length);
+    int name_length = strlen(module_name);
+
+    // Create a token for the module name (for local variable)
+    token_t name_token;
+    name_token.start = module_name;
+    name_token.length = name_length;
+    name_token.line = _parser.previous.line;
+
+    // Declare the variable
+    _declare_variable();
+    if (_current->scope_depth > 0) {
+        // Add as local variable
+        _add_local(name_token);
+    }
+
+    // Emit OP_IMPORT to load the module
+    _emit_bytes(OP_IMPORT, path_constant);
+
+    // Define the variable (pops value from stack and stores it)
+    if (_current->scope_depth == 0) {
+        // Global scope
+        uint8_t name_constant = _identifier_constant(&name_token);
+        _emit_bytes(OP_DEFINE_GLOBAL, name_constant);
+    } else {
+        // Local scope - mark as initialized
+        _mark_initialized();
+    }
+
+    // Semicolon is optional
+    _match(TOKEN_SEMICOLON);
+
+    // Free the temporary name string
+    FREE_ARRAY(char, module_name, name_length + 1);
+}
+
 static void _declaration() {
 
-    if ( _match(TOKEN_CLASS) ) {
+    if ( _match(TOKEN_IMPORT) ) {
+        _import_declaration();
+    } else if ( _match(TOKEN_CLASS) ) {
         _class_declaration();
     } else if (_match(TOKEN_DEFER)) {
         _defer_declaration();

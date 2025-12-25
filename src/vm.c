@@ -96,6 +96,9 @@ void _mark_roots() {
     // mark any globals
     l_mark_table(&vm.globals);
 
+    // mark any modules
+    l_mark_table(&vm.modules);
+
     // ensure that compiler owned memory is also tracked
     l_mark_compiler_roots();
 
@@ -117,6 +120,7 @@ void l_init_vm(vm_config_t *config) {
 
     l_init_table(&vm.globals);
     l_init_table(&vm.strings);
+    l_init_table(&vm.modules);
 
     vm.init_string = NULL;
     vm.init_string = l_new_string("init");
@@ -128,6 +132,7 @@ void l_init_vm(vm_config_t *config) {
 void l_free_vm() {
     l_free_table(&vm.strings);
     l_free_table(&vm.globals);
+    l_free_table(&vm.modules);
 
     vm.init_string = NULL;
 
@@ -496,6 +501,31 @@ static InterpretResult _run() {
             case OP_METHOD:
                 _define_method(READ_STRING());
                 break;
+
+            case OP_IMPORT: {
+                obj_string_t* path = READ_STRING();
+
+                // Check cache first
+                value_t cached;
+                if (l_table_get(&vm.modules, path, &cached)) {
+                    // Module already loaded
+                    l_push(cached);
+                    break;
+                }
+
+                // For Phase 1: Simple placeholder
+                // TODO: Implement full module loading
+                // For now, just push nil and cache it
+                value_t module_value = NIL_VAL;
+
+                // Cache the module
+                l_push(OBJ_VAL(path));  // Protect from GC
+                l_table_set(&vm.modules, path, module_value);
+                l_pop();
+
+                l_push(module_value);
+                break;
+            }
 
             case OP_ARRAY_EMPTY: {
                 l_push(OBJ_VAL(l_new_array()));
