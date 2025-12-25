@@ -1500,11 +1500,9 @@ static char* _derive_module_name(const char* path, int length) {
     return result;
 }
 
-static void _import_declaration() {
-    // Supports two syntaxes:
-    // 1. import "path"           - derives module name from path
-    // 2. import alias "path"     - uses explicit alias as module name
-
+// Helper function to process a single import specification
+// Handles both: "path" and alias "path"
+static void _import_single() {
     char* module_name = NULL;
     int name_length = 0;
     bool name_allocated = false;
@@ -1521,7 +1519,7 @@ static void _import_declaration() {
     }
 
     // Consume the module path string
-    _consume(TOKEN_STRING, "Expect module path string after 'import'.");
+    _consume(TOKEN_STRING, "Expect module path string.");
 
     // Get the path from the token (without quotes)
     const char* path = _parser.previous.start + 1;  // Skip opening quote
@@ -1563,12 +1561,42 @@ static void _import_declaration() {
         _mark_initialized();
     }
 
-    // Semicolon is optional
-    _match(TOKEN_SEMICOLON);
-
     // Free the temporary name string if we allocated it
     if (name_allocated) {
         FREE_ARRAY(char, module_name, name_length + 1);
+    }
+}
+
+static void _import_declaration() {
+    // Supports multiple syntaxes:
+    // 1. import "path"                    - single import, implicit name
+    // 2. import alias "path"              - single import, explicit alias
+    // 3. import ("path1" "path2")         - multi-import, implicit names
+    // 4. import (alias1 "path1" "path2")  - multi-import with mixed aliases
+    // 5. Multi-line with newlines as separators (like Go)
+
+    // Check if this is a multi-import (with parentheses)
+    if (_match(TOKEN_LEFT_PAREN)) {
+        // Multi-import: import ("math" "string" myutils "utils")
+
+        // Process imports until we hit the closing parenthesis
+        while (!_check(TOKEN_RIGHT_PAREN) && !_check(TOKEN_EOF)) {
+            _import_single();
+
+            // Optional semicolon or newline between imports
+            _match(TOKEN_SEMICOLON);
+        }
+
+        _consume(TOKEN_RIGHT_PAREN, "Expect ')' after import list.");
+
+        // Optional semicolon after the entire import statement
+        _match(TOKEN_SEMICOLON);
+    } else {
+        // Single import: import "path" or import alias "path"
+        _import_single();
+
+        // Semicolon is optional
+        _match(TOKEN_SEMICOLON);
     }
 }
 

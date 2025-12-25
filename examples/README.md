@@ -13,6 +13,17 @@ This directory contains example modules demonstrating Sox's Go-style module syst
 - **`modules/string_utils.sox`** - String manipulation utilities
 - **`test_imports.sox`** - Test file that imports and uses both modules
 
+### Phase 3 Tests (Caching & Aliases)
+- **`test_alias.sox`** - Demonstrates import aliases
+- **`test_caching.sox`** - Shows module caching behavior
+- **`test_circular.sox`** - Tests circular dependency detection
+- **`circular_a.sox`** & **`circular_b.sox`** - Modules that import each other
+
+### Phase 4 Tests (Multi-Import)
+- **`test_multi_import.sox`** - Single-line multi-import syntax
+- **`test_multiline_import.sox`** - Multi-line Go-style imports
+- **`test_mixed_imports.sox`** - Mixed aliases and implicit names
+
 ## Running the Examples
 
 ### Simple Example
@@ -51,7 +62,60 @@ The module name is derived from the filename:
 - `"modules/math"` → variable `math`
 - `"./utils/helpers"` → variable `helpers`
 
-### 2. Module Exports
+### 2. Explicit Aliases (Phase 3)
+Use aliases to avoid naming conflicts or create shorter names:
+```sox
+import mymath "modules/math"
+import utils "modules/string_utils"
+
+print(mymath.pi)      // Uses alias 'mymath'
+print(utils.upper("hello"))  // Uses alias 'utils'
+```
+
+### 3. Multi-Import Syntax (Phase 4)
+Import multiple modules in a single statement using parentheses:
+
+**Single-line multi-import:**
+```sox
+import ("simple_module" "modules/math")
+```
+
+**Multi-line Go-style import:**
+```sox
+import (
+    "simple_module"
+    "modules/math"
+    "modules/string_utils"
+)
+```
+
+**Mixed aliases and implicit names:**
+```sox
+import (
+    sm "simple_module"
+    "modules/math"
+    utils "modules/string_utils"
+)
+// Creates: sm, math, utils
+```
+
+### 4. Module Caching (Phase 3)
+Modules are compiled and executed only once, then cached:
+```sox
+import "math"
+import cached "math"  // Uses cached version, doesn't reload
+
+// Both 'math' and 'cached' reference the same module instance
+```
+
+### 5. Circular Dependency Detection (Phase 3)
+The module system detects and prevents circular imports:
+```sox
+// If module A imports B, and B imports A:
+// Runtime error: "Circular import detected"
+```
+
+### 6. Module Exports
 Modules export a table of public members:
 ```sox
 // In module:
@@ -69,7 +133,7 @@ print(mymodule.x)           // 10
 print(mymodule.add(5, 3))   // 8
 ```
 
-### 3. Private Members
+### 7. Private Members
 Module-level variables not included in the return table are private:
 ```sox
 // In module:
@@ -82,7 +146,7 @@ return Table{
 }
 ```
 
-### 4. Path Resolution
+### 8. Path Resolution
 The module system tries multiple paths:
 1. Direct path
 2. Path with `.sox` extension
@@ -120,18 +184,22 @@ return Table{
 }
 ```
 
-## Current Limitations
+## Implementation Status
 
-**Phase 2 (Current) limitations:**
-- Modules are re-loaded on each import (no caching yet)
-- No alias support yet: `import mymath "math"` (coming in Phase 3)
-- No multi-import syntax yet: `import ("a" "b")` (coming in Phase 4)
-- No circular dependency detection yet (coming in Phase 3)
+**✅ Completed (Phases 1-4):**
+- ✅ Basic module loading and execution
+- ✅ Implicit naming from module paths
+- ✅ Module caching (modules load once, cached thereafter)
+- ✅ Explicit aliases: `import mymath "math"`
+- ✅ Multi-import syntax: `import ("a" "b")`
+- ✅ Multi-line imports (Go-style)
+- ✅ Circular dependency detection
 
-**Future Phases:**
-- **Phase 3**: Module caching, aliases, circular dependency detection
-- **Phase 4**: Multi-import with parentheses
-- **Phase 5**: Module search paths, standard library location
+**🔮 Future Enhancements (Phase 5+):**
+- Module search paths configuration
+- Standard library location
+- Package namespaces
+- Module versioning
 
 ## Module Best Practices
 
