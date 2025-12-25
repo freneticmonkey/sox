@@ -27,21 +27,21 @@ This approach combines the simplicity of Lua's `require()` with Go's elegant imp
 
 ```sox
 // Import with implicit name from module/file name
-import "math";
+import "math"
 
 // Creates local variable 'math' containing the module
-print(math.pi);         // 3.14159
-print(math.sqrt(16));   // 4
+print(math.pi)         // 3.14159
+print(math.sqrt(16))   // 4
 ```
 
 ### Single Import with Alias
 
 ```sox
 // Import with explicit alias to avoid conflicts
-import mymath "math";
+import mymath "math"
 
-print(mymath.pi);       // 3.14159
-print(mymath.sqrt(16)); // 4
+print(mymath.pi)       // 3.14159
+print(mymath.sqrt(16)) // 4
 ```
 
 ### Multiple Imports (With Parentheses)
@@ -52,11 +52,11 @@ import (
     "math"
     "string"
     "array"
-);
+)
 
-print(math.pi);
-print(string.upper("hello"));
-print(array.length([1, 2, 3]));
+print(math.pi)
+print(string.upper("hello"))
+print(array.length([1, 2, 3]))
 ```
 
 ### Multiple Imports with Aliases
@@ -67,35 +67,35 @@ import (
     "math"
     str "string"
     arr "array"
-);
+)
 
-print(math.pi);
-print(str.upper("hello"));
-print(arr.length([1, 2, 3]));
+print(math.pi)
+print(str.upper("hello"))
+print(arr.length([1, 2, 3]))
 ```
 
 ### Multiple Imports (Single Line)
 
 ```sox
 // Also support single-line for short lists
-import ("math", "string", "array");
+import ("math", "string", "array")
 ```
 
 ### Path-Based Imports
 
 ```sox
 // Import from relative path
-import "./utils/helpers";  // Creates 'helpers' variable
+import "./utils/helpers"  // Creates 'helpers' variable
 
 // Import from nested path
-import "mylib/math/advanced";  // Creates 'advanced' variable
+import "mylib/math/advanced"  // Creates 'advanced' variable
 
 // Multiple paths
 import (
     "./utils/helpers"
     "mylib/math/advanced"
     adv "mylib/math/advanced"
-);
+)
 ```
 
 ---
@@ -130,30 +130,30 @@ import (
 
 ```sox
 // Single import
-import "fmt";
+import "fmt"
 
 // Single import with alias
-import f "fmt";
+import f "fmt"
 
 // Multiple imports
 import (
     "fmt"
     "math"
     "net/http"
-);
+)
 
 // Multiple imports with aliases
 import (
     "fmt"
     m "math"
     "strings"
-);
+)
 ```
 
 **Differences from Go:**
-- Sox requires `;` after import statement (Go doesn't)
 - Sox supports optional `,` in multi-line imports (for flexibility)
 - Go packages have package declarations in source; Sox uses return values
+- Sox allows optional `;` after imports (like all Sox statements)
 
 **Similarities:**
 - ✅ Identical parentheses usage
@@ -161,13 +161,14 @@ import (
 - ✅ Implicit naming from path
 - ✅ Multi-line support
 - ✅ Compile-time declaration
+- ✅ No semicolons required (matching Go and Sox style)
 
 ---
 
 ## Syntax Grammar
 
 ```
-import_stmt     → "import" ( import_single | import_group ) ";"
+import_stmt     → "import" ( import_single | import_group ) ";"?
 
 import_single   → import_spec
 
@@ -179,20 +180,22 @@ import_spec     → IDENTIFIER STRING    // alias "path"
                 | STRING               // "path" (implicit name)
 ```
 
+**Note:** The `";"?` indicates that semicolons are optional (matching Sox's existing style).
+
 **Examples:**
 ```
-import "math";                          // Single
-import m "math";                        // Single with alias
-import ("a", "b");                      // Group (single line)
-import ("a" "b");                       // Group (no commas)
+import "math"                           // Single (no semicolon)
+import m "math"                         // Single with alias
+import ("a", "b")                       // Group (single line)
+import ("a" "b")                        // Group (no commas)
 import (                                // Group (multi-line)
     "a"
     "b"
-);
+)
 import (                                // Group (multi-line with commas)
     "a",
     "b",
-);
+)
 ```
 
 ---
@@ -298,7 +301,7 @@ typedef enum {
 
 ```c
 static void import_declaration() {
-    // import_declaration → "import" ( import_single | import_group ) ";"
+    // import_declaration → "import" ( import_single | import_group ) ";"?
 
     if (match(TOKEN_LEFT_PAREN)) {
         // Multiple imports: import ( ... )
@@ -308,7 +311,8 @@ static void import_declaration() {
         import_single();
     }
 
-    consume(TOKEN_SEMICOLON, "Expect ';' after import");
+    // Semicolon is optional (matching Sox style)
+    match(TOKEN_SEMICOLON);
 }
 
 static void import_single() {
@@ -686,12 +690,12 @@ return Table{
 
 **Using the Module:**
 ```sox
-import "math";
+import "math"
 
-print(math.pi);         // 3.14159
-print(math.sqrt(16));   // 4
-print(math.square(5));  // 25
-print(math.abs(-10));   // 10
+print(math.pi)         // 3.14159
+print(math.sqrt(16))   // 4
+print(math.square(5))  // 25
+print(math.abs(-10))   // 10
 ```
 
 ### Alternative: Export Class
@@ -719,10 +723,10 @@ return String;  // Export the class itself
 
 **Using the Module:**
 ```sox
-import str "string";
+import str "string"
 
-var result = str.upper("hello");  // "HELLO"
-var parts = str.split("a,b,c", ",");  // ["a", "b", "c"]
+var result = str.upper("hello")  // "HELLO"
+var parts = str.split("a,b,c", ",")  // ["a", "b", "c"]
 ```
 
 ---
@@ -732,18 +736,18 @@ var parts = str.split("a,b,c", ",");  // ["a", "b", "c"]
 ### Example 1: Simple Single Import
 
 ```sox
-import "math";
+import "math"
 
-var result = math.sqrt(144);
-print(result);  // 12
+var result = math.sqrt(144)
+print(result)  // 12
 ```
 
 ### Example 2: Single Import with Alias
 
 ```sox
-import m "math";
+import m "math"
 
-print(m.pi);  // 3.14159
+print(m.pi)  // 3.14159
 ```
 
 ### Example 3: Multiple Imports (Multi-line)
@@ -753,11 +757,11 @@ import (
     "math"
     "string"
     "array"
-);
+)
 
-print(math.sqrt(16));
-print(string.upper("hello"));
-print(array.length([1, 2, 3]));
+print(math.sqrt(16))
+print(string.upper("hello"))
+print(array.length([1, 2, 3]))
 ```
 
 ### Example 4: Multiple Imports with Aliases
@@ -767,17 +771,17 @@ import (
     "math"
     str "string"
     arr "array"
-);
+)
 
-print(math.pi);
-print(str.lower("HELLO"));
-print(arr.push([1, 2], 3));
+print(math.pi)
+print(str.lower("HELLO"))
+print(arr.push([1, 2], 3))
 ```
 
 ### Example 5: Multiple Imports (Single Line)
 
 ```sox
-import ("math", "string", "array");
+import ("math", "string", "array")
 ```
 
 ### Example 6: Relative and Nested Paths
@@ -787,11 +791,11 @@ import (
     "./utils/helpers"
     "lib/math/advanced"
     geo "lib/geometry/shapes"
-);
+)
 
-helpers.debug("Starting");
-print(advanced.calculate());
-var circle = geo.Circle(5);
+helpers.debug("Starting")
+print(advanced.calculate())
+var circle = geo.Circle(5)
 ```
 
 ### Example 7: Real-World Usage
@@ -803,23 +807,23 @@ import (
     "stdlib/string"
     utils "./utils/helpers"
     cfg "./config"
-);
+)
 
 fn main() {
-    utils.log("Application started");
+    utils.log("Application started")
 
-    var radius = 10;
-    var area = math.pi * math.pow(radius, 2);
+    var radius = 10
+    var area = math.pi * math.pow(radius, 2)
 
-    var message = string.format("Circle area: {}", area);
-    utils.log(message);
+    var message = string.format("Circle area: {}", area)
+    utils.log(message)
 
     if (cfg.debug) {
-        utils.debug("Debug mode enabled");
+        utils.debug("Debug mode enabled")
     }
 }
 
-main();
+main()
 ```
 
 ---
@@ -831,8 +835,8 @@ main();
 **Goal:** Single import with implicit name (no parentheses)
 
 ```sox
-import "math";
-print(math.pi);
+import "math"
+print(math.pi)
 ```
 
 **Tasks:**
@@ -846,8 +850,8 @@ print(math.pi);
 **Test:**
 ```sox
 // test_basic_import.sox
-import "math";
-print(math.sqrt(16));  // Should print 4
+import "math"
+print(math.sqrt(16))  // Should print 4
 ```
 
 ### Phase 2: Import with Alias (Day 2)
@@ -855,8 +859,8 @@ print(math.sqrt(16));  // Should print 4
 **Goal:** Single import with explicit alias
 
 ```sox
-import mymath "math";
-print(mymath.pi);
+import mymath "math"
+print(mymath.pi)
 ```
 
 **Tasks:**
@@ -867,9 +871,9 @@ print(mymath.pi);
 **Test:**
 ```sox
 // test_alias.sox
-import m "math";
-print(m.pi);
-print(m.sqrt(9));
+import m "math"
+print(m.pi)
+print(m.sqrt(9))
 ```
 
 ### Phase 3: Multiple Imports with Parentheses (Days 3-4)
@@ -880,7 +884,7 @@ print(m.sqrt(9));
 import (
     "math"
     "string"
-);
+)
 ```
 
 **Tasks:**
@@ -895,9 +899,9 @@ import (
 import (
     "math"
     str "string"
-);
-print(math.pi);
-print(str.upper("test"));
+)
+print(math.pi)
+print(str.upper("test"))
 ```
 
 ### Phase 4: Path Resolution (Day 5)
@@ -905,8 +909,8 @@ print(str.upper("test"));
 **Goal:** Support relative and nested paths
 
 ```sox
-import "./utils/helpers";
-import "mylib/math/advanced";
+import "./utils/helpers"
+import "mylib/math/advanced"
 ```
 
 **Tasks:**
@@ -921,7 +925,7 @@ import "mylib/math/advanced";
 import (
     "./modules/math"
     "lib/string/utils"
-);
+)
 ```
 
 ### Phase 5: Circular Dependencies (Day 6)
@@ -991,15 +995,15 @@ MU_TEST(test_circular_dependency) {
 **File: `src/test/scripts/test_import_single.sox`**
 ```sox
 // Test single import
-import "test_modules/math";
-print(math.sqrt(16));  // Expected: 4
+import "test_modules/math"
+print(math.sqrt(16))  // Expected: 4
 ```
 
 **File: `src/test/scripts/test_import_alias.sox`**
 ```sox
 // Test alias
-import m "test_modules/math";
-print(m.pi);  // Expected: 3.14159
+import m "test_modules/math"
+print(m.pi)  // Expected: 3.14159
 ```
 
 **File: `src/test/scripts/test_import_multiple.sox`**
@@ -1008,9 +1012,9 @@ print(m.pi);  // Expected: 3.14159
 import (
     "test_modules/math"
     s "test_modules/string"
-);
-print(math.sqrt(9));        // Expected: 3
-print(s.upper("hello"));    // Expected: HELLO
+)
+print(math.sqrt(9))        // Expected: 3
+print(s.upper("hello"))    // Expected: HELLO
 ```
 
 **Expected Output Files:**
@@ -1036,8 +1040,8 @@ Sox supports a Go-style module system with automatic naming and clean syntax.
 Import a module by path:
 
 ```sox
-import "math";
-print(math.pi);
+import "math"
+print(math.pi)
 ```
 
 The module name is derived from the file path automatically.
@@ -1047,8 +1051,8 @@ The module name is derived from the file path automatically.
 Avoid naming conflicts with aliases:
 
 ```sox
-import mymath "math";
-print(mymath.sqrt(16));
+import mymath "math"
+print(mymath.sqrt(16))
 ```
 
 ## Multiple Imports
@@ -1060,7 +1064,7 @@ import (
     "math"
     "string"
     "array"
-);
+)
 ```
 
 Mix implicit names and aliases:
@@ -1070,13 +1074,13 @@ import (
     "math"
     str "string"
     arr "array"
-);
+)
 ```
 
 Single-line variant (optional commas):
 
 ```sox
-import ("math", "string", "array");
+import ("math", "string", "array")
 ```
 
 ## Creating Modules
@@ -1085,20 +1089,20 @@ A module is a `.sox` file that returns a value:
 
 ```sox
 // mymodule.sox
-var x = 10;
-var y = 20;
+var x = 10
+var y = 20
 
 return Table{
     "sum": x + y,
     "product": x * y
-};
+}
 ```
 
 Import and use:
 
 ```sox
-import mod "mymodule";
-print(mod.sum);  // 30
+import mod "mymodule"
+print(mod.sum)  // 30
 ```
 
 ## Path Resolution
@@ -1136,11 +1140,11 @@ The variable name is derived from the last path component:
 | Language | Single Import | Multiple Imports |
 |----------|---------------|------------------|
 | **Go** | `import "fmt"` | `import (\n  "fmt"\n  "math"\n)` |
-| **Sox** | `import "fmt";` | `import (\n  "fmt"\n  "math"\n);` |
+| **Sox** | `import "fmt"` | `import (\n  "fmt"\n  "math"\n)` |
 | **Python** | `import math` | `import math, sys` |
 | **JavaScript** | `import fmt from "fmt"` | `import { a, b } from "lib"` |
 
-Sox is closest to Go!
+Sox syntax is **identical** to Go!
 
 ### Implementation Effort
 
