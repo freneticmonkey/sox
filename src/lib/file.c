@@ -471,3 +471,40 @@ bool l_file_delete(const char * path) {
 
     return remove(path) == 0;
 }
+
+// Module path resolution
+// Tries to find the module file by:
+// 1. Direct path
+// 2. Path with .sox extension
+// 3. Relative paths
+// Returns allocated string that must be freed, or NULL if not found
+char* l_resolve_module_path(const char* module_path) {
+    char resolved[4096];
+
+    // Try direct path
+    if (l_file_exists(module_path)) {
+        return strdup(module_path);
+    }
+
+    // Try with .sox extension
+    snprintf(resolved, sizeof(resolved), "%s.sox", module_path);
+    if (l_file_exists(resolved)) {
+        return strdup(resolved);
+    }
+
+    // Try in current directory with .sox extension
+    snprintf(resolved, sizeof(resolved), "./%s.sox", module_path);
+    if (l_file_exists(resolved)) {
+        return strdup(resolved);
+    }
+
+    // Try in current directory without extension
+    snprintf(resolved, sizeof(resolved), "./%s", module_path);
+    if (l_file_exists(resolved)) {
+        return strdup(resolved);
+    }
+
+    // TODO: Add search paths (module_paths array in VM)
+
+    return NULL;  // Not found
+}

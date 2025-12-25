@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "lib/debug.h"
+#include "lib/file.h"
 #include "lib/memory.h"
 #include "lib/native_api.h"
 #include "lib/print.h"
@@ -505,25 +506,52 @@ static InterpretResult _run() {
             case OP_IMPORT: {
                 obj_string_t* path = READ_STRING();
 
-                // Check cache first
-                value_t cached;
-                if (l_table_get(&vm.modules, path, &cached)) {
-                    // Module already loaded
-                    l_push(cached);
-                    break;
+                // TODO Phase 3: Add module caching to prevent re-loading
+                // For now, always load the module fresh
+
+                // Resolve the module file path
+                char* file_path = l_resolve_module_path(path->chars);
+                if (!file_path) {
+                    l_vm_runtime_error("Module not found: '%s'", path->chars);
+                    return INTERPRET_RUNTIME_ERROR;
                 }
 
-                // For Phase 1: Simple placeholder
-                // TODO: Implement full module loading
-                // For now, just push nil and cache it
-                value_t module_value = NIL_VAL;
+                // Read the module source file
+                char* source = l_read_file(file_path);
+                if (!source) {
+                    l_vm_runtime_error("Could not read module: '%s'", file_path);
+                    free(file_path);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
 
-                // Cache the module
-                l_push(OBJ_VAL(path));  // Protect from GC
-                l_table_set(&vm.modules, path, module_value);
+                // Compile the module
+                obj_function_t* module_fn = l_compile(source);
+                free(source);
+
+                if (!module_fn) {
+                    l_vm_runtime_error("Failed to compile module: '%s'", file_path);
+                    free(file_path);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                // Create closure and call it
+                l_push(OBJ_VAL(module_fn));  // Protect from GC
+                obj_closure_t* closure = l_new_closure(module_fn);
                 l_pop();
+                l_push(OBJ_VAL(closure));
 
-                l_push(module_value);
+                // Call the module (arg count = 0)
+                if (!_call(closure, 0)) {
+                    free(file_path);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                // Update frame pointer
+                frame = &vm.frames[vm.frame_count - 1];
+
+                free(file_path);
+                // Module will execute and return value naturally via OP_RETURN
+                // The return value will be on stack for OP_DEFINE to use
                 break;
             }
 
