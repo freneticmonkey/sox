@@ -1501,8 +1501,24 @@ static char* _derive_module_name(const char* path, int length) {
 }
 
 static void _import_declaration() {
-    // For Phase 1: Simple single import only
-    // Syntax: import "path"
+    // Supports two syntaxes:
+    // 1. import "path"           - derives module name from path
+    // 2. import alias "path"     - uses explicit alias as module name
+
+    char* module_name = NULL;
+    int name_length = 0;
+    bool name_allocated = false;
+    token_t name_token;
+
+    // Check if we have an alias (IDENTIFIER before STRING)
+    if (_check(TOKEN_IDENTIFIER)) {
+        // Alias syntax: import mymath "math"
+        _advance();
+        name_token = _parser.previous;
+        module_name = (char*)name_token.start;
+        name_length = name_token.length;
+        name_allocated = false;  // Token memory is managed by scanner
+    }
 
     // Consume the module path string
     _consume(TOKEN_STRING, "Expect module path string after 'import'.");
@@ -1511,19 +1527,21 @@ static void _import_declaration() {
     const char* path = _parser.previous.start + 1;  // Skip opening quote
     int path_length = _parser.previous.length - 2;   // Remove quotes
 
+    // If no alias was provided, derive module name from path
+    if (module_name == NULL) {
+        module_name = _derive_module_name(path, path_length);
+        name_length = strlen(module_name);
+        name_allocated = true;  // We allocated this, need to free it
+
+        // Create a token for the derived module name
+        name_token.start = module_name;
+        name_token.length = name_length;
+        name_token.line = _parser.previous.line;
+    }
+
     // Create string constant for the path
     value_t path_value = OBJ_VAL(l_copy_string(path, path_length));
     uint8_t path_constant = _make_constant(path_value);
-
-    // Derive module name from path
-    char* module_name = _derive_module_name(path, path_length);
-    int name_length = strlen(module_name);
-
-    // Create a token for the module name (for local variable)
-    token_t name_token;
-    name_token.start = module_name;
-    name_token.length = name_length;
-    name_token.line = _parser.previous.line;
 
     // Declare the variable
     _declare_variable();
@@ -1548,8 +1566,10 @@ static void _import_declaration() {
     // Semicolon is optional
     _match(TOKEN_SEMICOLON);
 
-    // Free the temporary name string
-    FREE_ARRAY(char, module_name, name_length + 1);
+    // Free the temporary name string if we allocated it
+    if (name_allocated) {
+        FREE_ARRAY(char, module_name, name_length + 1);
+    }
 }
 
 static void _declaration() {

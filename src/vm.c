@@ -506,12 +506,29 @@ static InterpretResult _run() {
             case OP_IMPORT: {
                 obj_string_t* path = READ_STRING();
 
-                // TODO Phase 3: Add module caching to prevent re-loading
-                // For now, always load the module fresh
+                // Check cache first
+                value_t cached;
+                if (l_table_get(&vm.modules, path, &cached)) {
+                    // Check if it's the loading sentinel (circular dependency)
+                    if (IS_BOOL(cached) && AS_BOOL(cached)) {
+                        l_vm_runtime_error("Circular import detected: '%s'", path->chars);
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+                    // Module already loaded, use cached value
+                    l_push(cached);
+                    break;
+                }
+
+                // Mark as loading (for circular dependency detection)
+                l_push(OBJ_VAL(path));  // Protect from GC
+                l_table_set(&vm.modules, path, BOOL_VAL(true));
+                l_pop();
 
                 // Resolve the module file path
                 char* file_path = l_resolve_module_path(path->chars);
                 if (!file_path) {
+                    // Clean up loading sentinel
+                    l_table_delete(&vm.modules, path);
                     l_vm_runtime_error("Module not found: '%s'", path->chars);
                     return INTERPRET_RUNTIME_ERROR;
                 }
@@ -519,6 +536,7 @@ static InterpretResult _run() {
                 // Read the module source file
                 char* source = l_read_file(file_path);
                 if (!source) {
+                    l_table_delete(&vm.modules, path);
                     l_vm_runtime_error("Could not read module: '%s'", file_path);
                     free(file_path);
                     return INTERPRET_RUNTIME_ERROR;
@@ -529,10 +547,14 @@ static InterpretResult _run() {
                 free(source);
 
                 if (!module_fn) {
+                    l_table_delete(&vm.modules, path);
                     l_vm_runtime_error("Failed to compile module: '%s'", file_path);
                     free(file_path);
                     return INTERPRET_RUNTIME_ERROR;
                 }
+
+                // Save current frame count to detect when module returns
+                int module_frame_depth = vm.frame_count;
 
                 // Create closure and call it
                 l_push(OBJ_VAL(module_fn));  // Protect from GC
@@ -542,6 +564,7 @@ static InterpretResult _run() {
 
                 // Call the module (arg count = 0)
                 if (!_call(closure, 0)) {
+                    l_table_delete(&vm.modules, path);
                     free(file_path);
                     return INTERPRET_RUNTIME_ERROR;
                 }
@@ -550,8 +573,55 @@ static InterpretResult _run() {
                 frame = &vm.frames[vm.frame_count - 1];
 
                 free(file_path);
-                // Module will execute and return value naturally via OP_RETURN
-                // The return value will be on stack for OP_DEFINE to use
+
+                // Module will execute until OP_RETURN
+                // We need to cache the result after it returns
+                // Execute the module inline until it returns
+                while (vm.frame_count > module_frame_depth) {
+                    uint8_t instruction = READ_BYTE();
+
+                    switch (instruction) {
+                        case OP_RETURN: {
+                            value_t result = l_pop();
+                            _close_upvalues(frame->slots);
+                            vm.frame_count--;
+
+                            if (vm.frame_count == module_frame_depth) {
+                                // Module just returned - cache the result
+                                vm.stack_top = frame->slots;
+                                l_push(result);
+
+                                // Cache the module (replace loading sentinel)
+                                l_push(OBJ_VAL(path));  // Protect from GC
+                                l_table_set(&vm.modules, path, result);
+                                l_pop();
+
+                                // Update frame back to caller
+                                frame = &vm.frames[vm.frame_count - 1];
+                                goto module_loaded;  // Exit the inline execution
+                            } else {
+                                // Nested return within module
+                                vm.stack_top = frame->slots;
+                                l_push(result);
+                                frame = &vm.frames[vm.frame_count - 1];
+                            }
+                            break;
+                        }
+                        default:
+                            // Put instruction back and let main loop handle it
+                            frame->ip--;
+                            goto run_module_via_main_loop;
+                    }
+                }
+
+                run_module_via_main_loop:
+                // For complex modules, fall back to letting main loop execute
+                // The return value will be on stack, but won't be cached
+                // TODO: Improve this to handle all cases
+                break;
+
+                module_loaded:
+                // Module result is now cached and on stack
                 break;
             }
 
