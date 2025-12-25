@@ -1,0 +1,82 @@
+// Test 1: Basic with statement with implicit member access
+print("=== Test 1: Basic implicit access ===")
+
+class Resource {
+    init(name) {
+        this.name = name
+        this.value = 0
+    }
+
+    increment() {
+        this.value = this.value + 1
+    }
+
+    get() {
+        return this.value
+    }
+
+    __cleanup() {
+        print("Cleanup: " + this.name)
+    }
+}
+
+with (r = Resource("test1")) {
+    .increment()
+    .increment()
+    print("Value: " + .get())
+}
+print("Done")
+
+// Test 2: Property access
+print("=== Test 2: Property access ===")
+
+class Point {
+    init(x, y) {
+        this.x = x
+        this.y = y
+    }
+}
+
+with (p = Point(0, 0)) {
+    print("Initial: (" + .x + ", " + .y + ")")
+}
+
+// Test 3: Nested with statements
+print("=== Test 3: Nested with ===")
+
+with (a = Resource("outer")) {
+    print("Outer: " + .name)
+    with (b = Resource("inner")) {
+        print("Inner: " + .name)
+        print("Outer explicit: " + a.name)
+    }
+    print("Back to outer: " + .name)
+}
+
+// Test 4: Mixing explicit and implicit access
+print("=== Test 4: Mixed access ===")
+
+with (counter = Resource("mixed")) {
+    .increment()           // Implicit
+    counter.increment()    // Explicit
+    print("Implicit: " + .get())
+    print("Explicit: " + counter.get())
+}
+
+// Test 5: No cleanup method (should work fine)
+print("=== Test 5: No cleanup ===")
+
+class Simple {
+    init(val) {
+        this.val = val
+    }
+
+    get() {
+        return this.val
+    }
+}
+
+with (x = Simple(42)) {
+    print("Value: " + .get())
+}
+print("Done")

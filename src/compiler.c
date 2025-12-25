@@ -120,9 +120,16 @@ typedef struct compiler_t {
 
     // current loop being compiled or NULL if no loop
     loop_t         *loop;
-    
+
     // current switch being compiled or NULL if no switch
     switch_t       *_switch;
+
+    // with statement context for implicit member access
+    struct {
+        bool active;        // Is there an active with context?
+        int local_index;    // Local variable index of with resource
+        int scope_depth;    // Scope depth where with was declared
+    } with_context;
 
     int             main_function;
 } compiler_t;
@@ -314,6 +321,10 @@ static void l_init_compiler(compiler_t* compiler, FunctionType type) {
     compiler->scope_depth = 0;
     compiler->defer_count = 0;
 
+    compiler->with_context.active = false;
+    compiler->with_context.local_index = -1;
+    compiler->with_context.scope_depth = -1;
+
     compiler->function = l_new_function();
 
     _current = compiler;
@@ -381,6 +392,28 @@ static void _end_scope() {
         }
         _current->local_count--;
     }
+}
+
+// With context management for implicit member access
+static void _enter_with_context(int local_index) {
+    _current->with_context.active = true;
+    _current->with_context.local_index = local_index;
+    _current->with_context.scope_depth = _current->scope_depth;
+}
+
+static void _exit_with_context() {
+    if (_current->with_context.active &&
+        _current->with_context.scope_depth >= _current->scope_depth) {
+        _current->with_context.active = false;
+    }
+}
+
+static bool _in_with_context() {
+    return _current->with_context.active;
+}
+
+static int _get_with_context_var() {
+    return _current->with_context.local_index;
 }
 
 static void          _expression();
@@ -594,6 +627,32 @@ static void _call(bool canAssign) {
 }
 
 static void _dot(bool canAssign) {
+    _consume(TOKEN_IDENTIFIER, "Expect property name after '.'.");
+    uint8_t name = _identifier_constant(&_parser.previous);
+
+    if (canAssign && _match(TOKEN_EQUAL)) {
+        _expression();
+        _emit_bytes(OP_SET_PROPERTY, name);
+    } else if ( _match(TOKEN_LEFT_PAREN) ) {
+        uint8_t argCount = _argument_list();
+        _emit_bytes(OP_INVOKE, name);
+        _emit_byte(argCount);
+    } else {
+        _emit_bytes(OP_GET_PROPERTY, name);
+    }
+}
+
+static void _leading_dot(bool canAssign) {
+    // Handle leading dot for implicit with context member access
+    if (!_in_with_context()) {
+        _error("Cannot use '.' at start of expression outside 'with' statement.");
+        return;
+    }
+
+    // Emit code to get the with context variable
+    _emit_bytes(OP_GET_LOCAL, (uint8_t)_get_with_context_var());
+
+    // Now consume the property/method name and handle it like _dot()
     _consume(TOKEN_IDENTIFIER, "Expect property name after '.'.");
     uint8_t name = _identifier_constant(&_parser.previous);
 
@@ -825,7 +884,7 @@ parse_rule_t rules[] = {
     [TOKEN_LEFT_BRACKET]  = {NULL,            _index,   PREC_CALL},
     [TOKEN_RIGHT_BRACKET] = {NULL,            NULL,     PREC_NONE},
     [TOKEN_COMMA]         = {NULL,            NULL,     PREC_NONE},
-    [TOKEN_DOT]           = {NULL,            _dot,     PREC_CALL},
+    [TOKEN_DOT]           = {_leading_dot,    _dot,     PREC_CALL},
     [TOKEN_MINUS]         = {_unary,          _binary,  PREC_TERM},
     [TOKEN_PLUS]          = {NULL,            _binary,  PREC_TERM},
     [TOKEN_SEMICOLON]     = {NULL,            NULL,     PREC_NONE},
@@ -1435,10 +1494,58 @@ static void _while_statement() {
     _loop_test_exit();
 
     _statement();
-    
+
     _loop_jump();
 
     _loop_end();
+}
+
+static void _with_statement() {
+    // Begin new scope for resource variable
+    _begin_scope();
+
+    // Parse: with ( <name> = <expr> )
+    _consume(TOKEN_LEFT_PAREN, "Expect '(' after 'with'.");
+
+    // Parse variable name
+    uint8_t name_var = _parse_variable("Expect variable name in with statement.");
+
+    _consume(TOKEN_EQUAL, "Expect '=' after variable name in with statement.");
+
+    // Parse and emit resource acquisition expression
+    _expression();
+
+    _consume(TOKEN_RIGHT_PAREN, "Expect ')' after with expression.");
+
+    // Define the variable (now initialized)
+    _define_variable(name_var);
+
+    // Enter with context for implicit member access
+    int resource_local = _current->local_count - 1;
+    _enter_with_context(resource_local);
+
+    // Parse and execute body block
+    _consume(TOKEN_LEFT_BRACE, "Expect '{' before with body.");
+    _block();
+
+    // Emit cleanup code before scope ends
+    // Get resource variable and try to call __cleanup() if it exists
+    _emit_bytes(OP_GET_LOCAL, (uint8_t)resource_local);
+
+    // Duplicate resource for method invocation
+    uint8_t cleanup_name = _make_constant(OBJ_VAL(l_copy_string("__cleanup", 9)));
+
+    // Try to invoke __cleanup method with 0 arguments
+    // If the method doesn't exist, this will be a runtime no-op
+    _emit_bytes(OP_INVOKE, cleanup_name);
+    _emit_byte(0); // 0 arguments
+    _emit_byte(OP_POP); // Pop return value
+
+    // Exit with context
+    _exit_with_context();
+
+    // End scope (pops resource variable)
+    _end_scope();
 }
 
 static void _synchronize() {
@@ -1501,6 +1608,8 @@ static void _statement() {
         _return_statement();
     } else if ( _match(TOKEN_WHILE) ) {
         _while_statement();
+    } else if ( _match(TOKEN_WITH) ) {
+        _with_statement();
     } else if ( _match(TOKEN_FOR) ) {
         _for_statement();
     } else if ( _match(TOKEN_LEFT_BRACE) ) {

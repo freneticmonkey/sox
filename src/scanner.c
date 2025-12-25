@@ -173,7 +173,14 @@ static TokenType _identifier_type() {
             }
             break;
         case 'v': return _check_keyword(1, 2, "ar", TOKEN_VAR);
-        case 'w': return _check_keyword(1, 4, "hile", TOKEN_WHILE);
+        case 'w':
+            if (_scanner.current - _scanner.start > 1) {
+                switch (_scanner.start[1]) {
+                    case 'h': return _check_keyword(2, 3, "ile", TOKEN_WHILE);
+                    case 'i': return _check_keyword(2, 2, "th", TOKEN_WITH);
+                }
+            }
+            break;
     }
     return TOKEN_IDENTIFIER;
 }
