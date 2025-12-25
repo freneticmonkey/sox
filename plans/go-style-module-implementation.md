@@ -3,7 +3,7 @@
 **Author:** Claude
 **Date:** 2025-12-25
 **Status:** Implementation Plan
-**Version:** 1.0
+**Version:** 2.0
 **Based On:** Module System Design Plan v1.0
 
 ---
@@ -13,8 +13,9 @@
 This document details the implementation of a **Go-style module system** for Sox, featuring:
 - **Implicit naming**: `import "math"` creates a `math` variable automatically
 - **Optional aliasing**: `import mymath "math"` for conflict resolution
-- **Multiple imports**: `import "math", "string", custom "my/package"`
-- **Clean syntax**: No manual variable assignment needed
+- **Single import**: No parentheses for single imports
+- **Multiple imports**: Parentheses with multi-line support like Go
+- **Clean syntax**: Matches Go's import style closely
 
 This approach combines the simplicity of Lua's `require()` with Go's elegant import semantics.
 
@@ -22,7 +23,7 @@ This approach combines the simplicity of Lua's `require()` with Go's elegant imp
 
 ## Syntax Design
 
-### Basic Import (Implicit Name)
+### Single Import (No Parentheses)
 
 ```sox
 // Import with implicit name from module/file name
@@ -33,7 +34,7 @@ print(math.pi);         // 3.14159
 print(math.sqrt(16));   // 4
 ```
 
-### Import with Alias
+### Single Import with Alias
 
 ```sox
 // Import with explicit alias to avoid conflicts
@@ -43,22 +44,41 @@ print(mymath.pi);       // 3.14159
 print(mymath.sqrt(16)); // 4
 ```
 
-### Multiple Imports
+### Multiple Imports (With Parentheses)
 
 ```sox
-// Import multiple modules in one statement
-import "math", "string", "array";
+// Import multiple modules using parentheses
+import (
+    "math"
+    "string"
+    "array"
+);
 
 print(math.pi);
 print(string.upper("hello"));
 print(array.length([1, 2, 3]));
+```
 
+### Multiple Imports with Aliases
+
+```sox
 // Mix implicit and explicit names
-import "math", str "string", arr "array";
+import (
+    "math"
+    str "string"
+    arr "array"
+);
 
 print(math.pi);
 print(str.upper("hello"));
 print(arr.length([1, 2, 3]));
+```
+
+### Multiple Imports (Single Line)
+
+```sox
+// Also support single-line for short lists
+import ("math", "string", "array");
 ```
 
 ### Path-Based Imports
@@ -70,8 +90,109 @@ import "./utils/helpers";  // Creates 'helpers' variable
 // Import from nested path
 import "mylib/math/advanced";  // Creates 'advanced' variable
 
-// With alias
-import adv "mylib/math/advanced";
+// Multiple paths
+import (
+    "./utils/helpers"
+    "mylib/math/advanced"
+    adv "mylib/math/advanced"
+);
+```
+
+---
+
+## Exact Go Comparison
+
+### Go Import Syntax
+
+```go
+// Single import
+import "fmt"
+
+// Single import with alias
+import f "fmt"
+
+// Multiple imports
+import (
+    "fmt"
+    "math"
+    "net/http"
+)
+
+// Multiple imports with aliases
+import (
+    "fmt"
+    m "math"
+    "strings"
+)
+```
+
+### Sox Import Syntax (Our Design)
+
+```sox
+// Single import
+import "fmt";
+
+// Single import with alias
+import f "fmt";
+
+// Multiple imports
+import (
+    "fmt"
+    "math"
+    "net/http"
+);
+
+// Multiple imports with aliases
+import (
+    "fmt"
+    m "math"
+    "strings"
+);
+```
+
+**Differences from Go:**
+- Sox requires `;` after import statement (Go doesn't)
+- Sox supports optional `,` in multi-line imports (for flexibility)
+- Go packages have package declarations in source; Sox uses return values
+
+**Similarities:**
+- ✅ Identical parentheses usage
+- ✅ Identical alias syntax
+- ✅ Implicit naming from path
+- ✅ Multi-line support
+- ✅ Compile-time declaration
+
+---
+
+## Syntax Grammar
+
+```
+import_stmt     → "import" ( import_single | import_group ) ";"
+
+import_single   → import_spec
+
+import_group    → "(" import_list ")"
+
+import_list     → import_spec ( NEWLINE | "," )* import_spec
+
+import_spec     → IDENTIFIER STRING    // alias "path"
+                | STRING               // "path" (implicit name)
+```
+
+**Examples:**
+```
+import "math";                          // Single
+import m "math";                        // Single with alias
+import ("a", "b");                      // Group (single line)
+import ("a" "b");                       // Group (no commas)
+import (                                // Group (multi-line)
+    "a"
+    "b"
+);
+import (                                // Group (multi-line with commas)
+    "a",
+    "b",
+);
 ```
 
 ---
@@ -85,14 +206,6 @@ The `import` statement is a **compile-time declaration** that:
 2. Determines variable name (implicit or explicit)
 3. Emits bytecode to load module and assign to local variable
 4. Creates local variable in current scope
-
-**Syntax Grammar:**
-```
-import_stmt     → "import" import_list ";"
-import_list     → import_spec ( "," import_spec )*
-import_spec     → IDENTIFIER STRING    // alias "path"
-                | STRING               // "path" (implicit name)
-```
 
 ### Implicit Name Derivation
 
@@ -129,23 +242,28 @@ const char* derive_module_name(const char* path) {
 ### Module Loading Flow
 
 ```
-import "math", str "string"
+import (
+    "math"
+    str "string"
+)
     ↓
 1. Parse import statement at compile time
     ↓
-2. For each import spec:
+2. Detect parentheses → multiple imports
+    ↓
+3. For each import spec (until closing paren):
    a. Extract module path string
    b. Determine variable name (implicit or explicit)
    c. Emit OP_IMPORT with path constant
    d. Emit OP_DEFINE_LOCAL with variable name
    e. Add to local variable table
     ↓
-3. At runtime:
+4. At runtime:
    a. OP_IMPORT loads module (via require-like mechanism)
    b. Pushes module value on stack
    c. OP_DEFINE_LOCAL pops and assigns to local variable
     ↓
-4. Module is now accessible via local variable
+5. Modules are now accessible via local variables
 ```
 
 ---
@@ -180,53 +298,91 @@ typedef enum {
 
 ```c
 static void import_declaration() {
-    // import_declaration → "import" import_list ";"
+    // import_declaration → "import" ( import_single | import_group ) ";"
 
-    do {
-        // Check for alias: IDENTIFIER STRING
-        token_t var_name;
-        bool has_alias = false;
-
-        if (check(TOKEN_IDENTIFIER) && peek_next() == TOKEN_STRING) {
-            // Explicit alias: import mymath "math"
-            consume(TOKEN_IDENTIFIER, "Expect alias name");
-            var_name = parser.previous;
-            has_alias = true;
-        }
-
-        // Module path (required)
-        consume(TOKEN_STRING, "Expect module path string");
-        uint8_t path_constant = make_constant(OBJ_VAL(copy_string(
-            parser.previous.start + 1,  // Skip opening quote
-            parser.previous.length - 2   // Skip quotes
-        )));
-
-        // Derive implicit name if no alias
-        if (!has_alias) {
-            const char* path = AS_CSTRING(current_chunk()->constants.values[path_constant]);
-            const char* implicit_name = derive_module_name(path);
-
-            // Create token for implicit name
-            var_name.start = implicit_name;
-            var_name.length = strlen(implicit_name);
-            var_name.line = parser.previous.line;
-        }
-
-        // Emit bytecode to load module
-        emit_bytes(OP_IMPORT, path_constant);
-
-        // Define local variable with module value
-        uint8_t var_constant = identifier_constant(&var_name);
-        define_variable(var_constant);
-
-        // Add to local scope
-        if (current->scope_depth > 0) {
-            add_local(var_name);
-        }
-
-    } while (match(TOKEN_COMMA));
+    if (match(TOKEN_LEFT_PAREN)) {
+        // Multiple imports: import ( ... )
+        import_group();
+    } else {
+        // Single import: import "path" or import alias "path"
+        import_single();
+    }
 
     consume(TOKEN_SEMICOLON, "Expect ';' after import");
+}
+
+static void import_single() {
+    // Parse one import spec
+    token_t var_name;
+    bool has_alias = false;
+
+    // Check for alias: IDENTIFIER STRING
+    if (check(TOKEN_IDENTIFIER) && peek_next() == TOKEN_STRING) {
+        // Explicit alias: import mymath "math"
+        consume(TOKEN_IDENTIFIER, "Expect alias name");
+        var_name = parser.previous;
+        has_alias = true;
+    }
+
+    // Module path (required)
+    consume(TOKEN_STRING, "Expect module path string");
+    uint8_t path_constant = make_constant(OBJ_VAL(copy_string(
+        parser.previous.start + 1,  // Skip opening quote
+        parser.previous.length - 2   // Skip quotes
+    )));
+
+    // Derive implicit name if no alias
+    if (!has_alias) {
+        const char* path = AS_CSTRING(current_chunk()->constants.values[path_constant]);
+        const char* implicit_name = derive_module_name(path);
+
+        // Create token for implicit name
+        var_name.start = implicit_name;
+        var_name.length = strlen(implicit_name);
+        var_name.line = parser.previous.line;
+    }
+
+    // Emit bytecode to load module
+    emit_bytes(OP_IMPORT, path_constant);
+
+    // Define local variable with module value
+    uint8_t var_constant = identifier_constant(&var_name);
+    define_variable(var_constant);
+
+    // Add to local scope
+    if (current->scope_depth > 0) {
+        add_local(var_name);
+    }
+}
+
+static void import_group() {
+    // import_group → "(" import_list ")"
+    // import_list  → import_spec ( NEWLINE | "," )* import_spec
+
+    // Parse until closing paren
+    while (!check(TOKEN_RIGHT_PAREN) && !check(TOKEN_EOF)) {
+        // Skip newlines
+        while (match(TOKEN_NEWLINE)) {
+            // Continue
+        }
+
+        if (check(TOKEN_RIGHT_PAREN)) break;
+
+        // Parse single import spec
+        import_single();
+
+        // Allow optional comma or newline separator
+        if (!check(TOKEN_RIGHT_PAREN)) {
+            if (!match(TOKEN_COMMA) && !match(TOKEN_NEWLINE)) {
+                // If not comma or newline, expect closing paren
+                if (!check(TOKEN_RIGHT_PAREN)) {
+                    error("Expect ',' or newline between imports");
+                }
+            }
+        }
+    }
+
+    consume(TOKEN_RIGHT_PAREN, "Expect ')' after import list");
 }
 ```
 
@@ -235,10 +391,15 @@ static void import_declaration() {
 ```c
 static TokenType peek_next() {
     // Look ahead two tokens
-    parser_t saved = parser;
+    scanner_t saved_scanner = scanner;
+    token_t saved_current = parser.current;
+
     advance();
     TokenType type = parser.current.type;
-    parser = saved;
+
+    scanner = saved_scanner;
+    parser.current = saved_current;
+
     return type;
 }
 ```
@@ -262,6 +423,19 @@ static void declaration() {
     if (parser.panic_mode) synchronize();
 }
 ```
+
+#### 4. Handle Newlines in Scanner
+
+**Note:** Sox scanner may need to track newlines if not already doing so for multi-line imports.
+
+```c
+// In scanner.c - scanToken()
+case '\n':
+    scanner.line++;
+    return make_token(TOKEN_NEWLINE);  // Return newline token
+```
+
+Alternatively, skip newlines in most contexts but handle them in import lists.
 
 ### VM Changes
 
@@ -326,6 +500,12 @@ static value_t load_module(obj_string_t* path) {
     // Check cache first
     value_t cached;
     if (l_table_get(&vm.modules, path, &cached)) {
+        // Return cached module (unless loading sentinel)
+        if (IS_BOOL(cached)) {
+            // Circular dependency detected
+            runtime_error("Circular import: '%s'", path->chars);
+            return NIL_VAL;
+        }
         return cached;
     }
 
@@ -547,48 +727,108 @@ var parts = str.split("a,b,c", ",");  // ["a", "b", "c"]
 
 ---
 
-## Comparison with Go
+## Syntax Examples
 
-### Go Import Syntax
-
-```go
-import "fmt"                    // implicit name: fmt
-import "math"                   // implicit name: math
-import customMath "math"        // explicit alias
-import (                        // grouped imports
-    "fmt"
-    "math"
-    m "math/big"
-)
-```
-
-### Sox Import Syntax (Our Design)
+### Example 1: Simple Single Import
 
 ```sox
-import "fmt";                   // implicit name: fmt
-import "math";                  // implicit name: math
-import customMath "math";       // explicit alias
-import "fmt", "math", m "math/big";  // multiple imports
+import "math";
+
+var result = math.sqrt(144);
+print(result);  // 12
 ```
 
-**Similarities:**
-- ✅ Implicit naming from package path
-- ✅ Optional aliasing
-- ✅ Clean, minimal syntax
-- ✅ Compile-time declaration
+### Example 2: Single Import with Alias
 
-**Differences:**
-- Sox uses `;` terminator (Go doesn't)
-- Sox uses `,` for multiple imports (Go uses parentheses)
-- Go has package names in source (Sox uses return values)
+```sox
+import m "math";
+
+print(m.pi);  // 3.14159
+```
+
+### Example 3: Multiple Imports (Multi-line)
+
+```sox
+import (
+    "math"
+    "string"
+    "array"
+);
+
+print(math.sqrt(16));
+print(string.upper("hello"));
+print(array.length([1, 2, 3]));
+```
+
+### Example 4: Multiple Imports with Aliases
+
+```sox
+import (
+    "math"
+    str "string"
+    arr "array"
+);
+
+print(math.pi);
+print(str.lower("HELLO"));
+print(arr.push([1, 2], 3));
+```
+
+### Example 5: Multiple Imports (Single Line)
+
+```sox
+import ("math", "string", "array");
+```
+
+### Example 6: Relative and Nested Paths
+
+```sox
+import (
+    "./utils/helpers"
+    "lib/math/advanced"
+    geo "lib/geometry/shapes"
+);
+
+helpers.debug("Starting");
+print(advanced.calculate());
+var circle = geo.Circle(5);
+```
+
+### Example 7: Real-World Usage
+
+```sox
+// app.sox
+import (
+    "stdlib/math"
+    "stdlib/string"
+    utils "./utils/helpers"
+    cfg "./config"
+);
+
+fn main() {
+    utils.log("Application started");
+
+    var radius = 10;
+    var area = math.pi * math.pow(radius, 2);
+
+    var message = string.format("Circle area: {}", area);
+    utils.log(message);
+
+    if (cfg.debug) {
+        utils.debug("Debug mode enabled");
+    }
+}
+
+main();
+```
 
 ---
 
 ## Implementation Phases
 
-### Phase 1: Basic Import (Days 1-2)
+### Phase 1: Single Import (Days 1-2)
 
-**Goal:** Single import with implicit name
+**Goal:** Single import with implicit name (no parentheses)
 
 ```sox
 import "math";
@@ -598,9 +838,10 @@ print(math.pi);
 **Tasks:**
 1. Add `TOKEN_IMPORT` to scanner
 2. Add `import_declaration()` to compiler
-3. Add `OP_IMPORT` opcode
-4. Implement basic `load_module()`
-5. Add module cache to VM
+3. Implement `import_single()` for single imports
+4. Add `OP_IMPORT` opcode
+5. Implement basic `load_module()`
+6. Add module cache to VM
 
 **Test:**
 ```sox
@@ -609,9 +850,9 @@ import "math";
 print(math.sqrt(16));  // Should print 4
 ```
 
-### Phase 2: Aliasing (Day 3)
+### Phase 2: Import with Alias (Day 2)
 
-**Goal:** Import with explicit alias
+**Goal:** Single import with explicit alias
 
 ```sox
 import mymath "math";
@@ -626,31 +867,37 @@ print(mymath.pi);
 **Test:**
 ```sox
 // test_alias.sox
-import m "math", s "string";
+import m "math";
 print(m.pi);
-print(s.upper("hello"));
+print(m.sqrt(9));
 ```
 
-### Phase 3: Multiple Imports (Day 4)
+### Phase 3: Multiple Imports with Parentheses (Days 3-4)
 
-**Goal:** Import multiple modules in one statement
+**Goal:** Multiple imports using Go-style parentheses
 
 ```sox
-import "math", "string", "array";
+import (
+    "math"
+    "string"
+);
 ```
 
 **Tasks:**
-1. Update parser to handle comma-separated list
-2. Test mixed implicit/explicit names
-3. Handle errors gracefully
+1. Implement `import_group()` for parenthesized imports
+2. Handle newlines as separators
+3. Support optional commas
+4. Test multi-line and single-line variants
 
 **Test:**
 ```sox
 // test_multiple.sox
-import "math", str "string", "array";
+import (
+    "math"
+    str "string"
+);
 print(math.pi);
 print(str.upper("test"));
-print(array.length([1, 2, 3]));
 ```
 
 ### Phase 4: Path Resolution (Day 5)
@@ -671,9 +918,10 @@ import "mylib/math/advanced";
 **Test:**
 ```sox
 // test_paths.sox
-import "./modules/math";
-import "lib/string/utils";
-import h "helpers";
+import (
+    "./modules/math"
+    "lib/string/utils"
+);
 ```
 
 ### Phase 5: Circular Dependencies (Day 6)
@@ -709,93 +957,6 @@ return Table{"name": "B"};
 
 ---
 
-## Example Use Cases
-
-### Use Case 1: Standard Library
-
-**File: `stdlib/math.sox`**
-```sox
-return Table{
-    "pi": 3.14159265359,
-    "e": 2.71828182846,
-    "sqrt": fn(x) { return x ^ 0.5; },
-    "pow": fn(x, y) { return x ^ y; },
-    "abs": fn(x) { return x < 0 ? -x : x; },
-    "min": fn(a, b) { return a < b ? a : b; },
-    "max": fn(a, b) { return a > b ? a : b; }
-};
-```
-
-**Usage:**
-```sox
-import "stdlib/math";
-
-var result = math.sqrt(144);
-print(result);  // 12
-```
-
-### Use Case 2: Custom Utilities
-
-**File: `./utils/helpers.sox`**
-```sox
-var debug = fn(msg) {
-    print("[DEBUG] " + msg);
-};
-
-var assert = fn(condition, msg) {
-    if (!condition) {
-        print("[ASSERT FAILED] " + msg);
-    }
-};
-
-return Table{
-    "debug": debug,
-    "assert": assert
-};
-```
-
-**Usage:**
-```sox
-import helpers "./utils/helpers";
-
-helpers.debug("Starting application");
-helpers.assert(true, "This should pass");
-```
-
-### Use Case 3: Class Library
-
-**File: `lib/vector.sox`**
-```sox
-class Vector {
-    init(x, y) {
-        this.x = x;
-        this.y = y;
-    }
-
-    add(other) {
-        return Vector(this.x + other.x, this.y + other.y);
-    }
-
-    magnitude() {
-        return (this.x * this.x + this.y * this.y) ^ 0.5;
-    }
-}
-
-return Vector;
-```
-
-**Usage:**
-```sox
-import Vec "lib/vector";
-
-var v1 = Vec(3, 4);
-var v2 = Vec(1, 2);
-var v3 = v1.add(v2);
-print(v3.magnitude());  // 7.071...
-```
-
----
-
 ## Testing Strategy
 
 ### Unit Tests
@@ -827,29 +988,35 @@ MU_TEST(test_circular_dependency) {
 
 ### Integration Tests
 
-**File: `src/test/scripts/test_import.sox`**
+**File: `src/test/scripts/test_import_single.sox`**
 ```sox
-// Test basic import
+// Test single import
 import "test_modules/math";
 print(math.sqrt(16));  // Expected: 4
+```
 
+**File: `src/test/scripts/test_import_alias.sox`**
+```sox
 // Test alias
 import m "test_modules/math";
 print(m.pi);  // Expected: 3.14159
-
-// Test multiple
-import "test_modules/math", s "test_modules/string";
-print(math.sqrt(9));  // Expected: 3
-print(s.upper("hello"));  // Expected: HELLO
 ```
 
-**Expected Output: `src/test/scripts/test_import.sox.out`**
+**File: `src/test/scripts/test_import_multiple.sox`**
+```sox
+// Test multiple imports
+import (
+    "test_modules/math"
+    s "test_modules/string"
+);
+print(math.sqrt(9));        // Expected: 3
+print(s.upper("hello"));    // Expected: HELLO
 ```
-4
-3.14159
-3
-HELLO
-```
+
+**Expected Output Files:**
+- `test_import_single.sox.out`
+- `test_import_alias.sox.out`
+- `test_import_multiple.sox.out`
 
 ---
 
@@ -859,50 +1026,64 @@ HELLO
 
 **File: `docs/modules.md`**
 
-```markdown
+````markdown
 # Sox Module System
 
-Sox supports a Go-style module system with automatic naming and aliasing.
+Sox supports a Go-style module system with automatic naming and clean syntax.
 
-## Basic Import
+## Single Import
 
 Import a module by path:
 
-sox
+```sox
 import "math";
 print(math.pi);
-
+```
 
 The module name is derived from the file path automatically.
 
-## Aliasing
+## Import with Alias
 
 Avoid naming conflicts with aliases:
 
-sox
+```sox
 import mymath "math";
 print(mymath.sqrt(16));
-
+```
 
 ## Multiple Imports
 
-Import multiple modules at once:
+Import multiple modules using parentheses:
 
-sox
-import "math", "string", "array";
-
+```sox
+import (
+    "math"
+    "string"
+    "array"
+);
+```
 
 Mix implicit names and aliases:
 
-sox
-import "math", str "string", arr "array";
+```sox
+import (
+    "math"
+    str "string"
+    arr "array"
+);
+```
 
+Single-line variant (optional commas):
+
+```sox
+import ("math", "string", "array");
+```
 
 ## Creating Modules
 
 A module is a `.sox` file that returns a value:
 
-sox
+```sox
 // mymodule.sox
 var x = 10;
 var y = 20;
@@ -911,29 +1092,55 @@ return Table{
     "sum": x + y,
     "product": x * y
 };
-
+```
 
 Import and use:
 
-sox
+```sox
 import mod "mymodule";
 print(mod.sum);  // 30
-
 ```
+
+## Path Resolution
+
+- Direct path: `"math"` → `math.sox`
+- Relative: `"./utils/helpers"` → `./utils/helpers.sox`
+- Nested: `"lib/math/advanced"` → `lib/math/advanced.sox`
+
+## Module Names
+
+The variable name is derived from the last path component:
+
+- `"math"` → variable `math`
+- `"lib/math"` → variable `math`
+- `"lib/math/advanced"` → variable `advanced`
+````
 
 ---
 
 ## Summary
 
-### Advantages of Go-Style Imports
+### Advantages of This Design
 
-1. ✅ **Clean Syntax**: No manual variable assignment
-2. ✅ **Automatic Naming**: Derive from module path
-3. ✅ **Conflict Resolution**: Optional aliasing
-4. ✅ **Multiple Imports**: Batch imports in one statement
-5. ✅ **Familiar**: Similar to Go, TypeScript, Python
-6. ✅ **Compile-Time**: Static analysis possible
-7. ✅ **Scoped**: Imports create local variables
+1. ✅ **Go-Compatible Syntax**: Nearly identical to Go imports
+2. ✅ **Clean and Minimal**: No unnecessary punctuation
+3. ✅ **Multi-line Support**: Natural formatting for many imports
+4. ✅ **Flexible Separators**: Newlines or commas (or both)
+5. ✅ **Automatic Naming**: Derive from module path
+6. ✅ **Conflict Resolution**: Optional aliasing
+7. ✅ **Compile-Time**: Static analysis possible
+8. ✅ **Scoped**: Imports create local variables
+
+### Syntax Comparison
+
+| Language | Single Import | Multiple Imports |
+|----------|---------------|------------------|
+| **Go** | `import "fmt"` | `import (\n  "fmt"\n  "math"\n)` |
+| **Sox** | `import "fmt";` | `import (\n  "fmt"\n  "math"\n);` |
+| **Python** | `import math` | `import math, sys` |
+| **JavaScript** | `import fmt from "fmt"` | `import { a, b } from "lib"` |
+
+Sox is closest to Go!
 
 ### Implementation Effort
 
@@ -941,28 +1148,33 @@ print(mod.sum);  // 30
 
 | Phase | Days | Description |
 |-------|------|-------------|
-| Basic Import | 2 | Single import with implicit name |
-| Aliasing | 1 | Explicit alias support |
-| Multiple Imports | 1 | Comma-separated imports |
+| Single Import | 2 | Import with implicit name |
+| Aliasing | 0.5 | Explicit alias support |
+| Multiple Imports | 1.5 | Parentheses and multi-line |
 | Path Resolution | 1 | Relative and nested paths |
 | Circular Deps | 1 | Detection and handling |
 | Polish | 1 | Error handling, docs, tests |
 
 ### Key Files to Modify
 
-1. `src/scanner.c` - Add `TOKEN_IMPORT`
-2. `src/compiler.c` - Add `import_declaration()`
-3. `src/vm.c` - Add `OP_IMPORT`, module cache
+1. `src/scanner.c` - Add `TOKEN_IMPORT`, handle newlines
+2. `src/compiler.c` - Add `import_declaration()`, `import_single()`, `import_group()`
+3. `src/vm.c` - Add `OP_IMPORT`, `load_module()`, module cache
 4. `src/lib/file.c` - Add path resolution
 5. `src/chunk.h` - Add `OP_IMPORT` opcode
 
 ---
 
-**Next Steps:**
-1. Review and approve this design
-2. Implement Phase 1 (basic import)
-3. Test and iterate
-4. Complete remaining phases
-5. Write documentation and examples
+## Next Steps
+
+1. ✅ Review and approve this design
+2. Implement Phase 1 (single import)
+3. Implement Phase 2 (aliasing)
+4. Implement Phase 3 (multiple imports with parentheses)
+5. Implement Phase 4 (path resolution)
+6. Implement Phase 5 (circular dependency handling)
+7. Implement Phase 6 (polish and documentation)
+8. Write comprehensive tests
+9. Update README and documentation
 
 **Status:** Ready for Implementation ✅
