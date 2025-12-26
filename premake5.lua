@@ -106,7 +106,7 @@ project "sox"
       --  "ext/tracy"
     }
 
-  if (system == linux) then
+  filter "system:linux"
     libdirs {
       os.findlib("m"),
       os.findlib("c")
@@ -117,19 +117,16 @@ project "sox"
       "m",
       "pthread",
     }
-  end
 
-  if (system == macosx) then
+  filter "system:macosx"
     links {
       "Cocoa.framework",
       "IOKit.framework",
       "c",
       --  "tracy",
     }
-  end
 
-  if (system == windows) then
-  
+  filter "system:windows"
     defines {
       "_CRT_SECURE_NO_WARNINGS"
     }
@@ -144,7 +141,7 @@ project "sox"
       "ext/winstd"
     }
 
-  end
+  filter {}
    --  filter "files:src/main.c"
    --    compileas "Objective-C"
 
@@ -190,16 +187,15 @@ project "test"
     "src/native/runtime.c"
   }
 
-  if (system == macosx) then
+  filter "system:macosx"
     links {
       "c"
     }
     linkoptions {
       "-rpath", "@loader_path"
     }
-  end
 
-  if (system == linux) then
+  filter "system:linux"
     libdirs {
       os.findlib("m"),
       os.findlib("c")
@@ -209,9 +205,8 @@ project "test"
       "m",
       "pthread",
     }
-  end
 
-  if (system == windows) then
+  filter "system:windows"
     defines {
       "_CRT_SECURE_NO_WARNINGS"
     }
@@ -226,7 +221,8 @@ project "test"
     sysincludedirs {
       "ext/winstd"
     }
-  end
+
+  filter {}
 
 -- External Libraries
 
