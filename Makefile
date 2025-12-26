@@ -106,7 +106,7 @@ build-wasm-verify:
 	@echo "Building wazero WASM verification library..."
 	make -C wasm_verify all
 
-build-test: gen build-wasm-verify
+build-test: gen build-wasm-verify build-runtime-libs
 ifeq (${THIS_OS},windows)
 	msbuild.exe ./projects/${PROJECT_NAME}.sln -p:Platform="windows";Configuration=Debug -target:test
 endif
@@ -115,6 +115,15 @@ ifeq (${THIS_OS},darwin)
 endif
 ifeq (${THIS_OS},linux)
 	make -C projects test config=debug_linux64
+endif
+
+build-runtime-libs:
+ifeq (${THIS_OS},darwin)
+	xcodebuild -configuration "Debug" ARCHS="arm64" -destination 'platform=macOS' -project "projects/sox_runtime.xcodeproj" -target sox_runtime
+	xcodebuild -configuration "Debug" ARCHS="arm64" -destination 'platform=macOS' -project "projects/sox_runtime_shared.xcodeproj" -target sox_runtime_shared
+endif
+ifeq (${THIS_OS},linux)
+	make -C projects sox_runtime sox_runtime_shared config=debug_linux64
 endif
 
 build-release: gen binary-release post-build

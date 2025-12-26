@@ -159,11 +159,20 @@ project "test"
     "wasm_verify"
   }
 
-  -- Ensure runtime libraries are built before test (needed for native compilation tests)
-  dependson {
-    "sox_runtime",
-    "sox_runtime_shared"
-  }
+  -- On macOS, explicitly add runtime libraries to build order
+  filter "system:macosx"
+    dependson {
+      "sox_runtime",
+      "sox_runtime_shared"
+    }
+
+  filter "system:linux"
+    dependson {
+      "sox_runtime",
+      "sox_runtime_shared"
+    }
+
+  filter {}
 
   libdirs {
     "build"
