@@ -1,0 +1,52 @@
+// test_string.sox - Test string module
+print("=== String Module Test ===")
+
+import "modules/string_utils"
+
+// Test upper/lower
+print("Testing upper/lower...")
+var upper = string_utils.upper("hello")
+print(upper)
+
+var lower = string_utils.lower("WORLD")
+print(lower)
+
+// Test trim
+print("Testing trim...")
+var trimmed = string_utils.trim("  spaces  ")
+print(trimmed)
+
+// Test indexOf
+print("Testing indexOf...")
+var idx = string_utils.indexOf("hello world", "world")
+print(idx)
+
+// Test substring
+print("Testing substring...")
+var sub = string_utils.substring("hello", 1, 4)
+print(sub)
+
+// Test replace
+print("Testing replace...")
+var replaced = string_utils.replace("hello world", "world", "sox")
+print(replaced)
+
+// Test split
+print("Testing split...")
+var parts = string_utils.split("a,b,c", ",")
+print("Length: ")
+print(len(parts))
+print("Parts:")
+print(parts[0])
+print(parts[1])
+print(parts[2])
+
+// Test startsWith/endsWith
+print("Testing startsWith/endsWith...")
+var starts = string_utils.startsWith("hello", "hel")
+print(starts)
+
+var ends = string_utils.endsWith("hello", "llo")
+print(ends)
+
+print("String tests complete!")

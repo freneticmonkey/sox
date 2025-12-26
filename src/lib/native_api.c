@@ -2,6 +2,9 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <ctype.h>
+#include <stdlib.h>
+#include <math.h>
 
 #include "lib/native_api.h"
 
@@ -129,6 +132,475 @@ static value_t _type(int argCount, value_t* args) {
     return OBJ_VAL(l_new_error(msg, NULL));
 }
 
+// String functions
+static value_t _string_upper(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("stringUpper(): invalid parameter count"));
+    }
+    if (!IS_STRING(args[0])) {
+        return OBJ_VAL(_native_error("stringUpper(): parameter must be a string"));
+    }
+    obj_string_t* str = AS_STRING(args[0]);
+    char* result = malloc(str->length + 1);
+    if (result == NULL) {
+        return OBJ_VAL(_native_error("stringUpper(): memory allocation failed"));
+    }
+    for (size_t i = 0; i < str->length; i++) {
+        result[i] = toupper((unsigned char)str->chars[i]);
+    }
+    result[str->length] = '\0';
+    return OBJ_VAL(l_take_string(result, str->length));
+}
+
+static value_t _string_lower(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("stringLower(): invalid parameter count"));
+    }
+    if (!IS_STRING(args[0])) {
+        return OBJ_VAL(_native_error("stringLower(): parameter must be a string"));
+    }
+    obj_string_t* str = AS_STRING(args[0]);
+    char* result = malloc(str->length + 1);
+    if (result == NULL) {
+        return OBJ_VAL(_native_error("stringLower(): memory allocation failed"));
+    }
+    for (size_t i = 0; i < str->length; i++) {
+        result[i] = tolower((unsigned char)str->chars[i]);
+    }
+    result[str->length] = '\0';
+    return OBJ_VAL(l_take_string(result, str->length));
+}
+
+static value_t _string_trim(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("stringTrim(): invalid parameter count"));
+    }
+    if (!IS_STRING(args[0])) {
+        return OBJ_VAL(_native_error("stringTrim(): parameter must be a string"));
+    }
+    obj_string_t* str = AS_STRING(args[0]);
+    const char* start = str->chars;
+    const char* end = str->chars + str->length - 1;
+
+    while (start <= end && isspace((unsigned char)*start)) {
+        start++;
+    }
+    while (end > start && isspace((unsigned char)*end)) {
+        end--;
+    }
+
+    size_t new_length = end - start + 1;
+    return OBJ_VAL(l_copy_string(start, new_length));
+}
+
+static value_t _string_index_of(int argCount, value_t* args) {
+    if (argCount != 2) {
+        return OBJ_VAL(_native_error("stringIndexOf(): invalid parameter count"));
+    }
+    if (!IS_STRING(args[0]) || !IS_STRING(args[1])) {
+        return OBJ_VAL(_native_error("stringIndexOf(): both parameters must be strings"));
+    }
+    obj_string_t* haystack = AS_STRING(args[0]);
+    obj_string_t* needle = AS_STRING(args[1]);
+
+    const char* found = strstr(haystack->chars, needle->chars);
+    if (found == NULL) {
+        return NUMBER_VAL(-1);
+    }
+    return NUMBER_VAL(found - haystack->chars);
+}
+
+static value_t _string_substring(int argCount, value_t* args) {
+    if (argCount < 2 || argCount > 3) {
+        return OBJ_VAL(_native_error("stringSubstring(): requires 2 or 3 parameters"));
+    }
+    if (!IS_STRING(args[0]) || !IS_NUMBER(args[1])) {
+        return OBJ_VAL(_native_error("stringSubstring(): invalid parameter types"));
+    }
+
+    obj_string_t* str = AS_STRING(args[0]);
+    int start = (int)AS_NUMBER(args[1]);
+    int end = str->length;
+
+    if (argCount == 3) {
+        if (!IS_NUMBER(args[2])) {
+            return OBJ_VAL(_native_error("stringSubstring(): end parameter must be a number"));
+        }
+        end = (int)AS_NUMBER(args[2]);
+    }
+
+    if (start < 0) start = 0;
+    if (end > (int)str->length) end = str->length;
+    if (start >= end) return OBJ_VAL(l_copy_string("", 0));
+
+    return OBJ_VAL(l_copy_string(str->chars + start, end - start));
+}
+
+static value_t _string_replace(int argCount, value_t* args) {
+    if (argCount != 3) {
+        return OBJ_VAL(_native_error("stringReplace(): requires 3 parameters"));
+    }
+    if (!IS_STRING(args[0]) || !IS_STRING(args[1]) || !IS_STRING(args[2])) {
+        return OBJ_VAL(_native_error("stringReplace(): all parameters must be strings"));
+    }
+
+    obj_string_t* str = AS_STRING(args[0]);
+    obj_string_t* old = AS_STRING(args[1]);
+    obj_string_t* new = AS_STRING(args[2]);
+
+    if (old->length == 0) {
+        return args[0];
+    }
+
+    const char* pos = strstr(str->chars, old->chars);
+    if (pos == NULL) {
+        return args[0];
+    }
+
+    size_t prefix_len = pos - str->chars;
+    size_t suffix_len = str->length - prefix_len - old->length;
+    size_t new_length = prefix_len + new->length + suffix_len;
+
+    char* result = malloc(new_length + 1);
+    if (result == NULL) {
+        return OBJ_VAL(_native_error("stringReplace(): memory allocation failed"));
+    }
+
+    memcpy(result, str->chars, prefix_len);
+    memcpy(result + prefix_len, new->chars, new->length);
+    memcpy(result + prefix_len + new->length, pos + old->length, suffix_len);
+    result[new_length] = '\0';
+
+    return OBJ_VAL(l_take_string(result, new_length));
+}
+
+static value_t _string_starts_with(int argCount, value_t* args) {
+    if (argCount != 2) {
+        return OBJ_VAL(_native_error("stringStartsWith(): requires 2 parameters"));
+    }
+    if (!IS_STRING(args[0]) || !IS_STRING(args[1])) {
+        return OBJ_VAL(_native_error("stringStartsWith(): both parameters must be strings"));
+    }
+
+    obj_string_t* str = AS_STRING(args[0]);
+    obj_string_t* prefix = AS_STRING(args[1]);
+
+    if (prefix->length > str->length) {
+        return BOOL_VAL(false);
+    }
+
+    return BOOL_VAL(memcmp(str->chars, prefix->chars, prefix->length) == 0);
+}
+
+static value_t _string_ends_with(int argCount, value_t* args) {
+    if (argCount != 2) {
+        return OBJ_VAL(_native_error("stringEndsWith(): requires 2 parameters"));
+    }
+    if (!IS_STRING(args[0]) || !IS_STRING(args[1])) {
+        return OBJ_VAL(_native_error("stringEndsWith(): both parameters must be strings"));
+    }
+
+    obj_string_t* str = AS_STRING(args[0]);
+    obj_string_t* suffix = AS_STRING(args[1]);
+
+    if (suffix->length > str->length) {
+        return BOOL_VAL(false);
+    }
+
+    const char* start = str->chars + str->length - suffix->length;
+    return BOOL_VAL(memcmp(start, suffix->chars, suffix->length) == 0);
+}
+
+static value_t _string_split(int argCount, value_t* args) {
+    if (argCount != 2) {
+        return OBJ_VAL(_native_error("stringSplit(): requires 2 parameters"));
+    }
+    if (!IS_STRING(args[0]) || !IS_STRING(args[1])) {
+        return OBJ_VAL(_native_error("stringSplit(): both parameters must be strings"));
+    }
+
+    obj_string_t* str = AS_STRING(args[0]);
+    obj_string_t* delim = AS_STRING(args[1]);
+    obj_array_t* result = l_new_array();
+
+    if (delim->length == 0) {
+        l_push_array(result, args[0]);
+        return OBJ_VAL(result);
+    }
+
+    const char* current = str->chars;
+    const char* end = str->chars + str->length;
+
+    while (current < end) {
+        const char* pos = strstr(current, delim->chars);
+        if (pos == NULL) {
+            size_t len = end - current;
+            l_push_array(result, OBJ_VAL(l_copy_string(current, len)));
+            break;
+        }
+
+        size_t len = pos - current;
+        l_push_array(result, OBJ_VAL(l_copy_string(current, len)));
+        current = pos + delim->length;
+    }
+
+    return OBJ_VAL(result);
+}
+
+// Math functions
+static value_t _math_sqrt(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("mathSqrt(): invalid parameter count"));
+    }
+    if (!IS_NUMBER(args[0])) {
+        return OBJ_VAL(_native_error("mathSqrt(): parameter must be a number"));
+    }
+    double value = AS_NUMBER(args[0]);
+    if (value < 0) {
+        return OBJ_VAL(_native_error("mathSqrt(): cannot take square root of negative number"));
+    }
+    return NUMBER_VAL(sqrt(value));
+}
+
+static value_t _math_pow(int argCount, value_t* args) {
+    if (argCount != 2) {
+        return OBJ_VAL(_native_error("mathPow(): requires 2 parameters"));
+    }
+    if (!IS_NUMBER(args[0]) || !IS_NUMBER(args[1])) {
+        return OBJ_VAL(_native_error("mathPow(): both parameters must be numbers"));
+    }
+    return NUMBER_VAL(pow(AS_NUMBER(args[0]), AS_NUMBER(args[1])));
+}
+
+static value_t _math_floor(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("mathFloor(): invalid parameter count"));
+    }
+    if (!IS_NUMBER(args[0])) {
+        return OBJ_VAL(_native_error("mathFloor(): parameter must be a number"));
+    }
+    return NUMBER_VAL(floor(AS_NUMBER(args[0])));
+}
+
+static value_t _math_ceil(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("mathCeil(): invalid parameter count"));
+    }
+    if (!IS_NUMBER(args[0])) {
+        return OBJ_VAL(_native_error("mathCeil(): parameter must be a number"));
+    }
+    return NUMBER_VAL(ceil(AS_NUMBER(args[0])));
+}
+
+static value_t _math_round(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("mathRound(): invalid parameter count"));
+    }
+    if (!IS_NUMBER(args[0])) {
+        return OBJ_VAL(_native_error("mathRound(): parameter must be a number"));
+    }
+    return NUMBER_VAL(round(AS_NUMBER(args[0])));
+}
+
+static value_t _math_sin(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("mathSin(): invalid parameter count"));
+    }
+    if (!IS_NUMBER(args[0])) {
+        return OBJ_VAL(_native_error("mathSin(): parameter must be a number"));
+    }
+    return NUMBER_VAL(sin(AS_NUMBER(args[0])));
+}
+
+static value_t _math_cos(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("mathCos(): invalid parameter count"));
+    }
+    if (!IS_NUMBER(args[0])) {
+        return OBJ_VAL(_native_error("mathCos(): parameter must be a number"));
+    }
+    return NUMBER_VAL(cos(AS_NUMBER(args[0])));
+}
+
+static value_t _math_tan(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("mathTan(): invalid parameter count"));
+    }
+    if (!IS_NUMBER(args[0])) {
+        return OBJ_VAL(_native_error("mathTan(): parameter must be a number"));
+    }
+    return NUMBER_VAL(tan(AS_NUMBER(args[0])));
+}
+
+static value_t _math_random(int argCount, value_t* args) {
+    if (argCount != 0) {
+        return OBJ_VAL(_native_error("mathRandom(): takes no parameters"));
+    }
+    return NUMBER_VAL((double)rand() / RAND_MAX);
+}
+
+static value_t _math_random_int(int argCount, value_t* args) {
+    if (argCount != 2) {
+        return OBJ_VAL(_native_error("mathRandomInt(): requires 2 parameters"));
+    }
+    if (!IS_NUMBER(args[0]) || !IS_NUMBER(args[1])) {
+        return OBJ_VAL(_native_error("mathRandomInt(): both parameters must be numbers"));
+    }
+    int min = (int)AS_NUMBER(args[0]);
+    int max = (int)AS_NUMBER(args[1]);
+    if (min > max) {
+        return OBJ_VAL(_native_error("mathRandomInt(): min must be <= max"));
+    }
+    return NUMBER_VAL(min + rand() % (max - min + 1));
+}
+
+// Array functions
+static value_t _array_slice(int argCount, value_t* args) {
+    if (argCount < 2 || argCount > 3) {
+        return OBJ_VAL(_native_error("arraySlice(): requires 2 or 3 parameters"));
+    }
+    if (!IS_ARRAY(args[0])) {
+        return OBJ_VAL(_native_error("arraySlice(): first parameter must be an array"));
+    }
+    if (!IS_NUMBER(args[1])) {
+        return OBJ_VAL(_native_error("arraySlice(): start index must be a number"));
+    }
+
+    obj_array_t* source = AS_ARRAY(args[0]);
+    int start = (int)AS_NUMBER(args[1]);
+    int end = source->values.count;
+
+    if (argCount == 3) {
+        if (!IS_NUMBER(args[2])) {
+            return OBJ_VAL(_native_error("arraySlice(): end index must be a number"));
+        }
+        end = (int)AS_NUMBER(args[2]);
+    }
+
+    if (start < 0) start = 0;
+    if (end > source->values.count) end = source->values.count;
+    if (start >= end) return OBJ_VAL(l_new_array());
+
+    return OBJ_VAL(l_copy_array(source, start, end));
+}
+
+static value_t _array_reverse(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("arrayReverse(): requires 1 parameter"));
+    }
+    if (!IS_ARRAY(args[0])) {
+        return OBJ_VAL(_native_error("arrayReverse(): parameter must be an array"));
+    }
+
+    obj_array_t* source = AS_ARRAY(args[0]);
+    obj_array_t* result = l_new_array();
+
+    for (int i = source->values.count - 1; i >= 0; i--) {
+        l_push_array(result, source->values.values[i]);
+    }
+
+    return OBJ_VAL(result);
+}
+
+static value_t _array_index_of(int argCount, value_t* args) {
+    if (argCount != 2) {
+        return OBJ_VAL(_native_error("arrayIndexOf(): requires 2 parameters"));
+    }
+    if (!IS_ARRAY(args[0])) {
+        return OBJ_VAL(_native_error("arrayIndexOf(): first parameter must be an array"));
+    }
+
+    obj_array_t* arr = AS_ARRAY(args[0]);
+    value_t search = args[1];
+
+    for (int i = 0; i < arr->values.count; i++) {
+        value_t elem = arr->values.values[i];
+
+        if (elem.type == search.type) {
+            if (IS_NUMBER(elem) && IS_NUMBER(search)) {
+                if (AS_NUMBER(elem) == AS_NUMBER(search)) {
+                    return NUMBER_VAL(i);
+                }
+            } else if (IS_BOOL(elem) && IS_BOOL(search)) {
+                if (AS_BOOL(elem) == AS_BOOL(search)) {
+                    return NUMBER_VAL(i);
+                }
+            } else if (IS_NIL(elem) && IS_NIL(search)) {
+                return NUMBER_VAL(i);
+            } else if (IS_OBJ(elem) && IS_OBJ(search)) {
+                if (AS_OBJ(elem) == AS_OBJ(search)) {
+                    return NUMBER_VAL(i);
+                }
+            }
+        }
+    }
+
+    return NUMBER_VAL(-1);
+}
+
+static value_t _array_contains(int argCount, value_t* args) {
+    if (argCount != 2) {
+        return OBJ_VAL(_native_error("arrayContains(): requires 2 parameters"));
+    }
+
+    value_t index = _array_index_of(argCount, args);
+    if (IS_NUMBER(index)) {
+        return BOOL_VAL(AS_NUMBER(index) >= 0);
+    }
+    return BOOL_VAL(false);
+}
+
+static value_t _array_join(int argCount, value_t* args) {
+    if (argCount != 2) {
+        return OBJ_VAL(_native_error("arrayJoin(): requires 2 parameters"));
+    }
+    if (!IS_ARRAY(args[0])) {
+        return OBJ_VAL(_native_error("arrayJoin(): first parameter must be an array"));
+    }
+    if (!IS_STRING(args[1])) {
+        return OBJ_VAL(_native_error("arrayJoin(): separator must be a string"));
+    }
+
+    obj_array_t* arr = AS_ARRAY(args[0]);
+    obj_string_t* sep = AS_STRING(args[1]);
+
+    if (arr->values.count == 0) {
+        return OBJ_VAL(l_copy_string("", 0));
+    }
+
+    size_t total_length = 0;
+    for (int i = 0; i < arr->values.count; i++) {
+        if (IS_STRING(arr->values.values[i])) {
+            total_length += AS_STRING(arr->values.values[i])->length;
+        }
+        if (i < arr->values.count - 1) {
+            total_length += sep->length;
+        }
+    }
+
+    char* result = malloc(total_length + 1);
+    if (result == NULL) {
+        return OBJ_VAL(_native_error("arrayJoin(): memory allocation failed"));
+    }
+
+    size_t pos = 0;
+    for (int i = 0; i < arr->values.count; i++) {
+        if (IS_STRING(arr->values.values[i])) {
+            obj_string_t* str = AS_STRING(arr->values.values[i]);
+            memcpy(result + pos, str->chars, str->length);
+            pos += str->length;
+        }
+
+        if (i < arr->values.count - 1) {
+            memcpy(result + pos, sep->chars, sep->length);
+            pos += sep->length;
+        }
+    }
+    result[pos] = '\0';
+
+    return OBJ_VAL(l_take_string(result, pos));
+}
+
 void l_table_add_native() {
     l_vm_define_native("Table", _new_table);
 
@@ -149,6 +621,36 @@ void l_table_add_native() {
     l_vm_define_native("pop", _pop);
 
     l_vm_define_native("type", _type);
+
+    // String functions
+    l_vm_define_native("stringUpper", _string_upper);
+    l_vm_define_native("stringLower", _string_lower);
+    l_vm_define_native("stringTrim", _string_trim);
+    l_vm_define_native("stringIndexOf", _string_index_of);
+    l_vm_define_native("stringSubstring", _string_substring);
+    l_vm_define_native("stringReplace", _string_replace);
+    l_vm_define_native("stringStartsWith", _string_starts_with);
+    l_vm_define_native("stringEndsWith", _string_ends_with);
+    l_vm_define_native("stringSplit", _string_split);
+
+    // Math functions
+    l_vm_define_native("mathSqrt", _math_sqrt);
+    l_vm_define_native("mathPow", _math_pow);
+    l_vm_define_native("mathFloor", _math_floor);
+    l_vm_define_native("mathCeil", _math_ceil);
+    l_vm_define_native("mathRound", _math_round);
+    l_vm_define_native("mathSin", _math_sin);
+    l_vm_define_native("mathCos", _math_cos);
+    l_vm_define_native("mathTan", _math_tan);
+    l_vm_define_native("mathRandom", _math_random);
+    l_vm_define_native("mathRandomInt", _math_random_int);
+
+    // Array functions
+    l_vm_define_native("arraySlice", _array_slice);
+    l_vm_define_native("arrayReverse", _array_reverse);
+    l_vm_define_native("arrayIndexOf", _array_index_of);
+    l_vm_define_native("arrayContains", _array_contains);
+    l_vm_define_native("arrayJoin", _array_join);
 
     // native functions
     l_vm_define_native("clock", _clock_native);

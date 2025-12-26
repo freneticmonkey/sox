@@ -1,0 +1,98 @@
+// test_array.sox - Test array module
+print("=== Array Module Test ===")
+
+import "modules/array"
+
+// Create array using empty array syntax and push elements
+var arr []
+push(arr, 1)
+push(arr, 2)
+push(arr, 3)
+push(arr, 4)
+push(arr, 5)
+
+// Test map
+print("Testing map...")
+fn double(x) {
+    return x * 2
+}
+var doubled = array.map(arr, double)
+print("Doubled: ")
+var i = 0
+while (i < len(doubled)) {
+    print(doubled[i])
+    i = i + 1
+}
+
+// Test filter
+print("Testing filter...")
+fn isEven(x) {
+    return x / 2 * 2 == x
+}
+var evens = array.filter(arr, isEven)
+print("Evens: ")
+i = 0
+while (i < len(evens)) {
+    print(evens[i])
+    i = i + 1
+}
+
+// Test reduce
+print("Testing reduce...")
+fn add(acc, x) {
+    return acc + x
+}
+var sum = array.reduce(arr, add, 0)
+print("Sum: ")
+print(sum)
+
+// Test slice
+print("Testing slice...")
+var sliced = array.slice(arr, 1, 4)
+print("Sliced: ")
+i = 0
+while (i < len(sliced)) {
+    print(sliced[i])
+    i = i + 1
+}
+
+// Test reverse
+print("Testing reverse...")
+var reversed = array.reverse(arr)
+print("Reversed: ")
+i = 0
+while (i < len(reversed)) {
+    print(reversed[i])
+    i = i + 1
+}
+
+// Test indexOf
+print("Testing indexOf...")
+var idx = array.indexOf(arr, 3)
+print("Index of 3: ")
+print(idx)
+
+// Test contains
+print("Testing contains...")
+var has3 = array.contains(arr, 3)
+print("Contains 3: ")
+print(has3)
+
+// Test first/last
+print("Testing first/last...")
+print("First: ")
+print(array.first(arr))
+print("Last: ")
+print(array.last(arr))
+
+// Test join with strings
+print("Testing join...")
+var strArr []
+push(strArr, "hello")
+push(strArr, "world")
+push(strArr, "sox")
+var joined = array.join(strArr, " ")
+print("Joined: ")
+print(joined)
+
+print("Array tests complete!")
