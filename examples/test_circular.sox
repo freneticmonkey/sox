@@ -1,0 +1,14 @@
+// test_circular.sox - Test circular dependency detection
+
+print("=== Testing Circular Dependency Detection ===")
+print("")
+
+print("Attempting to import module A...")
+print("(Module A imports Module B, which imports Module A)")
+print("")
+
+// This should trigger a circular import error
+import "circular_a"
+
+print("If you see this, circular dependency detection failed!")
+print(circular_a.message)

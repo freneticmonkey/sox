@@ -26,6 +26,7 @@ typedef struct {
     size_t   stack_top_count;
     table_t  globals;
     table_t  strings;
+    table_t  modules;
     obj_upvalue_t* open_upvalues;
     obj_string_t*  init_string;
 

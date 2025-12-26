@@ -1,0 +1,44 @@
+// test_imports.sox - Test file for the Go-style module system
+// This demonstrates importing and using modules in Sox
+
+print("=== Sox Module System Demo ===")
+print("")
+
+// Import the math module
+print("Importing math module...")
+import "modules/math"
+
+print("Testing math module functions:")
+print("  math.pi = ")
+print(math.pi)
+
+print("  math.sqrt(16) = ")
+print(math.sqrt(16))
+
+print("  math.square(5) = ")
+print(math.square(5))
+
+print("  math.abs(-42) = ")
+print(math.abs(-42))
+
+print("  math.max(10, 20) = ")
+print(math.max(10, 20))
+
+print("  math.min(10, 20) = ")
+print(math.min(10, 20))
+
+print("  math.pow(2, 8) = ")
+print(math.pow(2, 8))
+
+print("")
+
+// Import the string utilities module
+print("Importing string_utils module...")
+import "modules/string_utils"
+
+print("Testing string_utils module:")
+print("  string_utils.repeat('Ha', 3) = ")
+print(string_utils.repeat("Ha", 3))
+
+print("")
+print("=== Module System Test Complete ===")
