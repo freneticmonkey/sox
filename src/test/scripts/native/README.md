@@ -40,20 +40,24 @@ This script will:
 | `variables.sox` | Variable assignment and access | ✅ PASS |
 | `multiple_vars.sox` | Multiple variables with operations | ✅ PASS |
 | `comparisons.sox` | Comparison operators (==, !=, <, >) | ✅ PASS |
-| `logic.sox` | Logical operators (and, or, not) | ❌ TIMEOUT |
+| `logic.sox` | Logical operators (and, or, not) | ✅ PASS |
 | `strings.sox` | String constant printing | ❌ TIMEOUT |
 
 ## Known Issues
 
-### logic.sox - Logical Operators Timeout
-The `and` and `or` operators cause native binaries to hang during execution. This is a known bug in the logical operator implementation for native code generation.
-
-**Status**: Bug identified, fix pending
-
 ### strings.sox - String Constants Timeout
-String constant handling in native code causes execution timeouts. This is likely related to object/string allocation in the native runtime.
+String constant handling in native code causes execution timeouts. The issue occurs in `sox_native_print` when attempting to print object values (strings). The runtime hangs when processing string objects.
 
 **Status**: Bug identified, fix pending
+
+**Root Cause**: The IR builder was not properly tracking jump targets and creating basic blocks for jumps. Jump labels were allocated but never associated with actual code blocks, causing jumps to invalid addresses.
+
+**Fix Applied (2025-12-26)**: Implemented two-pass IR building:
+1. First pass scans bytecode to identify all jump targets and pre-allocates labels
+2. Second pass builds IR using pre-allocated labels and creates new basic blocks at jump target positions
+3. Jump instructions now correctly reference actual code locations
+
+This fix resolved the logical operators (`and`, `or`) timeout issue. Logical operators use short-circuit evaluation with conditional jumps, which now work correctly.
 
 ## Adding New Tests
 

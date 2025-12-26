@@ -111,9 +111,73 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
     ir_builder_ensure_locals(builder, ir_func->local_count);
 
     chunk_t* chunk = &function->chunk;
+
+    // PASS 1: Identify all jump targets and create labels for them
+    int* offset_to_label = (int*)l_mem_alloc(sizeof(int) * chunk->count);
+    for (int i = 0; i < chunk->count; i++) {
+        offset_to_label[i] = -1;  // -1 means not a jump target
+    }
+
+    int scan_ip = 0;
+    while (scan_ip < chunk->count) {
+        uint8_t instruction = chunk->code[scan_ip];
+        scan_ip++;
+
+        switch (instruction) {
+            case OP_JUMP:
+            case OP_JUMP_IF_FALSE: {
+                uint16_t offset = (chunk->code[scan_ip] << 8) | chunk->code[scan_ip + 1];
+                scan_ip += 2;
+                int target = scan_ip + offset;
+                if (target < chunk->count && offset_to_label[target] == -1) {
+                    offset_to_label[target] = ir_function_alloc_label(ir_func);
+                }
+                break;
+            }
+            case OP_LOOP: {
+                uint16_t offset = (chunk->code[scan_ip] << 8) | chunk->code[scan_ip + 1];
+                scan_ip += 2;
+                int target = scan_ip - offset;
+                if (target >= 0 && target < chunk->count && offset_to_label[target] == -1) {
+                    offset_to_label[target] = ir_function_alloc_label(ir_func);
+                }
+                break;
+            }
+            case OP_CONSTANT:
+            case OP_GET_LOCAL:
+            case OP_SET_LOCAL:
+            case OP_GET_GLOBAL:
+            case OP_DEFINE_GLOBAL:
+            case OP_SET_GLOBAL:
+            case OP_GET_UPVALUE:
+            case OP_SET_UPVALUE:
+            case OP_GET_PROPERTY:
+            case OP_SET_PROPERTY:
+            case OP_CLASS:
+                scan_ip++; // These have 1-byte operands
+                break;
+            case OP_CALL:
+                scan_ip++; // CALL has arg count
+                break;
+            default:
+                break; // Other instructions have no operands
+        }
+    }
+
+    // PASS 2: Build IR
     int ip = 0;
 
     while (ip < chunk->count) {
+        // Check if this position is a jump target - start new block if so
+        if (offset_to_label[ip] != -1 && builder->current_block->first != NULL) {
+            // We need to start a new block
+            ir_block_t* new_block = ir_function_new_block(ir_func);
+            new_block->label = offset_to_label[ip];
+            builder->current_block = new_block;
+        } else if (offset_to_label[ip] != -1) {
+            // This is the first block and it's a jump target - assign the label
+            builder->current_block->label = offset_to_label[ip];
+        }
         uint8_t instruction = chunk->code[ip];
         int line = chunk->lines[ip];
         ip++;
@@ -367,10 +431,15 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
             case OP_JUMP: {
                 uint16_t offset = (chunk->code[ip] << 8) | chunk->code[ip + 1];
                 ip += 2;
-                int target_label = ir_function_alloc_label(ir_func);
+                int target_offset = ip + offset;
+                int target_label = offset_to_label[target_offset];
                 ir_value_t target = ir_value_label(target_label);
                 ir_builder_emit_unary(builder, IR_JUMP, (ir_value_t){0}, target);
-                // Note: Would need to track jump targets and create blocks
+                // After a jump, if there's more code, start a new block
+                if (ip < chunk->count && offset_to_label[ip] == -1) {
+                    ir_block_t* new_block = ir_function_new_block(ir_func);
+                    builder->current_block = new_block;
+                }
                 break;
             }
 
@@ -378,18 +447,26 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
                 uint16_t offset = (chunk->code[ip] << 8) | chunk->code[ip + 1];
                 ip += 2;
                 ir_value_t condition = ir_builder_pop(builder);
-                int target_label = ir_function_alloc_label(ir_func);
+                int target_offset = ip + offset;
+                int target_label = offset_to_label[target_offset];
                 ir_value_t target = ir_value_label(target_label);
                 ir_builder_emit_binary(builder, IR_BRANCH, (ir_value_t){0}, condition, target);
+                // After a conditional branch, continue in same block (fall-through)
                 break;
             }
 
             case OP_LOOP: {
                 uint16_t offset = (chunk->code[ip] << 8) | chunk->code[ip + 1];
                 ip += 2;
-                int target_label = ir_function_alloc_label(ir_func);
+                int target_offset = ip - offset;
+                int target_label = offset_to_label[target_offset];
                 ir_value_t target = ir_value_label(target_label);
                 ir_builder_emit_unary(builder, IR_JUMP, (ir_value_t){0}, target);
+                // After a loop jump, if there's more code, start a new block
+                if (ip < chunk->count && offset_to_label[ip] == -1) {
+                    ir_block_t* new_block = ir_function_new_block(ir_func);
+                    builder->current_block = new_block;
+                }
                 break;
             }
 
@@ -450,6 +527,9 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
             }
         }
     }
+
+    // Clean up
+    l_mem_free(offset_to_label, sizeof(int) * chunk->count);
 
     return ir_func;
 }
