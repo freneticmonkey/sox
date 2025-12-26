@@ -11,4 +11,7 @@ char* l_read_file(const char* path);
 bool  l_file_exists(const char * path);
 bool  l_file_delete(const char * path);
 
+// Module path resolution
+char* l_resolve_module_path(const char* module_path);
+
 #endif

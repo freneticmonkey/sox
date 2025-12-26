@@ -1,0 +1,49 @@
+// test_mixed_imports.sox - Test mixed aliases and implicit names in multi-import
+
+print("=== Testing Mixed Aliases and Implicit Names ===")
+print("")
+
+// Multi-line import with mixed aliases and implicit names
+print("1. Multi-line import with mixed aliases:")
+print("   import (")
+print("       sm \"simple_module\"")
+print("       \"modules/math\"")
+print("       utils \"modules/string_utils\"")
+print("   )")
+print("")
+
+import (
+    sm "simple_module"
+    "modules/math"
+    utils "modules/string_utils"
+)
+
+print("  sm.message (aliased simple_module) = ")
+print(sm.message)
+
+print("  math.pi (implicit name) = ")
+print(math.pi)
+
+print("  utils.greeting (aliased string_utils) = ")
+print(utils.greeting)
+
+print("")
+print("2. Testing all three with function calls:")
+
+print("  sm.add(100, 200) = ")
+print(sm.add(100, 200))
+
+print("  math.sqrt(16) = ")
+print(math.sqrt(16))
+
+print("  utils.lower(\"WORLD\") = ")
+print(utils.lower("WORLD"))
+
+print("")
+print("3. Demonstrating Go-style flexibility:")
+print("   - Some imports use aliases to avoid conflicts")
+print("   - Others use implicit names from the path")
+print("   - All can coexist in the same import statement")
+
+print("")
+print("=== Mixed Import Test Complete ===")

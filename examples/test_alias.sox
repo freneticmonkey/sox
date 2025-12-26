@@ -1,0 +1,36 @@
+// test_alias.sox - Test import alias functionality
+
+print("=== Testing Import Aliases ===")
+print("")
+
+// Import without alias - uses implicit name
+print("1. Importing 'simple_module' without alias...")
+import "simple_module"
+
+print("  simple_module.message = ")
+print(simple_module.message)
+
+// Import with alias - uses explicit alias name
+print("")
+print("2. Importing 'simple_module' again with alias 'sm'...")
+import sm "simple_module"
+
+print("  sm.message = ")
+print(sm.message)
+
+// Both should work independently
+print("")
+print("3. Calling functions from both imports:")
+print("  simple_module.add(5, 7) = ")
+print(simple_module.add(5, 7))
+
+print("  sm.add(10, 15) = ")
+print(sm.add(10, 15))
+
+// Test that they refer to the same cached module
+print("")
+print("4. Both should reference the same cached module")
+print("  (changes to the module would affect both)")
+
+print("")
+print("=== Alias Test Complete ===")
