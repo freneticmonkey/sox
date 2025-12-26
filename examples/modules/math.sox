@@ -25,13 +25,12 @@ fn min(a, b) {
     return b
 }
 
-// Export public API as a table
-var exports = Table()
-exports["pi"] = pi
-exports["e"] = e
-exports["square"] = square
-exports["abs"] = abs
-exports["max"] = max
-exports["min"] = min
-
-return exports
+// Export public API using table literal syntax
+return {
+    pi: pi,
+    e: e,
+    square: square,
+    abs: abs,
+    max: max,
+    min: min
+}

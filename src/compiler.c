@@ -142,6 +142,10 @@ compiler_t*       _current = NULL;
 class_compiler_t* _current_class;
 chunk_t*          _compiling_chunk;
 
+// Forward declarations
+static void _named_variable(token_t name, bool canAssign);
+static token_t _synthetic_token(const char* text);
+
 static chunk_t* _current_chunk() {
     return &_current->function->chunk;
 }
@@ -626,7 +630,110 @@ static void _grouping(bool canAssign) {
     _consume(TOKEN_RIGHT_PAREN, "Expect ')' after expression.");
 }
 
+// Helper to parse table literal
+// Syntax: {key1: value1, key2: value2}
+// Keys can be identifiers or strings
+static void _table_literal(bool canAssign) {
+    // Call Table() to create a new table
+    _named_variable(_synthetic_token("Table"), false);  // Get Table function
+    _emit_bytes(OP_CALL, 0);  // Call Table() with 0 args
+
+    // Stack now has: [table]
+
+    // Handle empty table: {}
+    if (_check(TOKEN_RIGHT_BRACE)) {
+        _consume(TOKEN_RIGHT_BRACE, "Expect '}' after table literal.");
+        return;
+    }
+
+    // Parse key-value pairs
+    while (!_check(TOKEN_RIGHT_BRACE)) {
+        // Parse key (identifier or string)
+        obj_string_t* key_str;
+
+        if (_match(TOKEN_IDENTIFIER)) {
+            // Convert identifier to string constant
+            key_str = l_copy_string(_parser.previous.start, _parser.previous.length);
+        } else if (_match(TOKEN_STRING)) {
+            // Use string directly (strip quotes)
+            const char* str = _parser.previous.start + 1;  // Skip opening quote
+            int length = _parser.previous.length - 2;      // Remove quotes
+            key_str = l_copy_string(str, length);
+        } else {
+            _error("Expect property key (identifier or string) in table literal.");
+            return;
+        }
+
+        // Expect colon
+        _consume(TOKEN_COLON, "Expect ':' after table key.");
+
+        // Parse value expression
+        _expression();
+
+        // Stack: [table, value]
+
+        // Emit OP_TABLE_FIELD with key constant
+        uint8_t key_constant = _make_constant(OBJ_VAL(key_str));
+        _emit_bytes(OP_TABLE_FIELD, key_constant);
+
+        // Stack: [table] (OP_TABLE_FIELD pops value, leaves table)
+
+        // Check for comma or end of table
+        if (!_match(TOKEN_COMMA)) {
+            break;
+        }
+        // Allow trailing comma
+        if (_check(TOKEN_RIGHT_BRACE)) {
+            break;
+        }
+    }
+
+    _consume(TOKEN_RIGHT_BRACE, "Expect '}' after table literal.");
+
+    // Table is now on stack, ready to be used
+}
+
 static void _array_grouping(bool canAssign) {
+    // Check for empty braces
+    if (_check(TOKEN_RIGHT_BRACE)) {
+        // Empty could be array or table - default to empty table for now
+        _consume(TOKEN_RIGHT_BRACE, "Expect '}' after literal.");
+        // Create empty table
+        _named_variable(_synthetic_token("Table"), false);
+        _emit_bytes(OP_CALL, 0);
+        return;
+    }
+
+    // We need to lookahead to determine if this is table or array literal
+    // Try to parse as potential table key
+    bool is_table = false;
+
+    if (_check(TOKEN_IDENTIFIER) || _check(TOKEN_STRING)) {
+        // Save both parser and scanner state for lookahead
+        token_t saved_current = _parser.current;
+        token_t saved_previous = _parser.previous;
+        scanner_state_t saved_scanner = l_save_scanner_state();
+
+        // Lookahead: consume identifier/string and check for colon
+        _advance();  // Consume identifier/string
+
+        if (_check(TOKEN_COLON)) {
+            // It's a table literal!
+            is_table = true;
+        }
+
+        // Restore both parser and scanner state
+        _parser.current = saved_current;
+        _parser.previous = saved_previous;
+        l_restore_scanner_state(saved_scanner);
+    }
+
+    if (is_table) {
+        _table_literal(canAssign);
+        return;
+    }
+
+    // Otherwise, parse as array literal (original behavior)
     int length = 0;
 
     // e.g. var array[] = {1,2,3}
@@ -643,15 +750,15 @@ static void _array_grouping(bool canAssign) {
     if (_parser.current.type == TOKEN_COMMA) {
 
         while (_parser.current.type == TOKEN_COMMA) {
-            _optional_consume(TOKEN_COMMA, "unused"); 
+            _optional_consume(TOKEN_COMMA, "unused");
             _expression();
             length += 1;
         }
 
         // TODO: Add support for trailing commas by adding an or TOKEN_RIGHT_BRACE
     }
-    
-    
+
+
     _consume(TOKEN_RIGHT_BRACE, "Expect '}' after array values");
 
     _emit_constant(NUMBER_VAL(length));

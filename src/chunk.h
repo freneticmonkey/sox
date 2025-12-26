@@ -44,6 +44,7 @@ typedef enum OpCode {
     OP_CLASS,
     OP_INHERIT,
     OP_METHOD,
+    OP_TABLE_FIELD,
     OP_IMPORT,
     OP_ARRAY_EMPTY,
     OP_ARRAY_PUSH,

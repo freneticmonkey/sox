@@ -11,11 +11,10 @@ fn add(a, b) {
     return a + b
 }
 
-// Export - create table and populate it
-var exports = Table()
-exports["message"] = message
-exports["value"] = value
-exports["greet"] = greet
-exports["add"] = add
-
-return exports
+// Export - using table literal syntax
+return {
+    message: message,
+    value: value,
+    greet: greet,
+    add: add
+}

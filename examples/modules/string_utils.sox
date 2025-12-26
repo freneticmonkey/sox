@@ -32,12 +32,11 @@ fn join(arr, separator) {
     return ""
 }
 
-// Export the module
-var exports = Table()
-exports["greeting"] = greeting
-exports["upper"] = upper
-exports["lower"] = lower
-exports["repeat"] = repeat
-exports["join"] = join
-
-return exports
+// Export the module using table literal syntax
+return {
+    greeting: greeting,
+    upper: upper,
+    lower: lower,
+    repeat: repeat,
+    join: join
+}

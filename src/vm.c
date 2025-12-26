@@ -504,6 +504,16 @@ static InterpretResult _run() {
                 _define_method(READ_STRING());
                 break;
 
+            case OP_TABLE_FIELD: {
+                // Stack: [table, value]
+                obj_string_t* key = READ_STRING();
+                value_t value = _peek(0);
+                obj_table_t* table = AS_TABLE(_peek(1));
+                l_table_set(&table->table, key, value);
+                l_pop();  // Pop value, leave table on stack
+                break;
+            }
+
             case OP_IMPORT: {
                 obj_string_t* path = READ_STRING();
 
