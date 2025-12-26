@@ -742,14 +742,14 @@ static value_t _sys_exit(int argCount, value_t* args) {
     }
 
     /* Perform graceful cleanup before exiting:
-       1. Flush all stdio buffers to ensure output is written
-       2. Free VM resources (strings, globals, modules tables)
-       3. Exit with the specified code
-       Note: This function does not return to the VM. */
+     * 1. Flush all stdio buffers to ensure output is written
+     * 2. Free VM resources (strings, globals, modules tables)
+     * 3. Exit with the specified code
+     * Note: This function does not return to the VM. */
     fflush(NULL);  // Flush all open output streams
     l_free_vm();   // Clean up VM resources
     exit(exit_code);
-    return NIL_VAL;  // Never reached
+    return NIL_VAL;  // Unreachable - required for function signature compliance
 }
 
 static value_t _sys_platform(int argCount, value_t* args) {
