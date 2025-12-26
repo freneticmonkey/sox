@@ -85,7 +85,7 @@ ifeq (${THIS_OS},windows)
 	msbuild.exe ./projects/${PROJECT_NAME}.sln -p:Platform="windows";Configuration=Debug -target:${PROJECT_NAME}
 endif
 ifeq (${THIS_OS},darwin)
-	xcodebuild -configuration "Debug" ARCHS="${THIS_ARCH}" -destination 'platform=macOS' -project "projects/${PROJECT_NAME}.xcodeproj" -target ${PROJECT_NAME}
+	MACOSX_DEPLOYMENT_TARGET=15.0 xcodebuild -configuration "Debug" ARCHS="${THIS_ARCH}" -destination 'platform=macOS' -project "projects/${PROJECT_NAME}.xcodeproj" -target ${PROJECT_NAME}
 endif
 ifeq (${THIS_OS},linux)
 	make -C projects ${PROJECT_NAME} config=debug_linux64
@@ -96,7 +96,7 @@ ifeq (${THIS_OS},windows)
 	msbuild.exe ./projects/${PROJECT_NAME}.sln -p:Platform="windows";Configuration=Release -target:${PROJECT_NAME}
 endif
 ifeq (${THIS_OS},darwin)
-	xcodebuild -configuration "Release" ARCHS="arm64" -destination 'platform=macOS' -project "projects/${PROJECT_NAME}.xcodeproj" -target ${PROJECT_NAME}
+	MACOSX_DEPLOYMENT_TARGET=15.0 xcodebuild -configuration "Release" ARCHS="arm64" -destination 'platform=macOS' -project "projects/${PROJECT_NAME}.xcodeproj" -target ${PROJECT_NAME}
 endif
 ifeq (${THIS_OS},linux)
 	make -C projects ${PROJECT_NAME} config=release_linux64
@@ -111,7 +111,7 @@ ifeq (${THIS_OS},windows)
 	msbuild.exe ./projects/${PROJECT_NAME}.sln -p:Platform="windows";Configuration=Debug -target:test
 endif
 ifeq (${THIS_OS},darwin)
-	xcodebuild -configuration "Debug" ARCHS="arm64" -destination 'platform=macOS' -project "projects/test.xcodeproj" -target test
+	MACOSX_DEPLOYMENT_TARGET=15.0 xcodebuild -configuration "Debug" ARCHS="arm64" -destination 'platform=macOS' -project "projects/test.xcodeproj" -target test
 endif
 ifeq (${THIS_OS},linux)
 	make -C projects test config=debug_linux64
@@ -172,10 +172,9 @@ ui:
 
 build-runtime-static: gen
 ifeq (${THIS_OS},darwin)
-	xcodebuild -configuration "Release" ARCHS="${THIS_ARCH}" \
+	MACOSX_DEPLOYMENT_TARGET=15.0 xcodebuild -configuration "Release" ARCHS="${THIS_ARCH}" \
 	  -destination 'platform=macOS' \
-	  -project "projects/sox_runtime.xcodeproj" -target sox_runtime \
-	  MACOSX_DEPLOYMENT_TARGET=15.0
+	  -project "projects/sox_runtime.xcodeproj" -target sox_runtime
 endif
 ifeq (${THIS_OS},linux)
 	make -C projects sox_runtime config=release_linux64
@@ -186,10 +185,9 @@ endif
 
 build-runtime-shared: gen
 ifeq (${THIS_OS},darwin)
-	xcodebuild -configuration "Release" ARCHS="${THIS_ARCH}" \
+	MACOSX_DEPLOYMENT_TARGET=15.0 xcodebuild -configuration "Release" ARCHS="${THIS_ARCH}" \
 	  -destination 'platform=macOS' \
-	  -project "projects/sox_runtime_shared.xcodeproj" -target sox_runtime_shared \
-	  MACOSX_DEPLOYMENT_TARGET=15.0
+	  -project "projects/sox_runtime_shared.xcodeproj" -target sox_runtime_shared
 endif
 ifeq (${THIS_OS},linux)
 	make -C projects sox_runtime_shared config=release_linux64
