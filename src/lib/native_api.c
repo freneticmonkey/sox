@@ -7,6 +7,7 @@
 #include <math.h>
 
 #include "lib/native_api.h"
+#include "vm_config.h"
 
 #include "lib/table.h"
 #include "object.h"
@@ -601,6 +602,101 @@ static value_t _array_join(int argCount, value_t* args) {
     return OBJ_VAL(l_take_string(result, pos));
 }
 
+// Extern reference to VM for accessing config
+extern vm_t vm;
+
+// System functions
+static value_t _sys_args(int argCount, value_t* args) {
+    if (argCount != 0) {
+        return OBJ_VAL(_native_error("sysArgs(): takes no parameters"));
+    }
+
+    obj_array_t* result = l_new_array();
+
+    if (vm.config != NULL && vm.config->args.argc > 0) {
+        for (int i = 0; i < vm.config->args.argc; i++) {
+            obj_string_t* arg = l_copy_string(vm.config->args.argv[i], strlen(vm.config->args.argv[i]));
+            l_push_array(result, OBJ_VAL(arg));
+        }
+    }
+
+    return OBJ_VAL(result);
+}
+
+static value_t _sys_getenv(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("sysGetenv(): requires 1 parameter"));
+    }
+    if (!IS_STRING(args[0])) {
+        return OBJ_VAL(_native_error("sysGetenv(): parameter must be a string"));
+    }
+
+    obj_string_t* name = AS_STRING(args[0]);
+    const char* value = getenv(name->chars);
+
+    if (value == NULL) {
+        return NIL_VAL;
+    }
+
+    return OBJ_VAL(l_copy_string(value, strlen(value)));
+}
+
+static value_t _sys_exit(int argCount, value_t* args) {
+    int exit_code = 0;
+
+    if (argCount == 1) {
+        if (!IS_NUMBER(args[0])) {
+            return OBJ_VAL(_native_error("sysExit(): exit code must be a number"));
+        }
+        exit_code = (int)AS_NUMBER(args[0]);
+    } else if (argCount > 1) {
+        return OBJ_VAL(_native_error("sysExit(): takes 0 or 1 parameters"));
+    }
+
+    exit(exit_code);
+    return NIL_VAL;
+}
+
+static value_t _sys_platform(int argCount, value_t* args) {
+    if (argCount != 0) {
+        return OBJ_VAL(_native_error("sysPlatform(): takes no parameters"));
+    }
+
+#if defined(_WIN32) || defined(_WIN64)
+    return OBJ_VAL(l_copy_string("windows", 7));
+#elif defined(__APPLE__) || defined(__MACH__)
+    return OBJ_VAL(l_copy_string("darwin", 6));
+#elif defined(__linux__)
+    return OBJ_VAL(l_copy_string("linux", 5));
+#elif defined(__unix__)
+    return OBJ_VAL(l_copy_string("unix", 4));
+#else
+    return OBJ_VAL(l_copy_string("unknown", 7));
+#endif
+}
+
+static value_t _sys_sleep(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("sysSleep(): requires 1 parameter"));
+    }
+    if (!IS_NUMBER(args[0])) {
+        return OBJ_VAL(_native_error("sysSleep(): parameter must be a number"));
+    }
+
+    double seconds = AS_NUMBER(args[0]);
+    if (seconds < 0) {
+        return OBJ_VAL(_native_error("sysSleep(): sleep time cannot be negative"));
+    }
+
+#if defined(_WIN32) || defined(_WIN64)
+    Sleep((DWORD)(seconds * 1000));
+#else
+    usleep((useconds_t)(seconds * 1000000));
+#endif
+
+    return NIL_VAL;
+}
+
 void l_table_add_native() {
     l_vm_define_native("Table", _new_table);
 
@@ -651,6 +747,13 @@ void l_table_add_native() {
     l_vm_define_native("arrayIndexOf", _array_index_of);
     l_vm_define_native("arrayContains", _array_contains);
     l_vm_define_native("arrayJoin", _array_join);
+
+    // System functions
+    l_vm_define_native("sysArgs", _sys_args);
+    l_vm_define_native("sysGetenv", _sys_getenv);
+    l_vm_define_native("sysExit", _sys_exit);
+    l_vm_define_native("sysPlatform", _sys_platform);
+    l_vm_define_native("sysSleep", _sys_sleep);
 
     // native functions
     l_vm_define_native("clock", _clock_native);

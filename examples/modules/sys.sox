@@ -1,0 +1,64 @@
+// sys.sox - System utilities module
+// Provides access to system-level operations and environment
+
+// Get command-line arguments as an array
+fn args() {
+    return sysArgs()
+}
+
+// Get environment variable value
+fn getenv(name) {
+    return sysGetenv(name)
+}
+
+// Exit the program with optional exit code
+fn exit(code) {
+    if (code == nil) {
+        sysExit(0)
+    } else {
+        sysExit(code)
+    }
+}
+
+// Get the current platform name
+fn platform() {
+    return sysPlatform()
+}
+
+// Sleep for specified seconds (supports fractional seconds)
+fn sleep(seconds) {
+    return sysSleep(seconds)
+}
+
+// Check if running on Windows
+fn isWindows() {
+    return platform() == "windows"
+}
+
+// Check if running on macOS
+fn isDarwin() {
+    return platform() == "darwin"
+}
+
+// Check if running on Linux
+fn isLinux() {
+    return platform() == "linux"
+}
+
+// Get current time in seconds since epoch
+fn time() {
+    return clock()
+}
+
+// Export public API
+return {
+    args: args,
+    getenv: getenv,
+    exit: exit,
+    platform: platform,
+    sleep: sleep,
+    isWindows: isWindows,
+    isDarwin: isDarwin,
+    isLinux: isLinux,
+    time: time
+}

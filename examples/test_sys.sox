@@ -1,0 +1,74 @@
+// test_sys.sox - Test system module
+print("=== System Module Test ===")
+
+import "modules/sys"
+
+// Test platform detection
+print("Testing platform...")
+var plat = sys.platform()
+print("Platform: " + plat)
+
+print("isLinux: ")
+print(sys.isLinux())
+
+print("isDarwin: ")
+print(sys.isDarwin())
+
+print("isWindows: ")
+print(sys.isWindows())
+
+// Test time
+print("Testing time...")
+var t = sys.time()
+print("Current time: ")
+print(t)
+
+// Test getenv
+print("Testing getenv...")
+var home = sys.getenv("HOME")
+if (home != nil) {
+    print("HOME: " + home)
+} else {
+    print("HOME not set (might be Windows)")
+}
+
+var user = sys.getenv("USER")
+if (user != nil) {
+    print("USER: " + user)
+} else {
+    print("USER not set")
+}
+
+// Test nonexistent env var
+var nonexistent = sys.getenv("NONEXISTENT_VAR_XYZ")
+print("Nonexistent var (should be nil): ")
+print(nonexistent)
+
+// Test args
+print("Testing args...")
+var arguments = sys.args()
+print("Argument count: ")
+print(len(arguments))
+
+if (len(arguments) > 0) {
+    print("Arguments:")
+    var i = 0
+    while (i < len(arguments)) {
+        print("  [")
+        print(i)
+        print("]: " + arguments[i])
+        i = i + 1
+    }
+}
+
+// Test sleep (brief)
+print("Testing sleep (0.1 seconds)...")
+var before = sys.time()
+sys.sleep(0.1)
+var after = sys.time()
+print("Sleep took approximately: ")
+print(after - before)
+print(" seconds")
+
+print("System module tests complete!")
+print("(Not testing sys.exit() to avoid terminating)")
