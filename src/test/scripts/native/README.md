@@ -41,14 +41,31 @@ This script will:
 | `multiple_vars.sox` | Multiple variables with operations | ✅ PASS |
 | `comparisons.sox` | Comparison operators (==, !=, <, >) | ✅ PASS |
 | `logic.sox` | Logical operators (and, or, not) | ✅ PASS |
-| `strings.sox` | String constant printing | ❌ TIMEOUT |
+| `strings.sox` | String constant printing | ⚠️  PARTIAL (outputs nil) |
 
 ## Known Issues
 
-### strings.sox - String Constants Timeout
-String constant handling in native code causes execution timeouts. The issue occurs in `sox_native_print` when attempting to print object values (strings). The runtime hangs when processing string objects.
+### strings.sox - String Constants Not Fully Implemented
+String constants are detected and handled by the IR builder, but full string support requires embedding string data in the object file, which is not yet implemented. Currently, string constants are loaded as `nil` values.
 
-**Status**: Bug identified, fix pending
+**Status**: Partial implementation complete, full support pending
+
+**Current State (2025-12-26)**:
+- ✅ IR builder detects string constants and creates `IR_CONST_STRING` instructions
+- ✅ String data is extracted and stored in IR
+- ✅ ARM64 codegen generates valid code (loads NIL as placeholder)
+- ✅ No crashes or timeouts
+- ❌ Actual string values not yet embedded in object file
+
+**To Implement Full String Support**:
+1. Add `__cstring` or `__data` section support to Mach-O writer
+2. Embed string literal data in object file
+3. Create symbols for each string literal
+4. Generate PC-relative addressing (ADRP + ADD) with relocations to load string addresses
+5. Generate calls to `sox_native_alloc_string(char* data, size_t length)`
+6. Return allocated string `value_t`
+
+### Previous Issue: Logical Operators Timeout (RESOLVED)
 
 **Root Cause**: The IR builder was not properly tracking jump targets and creating basic blocks for jumps. Jump labels were allocated but never associated with actual code blocks, causing jumps to invalid addresses.
 

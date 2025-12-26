@@ -16,6 +16,7 @@ typedef enum {
     IR_CONST_FLOAT,    // Load float constant
     IR_CONST_NIL,      // Load nil
     IR_CONST_BOOL,     // Load boolean
+    IR_CONST_STRING,   // Load string constant (allocates at runtime)
 
     // Arithmetic operations
     IR_ADD,            // Add two values
@@ -119,6 +120,10 @@ struct ir_instruction_t {
     ir_value_t* call_args; // Array of call arguments
     int call_arg_count;    // Number of call arguments
     const char* call_target; // Target function name (for external calls)
+
+    // String constant data (for IR_CONST_STRING)
+    const char* string_data;  // String literal characters
+    size_t string_length;     // String length
 
     int line;              // Source line number for debugging
 

@@ -189,6 +189,9 @@ void ir_instruction_free(ir_instruction_t* instr) {
     if (instr->call_args) {
         l_mem_free(instr->call_args, sizeof(ir_value_t) * instr->call_arg_count);
     }
+    if (instr->string_data) {
+        l_mem_free((void*)instr->string_data, instr->string_length + 1);
+    }
     l_mem_free(instr, sizeof(ir_instruction_t));
 }
 

@@ -198,8 +198,19 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
                     ir_builder_emit_unary(builder, IR_CONST_BOOL, dest, src);
                 } else if (IS_NIL(constant)) {
                     ir_builder_emit(builder, IR_CONST_NIL)->dest = dest;
+                } else if (IS_STRING(constant)) {
+                    // String constant - extract string data for runtime allocation
+                    obj_string_t* str = AS_STRING(constant);
+                    ir_instruction_t* instr = ir_builder_emit(builder, IR_CONST_STRING);
+                    instr->dest = dest;
+                    // Copy string data (will be freed when IR is freed)
+                    instr->string_length = str->length;
+                    char* copied_str = (char*)l_mem_alloc(str->length + 1);
+                    memcpy(copied_str, str->chars, str->length);
+                    copied_str[str->length] = '\0';
+                    instr->string_data = copied_str;
                 } else {
-                    // Object constant
+                    // Other object constant (not supported yet in native code)
                     ir_builder_emit_unary(builder, IR_CONST_INT, dest, src);
                 }
 
