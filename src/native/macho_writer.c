@@ -905,14 +905,24 @@ bool macho_create_object_file_with_arm64_relocs_and_strings(const char* filename
     // Add function symbol (external, defined)
     macho_add_symbol(builder, function_name, N_SECT | N_EXT, text_section + 1, 0);
 
-    // Add string literal symbols
+    // Add string literal symbols and track their indices
+    uint32_t* string_symbol_indices = NULL;
     if (str_lits && string_literal_count > 0 && cstring_section >= 0) {
+        string_symbol_indices = (uint32_t*)malloc(string_literal_count * sizeof(uint32_t));
+        if (!string_symbol_indices) {
+            fprintf(stderr, "[MACHO-STR] ERROR: Failed to allocate string symbol indices\n");
+            free(cstring_data);
+            macho_builder_free(builder);
+            return false;
+        }
+
         size_t offset = 0;
         for (int i = 0; i < string_literal_count; i++) {
             fprintf(stderr, "[MACHO-STR] Adding symbol %s at offset %zu in section %d\n",
                    str_lits[i].symbol, offset, cstring_section + 1);
             // Add symbol for string literal (local symbol, defined in __cstring section)
-            macho_add_symbol(builder, str_lits[i].symbol, N_SECT, cstring_section + 1, offset);
+            int sym_idx = macho_add_symbol(builder, str_lits[i].symbol, N_SECT, cstring_section + 1, offset);
+            string_symbol_indices[i] = (uint32_t)sym_idx;
             offset += str_lits[i].length + 1;
         }
     }
@@ -928,6 +938,7 @@ bool macho_create_object_file_with_arm64_relocs_and_strings(const char* filename
             free(symbol_names);
             free(symbol_indices);
             free(cstring_data);
+            free(string_symbol_indices);
             macho_builder_free(builder);
             return false;
         }
@@ -982,12 +993,11 @@ bool macho_create_object_file_with_arm64_relocs_and_strings(const char* filename
             bool found = false;
 
             // Check if it's a local string symbol
-            if (str_lits && string_literal_count > 0) {
+            if (str_lits && string_literal_count > 0 && string_symbol_indices) {
                 for (int j = 0; j < string_literal_count; j++) {
                     if (strcmp(reloc->symbol, str_lits[j].symbol) == 0) {
-                        // Find this symbol's index in the symbol table
-                        // String symbols are added after the function symbol
-                        symbol_index = 1 + j; // 0 is function, 1+ are strings
+                        // Use the actual symbol index from when we added the symbol
+                        symbol_index = string_symbol_indices[j];
                         found = true;
                         break;
                     }
@@ -1040,6 +1050,7 @@ bool macho_create_object_file_with_arm64_relocs_and_strings(const char* filename
     bool result = macho_write_file(builder, filename);
 
     free(cstring_data);
+    free(string_symbol_indices);
     macho_builder_free(builder);
     return result;
 }
@@ -1051,8 +1062,8 @@ bool macho_create_executable_object_file_with_arm64_relocs_and_strings(const cha
                                                                          int relocation_count,
                                                                          const string_literal* string_literals,
                                                                          int string_literal_count) {
-    // For executable object files, use the same logic but without the function name parameter
-    // (executable uses _main symbol instead)
+    // For executable object files, use "main" as the entry point
+    // (Note: macho_add_symbol will prepend underscore to create "_main")
     return macho_create_object_file_with_arm64_relocs_and_strings(filename, code, code_size, "main",
                                                                     cputype, cpusubtype,
                                                                     relocations, relocation_count,
