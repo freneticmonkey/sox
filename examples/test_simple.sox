@@ -5,15 +5,15 @@ print("Testing simple module import...")
 import "simple_module"
 
 print("Module message: ")
-print(simple_module["message"])
+print(simple_module.message)
 
 print("Module value: ")
-print(simple_module["value"])
+print(simple_module.value)
 
 print("Calling greet function:")
-simple_module["greet"]("World")
+simple_module.greet("World")
 
 print("Calling add function: add(10, 20) = ")
-print(simple_module["add"](10, 20))
+print(simple_module.add(10, 20))
 
 print("Test complete!")

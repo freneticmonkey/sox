@@ -240,13 +240,31 @@ static InterpretResult _run() {
                 break;
             }
             case OP_GET_PROPERTY: {
-                if (!IS_INSTANCE(_peek(0))) {
-                    l_vm_runtime_error("Only instances have properties.");
+                value_t receiver = _peek(0);
+                obj_string_t* name = READ_STRING();
+
+                // Handle tables
+                if (IS_TABLE(receiver)) {
+                    obj_table_t* table = AS_TABLE(receiver);
+                    value_t value;
+                    if (l_table_get(&table->table, name, &value)) {
+                        l_pop(); // Table
+                        l_push(value);
+                        break;
+                    }
+                    // Property not found - return nil
+                    l_pop();
+                    l_push(NIL_VAL);
+                    break;
+                }
+
+                // Handle instances
+                if (!IS_INSTANCE(receiver)) {
+                    l_vm_runtime_error("Only instances and tables have properties.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
-                obj_instance_t* instance = AS_INSTANCE(_peek(0));
-                obj_string_t* name = READ_STRING();
+                obj_instance_t* instance = AS_INSTANCE(receiver);
 
                 value_t value;
                 if (l_table_get(&instance->fields, name, &value)) {
@@ -261,13 +279,27 @@ static InterpretResult _run() {
                 break;
             }
             case OP_SET_PROPERTY: {
-                if (!IS_INSTANCE(_peek(1))) {
-                    l_vm_runtime_error("Only instances have properties.");
+                value_t receiver = _peek(1);
+                obj_string_t* name = READ_STRING();
+
+                // Handle tables
+                if (IS_TABLE(receiver)) {
+                    obj_table_t* table = AS_TABLE(receiver);
+                    l_table_set(&table->table, name, _peek(0));
+                    value_t value = l_pop();
+                    l_pop();
+                    l_push(value);
+                    break;
+                }
+
+                // Handle instances
+                if (!IS_INSTANCE(receiver)) {
+                    l_vm_runtime_error("Only instances and tables have fields.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
-                obj_instance_t* instance = AS_INSTANCE(_peek(1));
-                l_table_set(&instance->fields, READ_STRING(), _peek(0));
+                obj_instance_t* instance = AS_INSTANCE(receiver);
+                l_table_set(&instance->fields, name, _peek(0));
                 value_t value = l_pop();
                 l_pop();
                 l_push(value);
@@ -858,8 +890,22 @@ static bool _invoke_from_class(obj_class_t* klass, obj_string_t* name, int argCo
 static bool _invoke(obj_string_t* name, int argCount) {
     value_t receiver = _peek(argCount);
 
+    // Handle tables
+    if (IS_TABLE(receiver)) {
+        obj_table_t* table = AS_TABLE(receiver);
+        value_t value;
+        if (l_table_get(&table->table, name, &value)) {
+            // Replace table with the callable value on the stack
+            vm.stack_top[-argCount - 1] = value;
+            return _call_value(value, argCount);
+        }
+        l_vm_runtime_error("Undefined property '%s'.", name->chars);
+        return false;
+    }
+
+    // Handle instances
     if (!IS_INSTANCE(receiver)) {
-        l_vm_runtime_error("Only instances have methods.");
+        l_vm_runtime_error("Only instances and tables have methods.");
         return false;
     }
 
