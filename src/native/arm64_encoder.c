@@ -377,6 +377,19 @@ void arm64_fcvtzs(arm64_assembler_t* asm_, arm64_register_t dst, arm64_vreg_t sr
     arm64_emit(asm_, instr);
 }
 
+// PC-relative address loading
+void arm64_adrp(arm64_assembler_t* asm_, arm64_register_t dst, int32_t page_offset) {
+    // ADRP Xd, label
+    // Loads the page address of a label (4KB-aligned)
+    // Encoding: op=1 | immlo (bits 30:29) | 10000 (bits 28:24) | immhi (bits 23:5) | Rd (bits 4:0)
+    // Note: page_offset is typically 0 when used with relocations, as the linker fills in the actual value
+    uint32_t imm = (uint32_t)page_offset & 0x1FFFFF; // 21-bit immediate
+    uint32_t immlo = (imm >> 0) & 0x3;
+    uint32_t immhi = (imm >> 2) & 0x7FFFF;
+    uint32_t instr = 0x90000000 | (immlo << 29) | (immhi << 5) | dst;
+    arm64_emit(asm_, instr);
+}
+
 // Utility functions
 const char* arm64_register_name(arm64_register_t reg) {
     static const char* names[] = {

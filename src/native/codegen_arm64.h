@@ -17,6 +17,15 @@ typedef struct {
     int index;     // Stack index for this global
 } global_var_entry_t;
 
+// String literal tracking entry
+typedef struct {
+    const char* data;      // String literal characters
+    size_t length;         // String length
+    char* symbol;          // Symbol name (e.g., ".L.str.0")
+    int section_index;     // Section index in object file (set during object file generation)
+    size_t section_offset; // Offset within __cstring section
+} string_literal_t;
+
 // ARM64 code generation context
 typedef struct {
     ir_module_t* module;
@@ -40,6 +49,11 @@ typedef struct {
     global_var_entry_t* global_vars;
     int global_count;
     int global_capacity;
+
+    // String literal tracking
+    string_literal_t* string_literals;
+    int string_literal_count;
+    int string_literal_capacity;
 } codegen_arm64_context_t;
 
 // Create ARM64 code generator
@@ -57,6 +71,12 @@ uint8_t* codegen_arm64_get_code(codegen_arm64_context_t* ctx, size_t* size);
 
 // Get relocations from generated code
 arm64_relocation_t* codegen_arm64_get_relocations(codegen_arm64_context_t* ctx, int* count);
+
+// Get string literals from generated code
+string_literal_t* codegen_arm64_get_string_literals(codegen_arm64_context_t* ctx, int* count);
+
+// Add a string literal (returns the index)
+int codegen_arm64_add_string_literal(codegen_arm64_context_t* ctx, const char* data, size_t length);
 
 // Print generated code (disassembly)
 void codegen_arm64_print(codegen_arm64_context_t* ctx);

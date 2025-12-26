@@ -227,6 +227,9 @@ void arm64_fdiv_vreg_vreg_vreg(arm64_assembler_t* asm_, arm64_vreg_t dst,
 void arm64_scvtf(arm64_assembler_t* asm_, arm64_vreg_t dst, arm64_register_t src);
 void arm64_fcvtzs(arm64_assembler_t* asm_, arm64_register_t dst, arm64_vreg_t src);
 
+// PC-relative address loading
+void arm64_adrp(arm64_assembler_t* asm_, arm64_register_t dst, int32_t page_offset);
+
 // Utility functions
 const char* arm64_register_name(arm64_register_t reg);
 const char* arm64_vreg_name(arm64_vreg_t reg);

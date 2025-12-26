@@ -1,5 +1,6 @@
 #include "elf_writer.h"
 #include "codegen.h"
+#include "codegen_arm64.h"
 #include "../lib/memory.h"
 #include "../lib/file.h"
 #include <stdio.h>
@@ -421,4 +422,167 @@ bool elf_create_executable_object_file_with_relocations(const char* filename, co
 
     elf_builder_free(builder);
     return result;
+}
+
+bool elf_create_object_file_with_relocations_and_strings(const char* filename, const uint8_t* code,
+                                                         size_t code_size, const char* function_name,
+                                                         uint16_t machine_type,
+                                                         const void* relocs, int reloc_count,
+                                                         const string_literal_elf* string_literals,
+                                                         int string_literal_count) {
+    const codegen_relocation_t* relocations = (const codegen_relocation_t*)relocs;
+    const string_literal_t* str_lits = (const string_literal_t*)string_literals;
+
+    elf_builder_t* builder = elf_builder_new();
+
+    // Create .rodata section for string literals if we have any
+    int rodata_section = -1;
+    uint8_t* rodata_data = NULL;
+    size_t rodata_size = 0;
+    uint32_t* string_symbol_indices = NULL;
+
+    if (str_lits && string_literal_count > 0) {
+        // Calculate total size (each string + null terminator)
+        for (int i = 0; i < string_literal_count; i++) {
+            rodata_size += str_lits[i].length + 1;
+        }
+
+        // Allocate and build rodata
+        rodata_data = (uint8_t*)malloc(rodata_size);
+        if (!rodata_data) {
+            elf_builder_free(builder);
+            return false;
+        }
+
+        size_t offset = 0;
+        for (int i = 0; i < string_literal_count; i++) {
+            memcpy(rodata_data + offset, str_lits[i].data, str_lits[i].length);
+            rodata_data[offset + str_lits[i].length] = '\0';
+            offset += str_lits[i].length + 1;
+        }
+
+        // Add .rodata section
+        rodata_section = elf_add_section(builder, ".rodata", SHT_PROGBITS,
+                                         SHF_ALLOC, rodata_data, rodata_size);
+    }
+
+    // Add .text section
+    int text_section = elf_add_section(builder, ".text", SHT_PROGBITS,
+                                       SHF_ALLOC | SHF_EXECINSTR, code, code_size);
+
+    // Add symbol table section (placeholder, will be filled later)
+    int symtab_section = elf_add_section(builder, ".symtab", SHT_SYMTAB,
+                                         0, NULL, 0);
+
+    // Add string table section (placeholder, will be filled later)
+    int strtab_section = elf_add_section(builder, ".strtab", SHT_STRTAB,
+                                         0, NULL, 0);
+
+    // Add symbols
+    // Symbol 0: null symbol (required by ELF)
+    elf_add_symbol(builder, "", STB_LOCAL, STT_NOTYPE, STN_UNDEF, 0, 0);
+
+    // Symbol 1: function symbol
+    elf_add_symbol(builder, function_name, STB_GLOBAL, STT_FUNC, text_section + 1, 0, code_size);
+
+    // Add string literal symbols and track their indices
+    if (str_lits && string_literal_count > 0 && rodata_section >= 0) {
+        string_symbol_indices = (uint32_t*)malloc(string_literal_count * sizeof(uint32_t));
+        if (!string_symbol_indices) {
+            free(rodata_data);
+            elf_builder_free(builder);
+            return false;
+        }
+
+        size_t offset = 0;
+        for (int i = 0; i < string_literal_count; i++) {
+            int sym_idx = elf_add_symbol(builder, str_lits[i].symbol, STB_LOCAL, STT_NOTYPE,
+                                        rodata_section + 1, offset, str_lits[i].length + 1);
+            string_symbol_indices[i] = (uint32_t)sym_idx;
+            offset += str_lits[i].length + 1;
+        }
+    }
+
+    // Add undefined external symbols for relocations
+    for (int i = 0; i < reloc_count; i++) {
+        // Skip if this is a string literal symbol (already added above)
+        bool is_string_symbol = false;
+        if (str_lits && string_literal_count > 0) {
+            for (int j = 0; j < string_literal_count; j++) {
+                if (strcmp(relocations[i].symbol, str_lits[j].symbol) == 0) {
+                    is_string_symbol = true;
+                    break;
+                }
+            }
+        }
+
+        if (!is_string_symbol) {
+            elf_add_symbol(builder, relocations[i].symbol, STB_GLOBAL, STT_NOTYPE,
+                          STN_UNDEF, 0, 0);
+        }
+    }
+
+    // Add relocations
+    for (int i = 0; i < reloc_count; i++) {
+        // Find symbol index
+        uint32_t sym_idx = 0;
+        bool found = false;
+
+        // Check if it's a string literal symbol
+        if (str_lits && string_literal_count > 0 && string_symbol_indices) {
+            for (int j = 0; j < string_literal_count; j++) {
+                if (strcmp(relocations[i].symbol, str_lits[j].symbol) == 0) {
+                    sym_idx = string_symbol_indices[j];
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        // If not a string symbol, find in symbol table by name
+        if (!found) {
+            for (int j = 0; j < builder->symtab_count; j++) {
+                const char* sym_name = builder->strtab + builder->symtab[j].st_name;
+                if (strcmp(sym_name, relocations[i].symbol) == 0) {
+                    sym_idx = j;
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        if (found) {
+            elf_add_relocation(builder, relocations[i].offset, sym_idx,
+                             relocations[i].type, relocations[i].addend);
+        }
+    }
+
+    // Add .rela.text section if we have relocations
+    if (reloc_count > 0) {
+        int rela_section = elf_add_section(builder, ".rela.text", SHT_RELA,
+                                           0, (uint8_t*)builder->rela,
+                                           builder->rela_count * sizeof(Elf64_Rela));
+        builder->sections[rela_section].sh_link = symtab_section;
+        builder->sections[rela_section].sh_info = text_section + 1;
+        builder->sections[rela_section].sh_entsize = sizeof(Elf64_Rela);
+    }
+
+    bool result = elf_write_file(builder, filename, machine_type);
+
+    free(rodata_data);
+    free(string_symbol_indices);
+    elf_builder_free(builder);
+    return result;
+}
+
+bool elf_create_executable_object_file_with_relocations_and_strings(const char* filename, const uint8_t* code,
+                                                                    size_t code_size,
+                                                                    uint16_t machine_type,
+                                                                    const void* relocs, int reloc_count,
+                                                                    const string_literal_elf* string_literals,
+                                                                    int string_literal_count) {
+    // For executable, use "main" as the function name
+    return elf_create_object_file_with_relocations_and_strings(filename, code, code_size, "main",
+                                                               machine_type, relocs, reloc_count,
+                                                               string_literals, string_literal_count);
 }
