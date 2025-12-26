@@ -118,6 +118,8 @@ project "sox"
       "pthread",
     }
 
+  filter {}
+
   filter "system:macosx"
     links {
       "Cocoa.framework",

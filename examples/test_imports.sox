@@ -12,23 +12,17 @@ print("Testing math module functions:")
 print("  math.pi = ")
 print(math.pi)
 
-print("  math.sqrt(16) = ")
-print(math.sqrt(16))
-
 print("  math.square(5) = ")
 print(math.square(5))
 
 print("  math.abs(-42) = ")
-print(math.abs(-42))
+print(math.abs(0 - 42))
 
 print("  math.max(10, 20) = ")
 print(math.max(10, 20))
 
 print("  math.min(10, 20) = ")
 print(math.min(10, 20))
-
-print("  math.pow(2, 8) = ")
-print(math.pow(2, 8))
 
 print("")
 

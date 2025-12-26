@@ -33,7 +33,15 @@ typedef struct {
     int line;
 } token_t;
 
+typedef struct {
+    const char* start;
+    const char* current;
+    int line;
+} scanner_state_t;
+
 void    l_init_scanner(const char* source);
 token_t l_scan_token();
+scanner_state_t l_save_scanner_state();
+void    l_restore_scanner_state(scanner_state_t state);
 
 #endif

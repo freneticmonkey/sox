@@ -5,60 +5,32 @@
 var pi = 3.14159265359
 var e = 2.71828182846
 
-// Private helper (not exported)
-var _validate_number = fn(x, name) {
-    if (type(x) != "number") {
-        print("Error: " + name + " expects a number")
-        return false
-    }
-    return true
-}
-
 // Public functions
-var sqrt = fn(x) {
-    if (!_validate_number(x, "sqrt")) return nil
-    return x ^ 0.5
-}
-
-var square = fn(x) {
-    if (!_validate_number(x, "square")) return nil
+fn square(x) {
     return x * x
 }
 
-var abs = fn(x) {
-    if (!_validate_number(x, "abs")) return nil
-    if (x < 0) return -x
+fn abs(x) {
+    if (x < 0) return 0 - x
     return x
 }
 
-var max = fn(a, b) {
-    if (!_validate_number(a, "max")) return nil
-    if (!_validate_number(b, "max")) return nil
+fn max(a, b) {
     if (a > b) return a
     return b
 }
 
-var min = fn(a, b) {
-    if (!_validate_number(a, "min")) return nil
-    if (!_validate_number(b, "min")) return nil
+fn min(a, b) {
     if (a < b) return a
     return b
 }
 
-var pow = fn(base, exponent) {
-    if (!_validate_number(base, "pow")) return nil
-    if (!_validate_number(exponent, "pow")) return nil
-    return base ^ exponent
-}
-
-// Export public API as a table
-return Table{
-    "pi": pi,
-    "e": e,
-    "sqrt": sqrt,
-    "square": square,
-    "abs": abs,
-    "max": max,
-    "min": min,
-    "pow": pow
+// Export public API using table literal syntax
+return {
+    pi: pi,
+    e: e,
+    square: square,
+    abs: abs,
+    max: max,
+    min: min
 }

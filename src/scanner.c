@@ -278,3 +278,16 @@ token_t l_scan_token() {
     return _error_token("Unexpected character.");
 }
 
+scanner_state_t l_save_scanner_state() {
+    scanner_state_t state;
+    state.start = _scanner.start;
+    state.current = _scanner.current;
+    state.line = _scanner.line;
+    return state;
+}
+
+void l_restore_scanner_state(scanner_state_t state) {
+    _scanner.start = state.start;
+    _scanner.current = state.current;
+    _scanner.line = state.line;
+}

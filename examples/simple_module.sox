@@ -3,18 +3,18 @@
 var message = "Hello from simple_module!"
 var value = 42
 
-var greet = fn(name) {
+fn greet(name) {
     print("Hello, " + name + "!")
 }
 
-var add = fn(a, b) {
+fn add(a, b) {
     return a + b
 }
 
-// Export
-return Table{
-    "message": message,
-    "value": value,
-    "greet": greet,
-    "add": add
+// Export - using table literal syntax
+return {
+    message: message,
+    value: value,
+    greet: greet,
+    add: add
 }

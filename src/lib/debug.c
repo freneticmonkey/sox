@@ -153,6 +153,8 @@ int l_disassemble_instruction(chunk_t* chunk, int offset) {
             return _simple_instruction("OP_INHERIT", offset);
         case OP_METHOD:
             return _constant_instruction("OP_METHOD", chunk, offset);
+        case OP_TABLE_FIELD:
+            return _constant_instruction("OP_TABLE_FIELD", chunk, offset);
         case OP_IMPORT:
             return _constant_instruction("OP_IMPORT", chunk, offset);
         case OP_ARRAY_EMPTY:

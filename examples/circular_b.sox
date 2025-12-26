@@ -10,7 +10,7 @@ print("Module B: Successfully imported module A")
 
 var message_b = "Hello from Module B"
 
-return Table{
-    "message": message_b,
-    "a_ref": circular_a
+return {
+    message: message_b,
+    a_ref: circular_a
 }

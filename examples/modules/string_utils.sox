@@ -1,29 +1,22 @@
 // string_utils.sox - String manipulation utilities
 // Example module for Sox's module system
 
-var upper = fn(s) {
+var greeting = "Hello from string_utils!"
+
+fn upper(s) {
     // Placeholder - would need native implementation
     // For demo purposes, just return the string
     print("TODO: upper() needs native implementation")
     return s
 }
 
-var lower = fn(s) {
+fn lower(s) {
     // Placeholder - would need native implementation
     print("TODO: lower() needs native implementation")
     return s
 }
 
-var repeat = fn(s, count) {
-    if (type(s) != "string") {
-        print("Error: repeat() expects a string")
-        return nil
-    }
-    if (type(count) != "number") {
-        print("Error: repeat() expects a number")
-        return nil
-    }
-
+fn repeat(s, count) {
     var result = ""
     var i = 0
     while (i < count) {
@@ -33,20 +26,17 @@ var repeat = fn(s, count) {
     return result
 }
 
-var join = fn(arr, separator) {
-    if (type(separator) != "string") {
-        separator = ""
-    }
-
+fn join(arr, separator) {
     // This would need proper array support
     print("TODO: join() needs array iteration support")
     return ""
 }
 
-// Export the module
-return Table{
-    "upper": upper,
-    "lower": lower,
-    "repeat": repeat,
-    "join": join
+// Export the module using table literal syntax
+return {
+    greeting: greeting,
+    upper: upper,
+    lower: lower,
+    repeat: repeat,
+    join: join
 }
