@@ -20,7 +20,16 @@
     #endif
   #endif
 #else
-  #define SOX_API
+  /* Static library: mark symbols as visible since we build with -fvisibility=hidden */
+  #ifdef SOX_RUNTIME_BUILD
+    #ifdef _WIN32
+      #define SOX_API
+    #else
+      #define SOX_API __attribute__((visibility("default")))
+    #endif
+  #else
+    #define SOX_API
+  #endif
 #endif
 
 /* Get value_t and related macros from runtime_value.h */
