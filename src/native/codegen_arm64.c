@@ -406,6 +406,29 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
             break;
         }
 
+        case IR_CONST_STRING: {
+            // String constant: needs to call sox_native_alloc_string at runtime
+            // This is a complex feature requiring:
+            // 1. Embedding string data in __cstring section or __data section
+            // 2. Creating symbols for string literals
+            // 3. PC-relative addressing (ADRP + ADD) with relocations
+            // 4. Calling sox_native_alloc_string(char* data, size_t length)
+            //
+            // For now, load NIL as a placeholder
+            // TODO: Implement full string constant support
+            if (instr->dest.type == IR_VAL_REGISTER && instr->dest.size == IR_SIZE_16BYTE) {
+                arm64_reg_pair_t dest_pair = get_register_pair_arm64(ctx, instr->dest);
+                if (dest_pair.low != ARM64_NO_REG && dest_pair.is_pair) {
+                    value_t v = NIL_VAL;
+                    uint64_t low_val = *(uint64_t*)(&v);
+                    uint64_t high_val = *((uint64_t*)(&v) + 1);
+                    arm64_mov_reg_imm(ctx->asm_, dest_pair.low, low_val);
+                    arm64_mov_reg_imm(ctx->asm_, dest_pair.high, high_val);
+                }
+            }
+            break;
+        }
+
         case IR_LOAD_LOCAL: {
             // Load a local variable from stack
             // operand1 contains the local variable index (as constant)
