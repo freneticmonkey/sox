@@ -174,7 +174,8 @@ build-runtime-static: gen
 ifeq (${THIS_OS},darwin)
 	xcodebuild -configuration "Release" ARCHS="${THIS_ARCH}" \
 	  -destination 'platform=macOS' \
-	  -project "projects/sox_runtime.xcodeproj" -target sox_runtime
+	  -project "projects/sox_runtime.xcodeproj" -target sox_runtime \
+	  MACOSX_DEPLOYMENT_TARGET=15.0
 endif
 ifeq (${THIS_OS},linux)
 	make -C projects sox_runtime config=release_linux64
@@ -187,7 +188,8 @@ build-runtime-shared: gen
 ifeq (${THIS_OS},darwin)
 	xcodebuild -configuration "Release" ARCHS="${THIS_ARCH}" \
 	  -destination 'platform=macOS' \
-	  -project "projects/sox_runtime_shared.xcodeproj" -target sox_runtime_shared
+	  -project "projects/sox_runtime_shared.xcodeproj" -target sox_runtime_shared \
+	  MACOSX_DEPLOYMENT_TARGET=15.0
 endif
 ifeq (${THIS_OS},linux)
 	make -C projects sox_runtime_shared config=release_linux64
