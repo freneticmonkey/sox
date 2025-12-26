@@ -299,29 +299,28 @@ static void emit_function_prologue_arm64(codegen_arm64_context_t* ctx) {
         }
     }
 
-    // Always save X19 to store runtime context pointer
-    // Save it on the stack at [SP]
-    arm64_str(ctx->asm_, ARM64_X19, ARM64_SP, 0);
+    // Always save X19-X20 (callee-saved registers)
+    // We'll use X19 to store the runtime context pointer
+    arm64_stp(ctx->asm_, ARM64_X19, ARM64_X20, ARM64_SP, 0);
 
-    // Save callee-saved registers (X19-X28)
-    // Simplified: save a few commonly used ones
+    // Save additional callee-saved registers if frame is large
     if (frame_size > 64) {
-        arm64_stp(ctx->asm_, ARM64_X20, ARM64_X21, ARM64_SP, 8);
-        arm64_stp(ctx->asm_, ARM64_X22, ARM64_X23, ARM64_SP, 24);
+        arm64_stp(ctx->asm_, ARM64_X21, ARM64_X22, ARM64_SP, 16);
+        arm64_stp(ctx->asm_, ARM64_X23, ARM64_X24, ARM64_SP, 32);
     }
 
     // Initialize Sox runtime
     // Call sox_runtime_init(true) to enable string interning
-    // Arguments: W0 = 1 (true for string interning)
-    arm64_mov_reg_imm(ctx->asm_, ARM64_W0, 1);
+    // Arguments: X0 = 1 (true for string interning)
+    arm64_mov_reg_imm(ctx->asm_, ARM64_X0, 1);
 
     // Call sox_runtime_init - linker will resolve the symbol
     size_t call_offset = arm64_get_offset(ctx->asm_);
     arm64_bl(ctx->asm_, 0); // Placeholder - will be fixed by linker
 
     // Add relocation for sox_runtime_init call
-    add_relocation(ctx, call_offset, "sox_runtime_init",
-                   ARM64_RELOC_BRANCH26, 0);
+    arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26,
+                         "sox_runtime_init", 0);
 
     // Save returned context pointer in X19 (callee-saved)
     // X0 contains the returned sox_runtime_context_t* pointer
@@ -334,8 +333,8 @@ static void emit_function_prologue_arm64(codegen_arm64_context_t* ctx) {
     arm64_bl(ctx->asm_, 0); // Placeholder
 
     // Add relocation for sox_runtime_set_context call
-    add_relocation(ctx, call_offset, "sox_runtime_set_context",
-                   ARM64_RELOC_BRANCH26, 0);
+    arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26,
+                         "sox_runtime_set_context", 0);
 }
 
 static void emit_function_epilogue_arm64(codegen_arm64_context_t* ctx) {
@@ -350,17 +349,17 @@ static void emit_function_epilogue_arm64(codegen_arm64_context_t* ctx) {
     arm64_bl(ctx->asm_, 0); // Placeholder
 
     // Add relocation for sox_runtime_cleanup call
-    add_relocation(ctx, call_offset, "sox_runtime_cleanup",
-                   ARM64_RELOC_BRANCH26, 0);
+    arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26,
+                         "sox_runtime_cleanup", 0);
 
     // Restore callee-saved registers
     if (frame_size > 64) {
-        arm64_ldp(ctx->asm_, ARM64_X22, ARM64_X23, ARM64_SP, 24);
-        arm64_ldp(ctx->asm_, ARM64_X20, ARM64_X21, ARM64_SP, 8);
+        arm64_ldp(ctx->asm_, ARM64_X23, ARM64_X24, ARM64_SP, 32);
+        arm64_ldp(ctx->asm_, ARM64_X21, ARM64_X22, ARM64_SP, 16);
     }
 
-    // Restore X19 (runtime context pointer)
-    arm64_ldr(ctx->asm_, ARM64_X19, ARM64_SP, 0);
+    // Restore X19-X20 (runtime context pointer and pair)
+    arm64_ldp(ctx->asm_, ARM64_X19, ARM64_X20, ARM64_SP, 0);
 
     // Deallocate stack frame
     arm64_mov_reg_reg(ctx->asm_, ARM64_SP, ARM64_FP);
