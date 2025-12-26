@@ -172,4 +172,23 @@ bool elf_create_executable_object_file_with_relocations(const char* filename, co
                                                         uint16_t machine_type,
                                                         const void* relocs, int reloc_count);
 
+// Forward declaration - opaque type (actual definition in codegen_arm64.h as string_literal_t)
+typedef void* string_literal_elf;
+
+// High-level API: create object file with relocations and string literals
+bool elf_create_object_file_with_relocations_and_strings(const char* filename, const uint8_t* code,
+                                                         size_t code_size, const char* function_name,
+                                                         uint16_t machine_type,
+                                                         const void* relocs, int reloc_count,
+                                                         const string_literal_elf* string_literals,
+                                                         int string_literal_count);
+
+// High-level API: create executable object file with relocations and string literals
+bool elf_create_executable_object_file_with_relocations_and_strings(const char* filename, const uint8_t* code,
+                                                                    size_t code_size,
+                                                                    uint16_t machine_type,
+                                                                    const void* relocs, int reloc_count,
+                                                                    const string_literal_elf* string_literals,
+                                                                    int string_literal_count);
+
 #endif

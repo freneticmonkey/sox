@@ -40,6 +40,15 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
     bool is_arm64 = (strcmp(options->target_arch, "arm64") == 0 ||
                      strcmp(options->target_arch, "aarch64") == 0);
 
+    // Warn about x86_64 not being fully supported
+    if (!is_arm64) {
+        fprintf(stderr, "\n");
+        fprintf(stderr, "⚠️  WARNING: Native code generation for x86_64 is not yet fully implemented.\n");
+        fprintf(stderr, "⚠️  Significant functionality is missing and the generated binary may not work correctly.\n");
+        fprintf(stderr, "⚠️  ARM64 is the only fully supported architecture for native code generation.\n");
+        fprintf(stderr, "\n");
+    }
+
     // Keep codegen contexts alive until after writing (code and relocations point into them)
     codegen_arm64_context_t* codegen_arm64 = NULL;
     codegen_context_t* codegen_x64 = NULL;
@@ -143,12 +152,21 @@ bool native_codegen_generate(obj_closure_t* closure, const native_codegen_option
                                                     func_name, cputype, cpusubtype);
             }
         } else {
-            // Use relocation-aware ELF writer for x86-64
-            if (!is_arm64 && relocation_count_x64 > 0) {
+            // Use ELF writer
+            if (is_arm64) {
+                // ARM64 with relocations and string literals
+                success = elf_create_object_file_with_relocations_and_strings(options->output_file, code, code_size,
+                                                                              func_name, machine_type,
+                                                                              relocations_arm64, relocation_count_arm64,
+                                                                              (const string_literal_elf*)string_literals_arm64,
+                                                                              string_literal_count_arm64);
+            } else if (relocation_count_x64 > 0) {
+                // x86-64 with relocations
                 success = elf_create_object_file_with_relocations(options->output_file, code, code_size,
                                                                   func_name, machine_type,
                                                                   relocations_x64, relocation_count_x64);
             } else {
+                // x86-64 without relocations
                 success = elf_create_object_file(options->output_file, code, code_size,
                                                   func_name, machine_type);
             }
