@@ -1,10 +1,15 @@
 
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <math.h>
+
+#if defined(_WIN32) || defined(_WIN64)
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "lib/native_api.h"
 #include "vm_config.h"
@@ -41,13 +46,16 @@ static value_t _len(int argCount, value_t* args) {
                     obj_array_t* array = AS_ARRAY(args[0]);
                     return NUMBER_VAL(array->values.count);
                 }
+                case OBJ_STRING: {
+                    obj_string_t* string = AS_STRING(args[0]);
+                    return NUMBER_VAL(string->length);
+                }
                 case OBJ_BOUND_METHOD:
                 case OBJ_CLASS:
                 case OBJ_CLOSURE:
                 case OBJ_FUNCTION:
                 case OBJ_INSTANCE:
                 case OBJ_NATIVE:
-                case OBJ_STRING:
                 case OBJ_UPVALUE:
                 case OBJ_ERROR:
                     break;
@@ -180,6 +188,12 @@ static value_t _string_trim(int argCount, value_t* args) {
         return OBJ_VAL(_native_error("stringTrim(): parameter must be a string"));
     }
     obj_string_t* str = AS_STRING(args[0]);
+
+    // Handle empty string
+    if (str->length == 0) {
+        return OBJ_VAL(l_copy_string("", 0));
+    }
+
     const char* start = str->chars;
     const char* end = str->chars + str->length - 1;
 
@@ -581,27 +595,59 @@ static value_t _array_join(int argCount, value_t* args) {
         return OBJ_VAL(l_copy_string("", 0));
     }
 
+    // Helper to convert value to string representation
+    char temp_buffer[64];
+
+    // Calculate total length needed, converting non-strings
     size_t total_length = 0;
     for (int i = 0; i < arr->values.count; i++) {
-        if (IS_STRING(arr->values.values[i])) {
-            total_length += AS_STRING(arr->values.values[i])->length;
+        value_t val = arr->values.values[i];
+        if (IS_STRING(val)) {
+            total_length += AS_STRING(val)->length;
+        } else if (IS_NUMBER(val)) {
+            snprintf(temp_buffer, sizeof(temp_buffer), "%.14g", AS_NUMBER(val));
+            total_length += strlen(temp_buffer);
+        } else if (IS_BOOL(val)) {
+            total_length += AS_BOOL(val) ? 4 : 5; // "true" or "false"
+        } else if (IS_NIL(val)) {
+            total_length += 3; // "nil"
+        } else {
+            total_length += 10; // Rough estimate for object types
         }
+
         if (i < arr->values.count - 1) {
             total_length += sep->length;
         }
     }
 
-    char* result = malloc(total_length + 1);
+    char* result = malloc(total_length + 100); // Extra buffer for safety
     if (result == NULL) {
         return OBJ_VAL(_native_error("arrayJoin(): memory allocation failed"));
     }
 
     size_t pos = 0;
     for (int i = 0; i < arr->values.count; i++) {
-        if (IS_STRING(arr->values.values[i])) {
-            obj_string_t* str = AS_STRING(arr->values.values[i]);
+        value_t val = arr->values.values[i];
+
+        if (IS_STRING(val)) {
+            obj_string_t* str = AS_STRING(val);
             memcpy(result + pos, str->chars, str->length);
             pos += str->length;
+        } else if (IS_NUMBER(val)) {
+            int written = snprintf(result + pos, total_length - pos + 100, "%.14g", AS_NUMBER(val));
+            pos += written;
+        } else if (IS_BOOL(val)) {
+            const char* bool_str = AS_BOOL(val) ? "true" : "false";
+            int len = AS_BOOL(val) ? 4 : 5;
+            memcpy(result + pos, bool_str, len);
+            pos += len;
+        } else if (IS_NIL(val)) {
+            memcpy(result + pos, "nil", 3);
+            pos += 3;
+        } else {
+            // For objects, use a generic representation
+            int written = snprintf(result + pos, total_length - pos + 100, "<object>");
+            pos += written;
         }
 
         if (i < arr->values.count - 1) {

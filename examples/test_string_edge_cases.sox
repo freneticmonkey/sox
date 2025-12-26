@@ -1,0 +1,129 @@
+// test_string_edge_cases.sox - Edge case tests for string functions
+print("=== String Edge Case Tests ===")
+
+import "modules/string_utils"
+
+// Test trim() edge cases
+print("")
+print("Testing trim() edge cases...")
+
+// Empty string
+var trimmed1 = string_utils.trim("")
+print("Empty string: '")
+print(trimmed1)
+print("'")
+
+// Only whitespace
+var trimmed2 = string_utils.trim("   ")
+print("Only whitespace: '")
+print(trimmed2)
+print("'")
+
+// No leading/trailing whitespace
+var trimmed3 = string_utils.trim("hello")
+print("No whitespace: '")
+print(trimmed3)
+print("'")
+
+// Only leading whitespace
+var trimmed4 = string_utils.trim("  hello")
+print("Leading whitespace: '")
+print(trimmed4)
+print("'")
+
+// Only trailing whitespace
+var trimmed5 = string_utils.trim("hello  ")
+print("Trailing whitespace: '")
+print(trimmed5)
+print("'")
+
+// Mixed whitespace types
+var trimmed6 = string_utils.trim("  \t hello \n ")
+print("Mixed whitespace: '")
+print(trimmed6)
+print("'")
+
+// Test join() edge cases
+print("")
+print("Testing join() edge cases...")
+
+// Empty array
+var arr1 []
+var joined1 = string_utils.join(arr1, ",")
+print("Empty array: '")
+print(joined1)
+print("'")
+
+// Single element
+var arr2 []
+push(arr2, "hello")
+var joined2 = string_utils.join(arr2, ",")
+print("Single element: '")
+print(joined2)
+print("'")
+
+// Two elements
+var arr3 []
+push(arr3, "hello")
+push(arr3, "world")
+var joined3 = string_utils.join(arr3, ",")
+print("Two elements: '")
+print(joined3)
+print("'")
+
+// Empty separator
+var arr4 []
+push(arr4, "a")
+push(arr4, "b")
+push(arr4, "c")
+var joined4 = string_utils.join(arr4, "")
+print("Empty separator: '")
+print(joined4)
+print("'")
+
+// Multi-character separator
+var arr5 []
+push(arr5, "one")
+push(arr5, "two")
+push(arr5, "three")
+var joined5 = string_utils.join(arr5, " :: ")
+print("Multi-char separator: '")
+print(joined5)
+print("'")
+
+// Test reverse() edge cases
+print("")
+print("Testing reverse() edge cases...")
+
+// Empty string
+var reversed1 = string_utils.reverse("")
+print("Empty string: '")
+print(reversed1)
+print("'")
+
+// Single character
+var reversed2 = string_utils.reverse("a")
+print("Single char: '")
+print(reversed2)
+print("'")
+
+// Two characters
+var reversed3 = string_utils.reverse("ab")
+print("Two chars: '")
+print(reversed3)
+print("'")
+
+// Longer string
+var reversed4 = string_utils.reverse("hello")
+print("Longer string: '")
+print(reversed4)
+print("'")
+
+// Palindrome
+var reversed5 = string_utils.reverse("racecar")
+print("Palindrome: '")
+print(reversed5)
+print("'")
+
+print("")
+print("All edge case tests complete!")

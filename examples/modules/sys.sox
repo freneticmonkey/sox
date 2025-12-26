@@ -12,6 +12,26 @@ fn getenv(name) {
 }
 
 // Exit the program with optional exit code
+//
+// IMPORTANT: This function terminates the program immediately without
+// performing cleanup operations such as:
+// - Flushing file buffers
+// - Running destructors or finalizers
+// - Releasing allocated resources
+//
+// The exit code follows Unix conventions:
+// - 0 indicates success
+// - Non-zero indicates an error condition
+//
+// Use exit() when:
+// - The program has completed its intended work
+// - A fatal error requires immediate termination
+// - Running in a script/batch context where exit codes matter
+//
+// Avoid exit() when:
+// - Normal function returns can propagate errors
+// - Resources need explicit cleanup (files, network connections)
+// - Running as part of a larger application or library
 fn exit(code) {
     if (code == nil) {
         sysExit(0)

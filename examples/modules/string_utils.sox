@@ -37,9 +37,8 @@ fn join(arr, separator) {
         if (i > 0) {
             result = result + separator
         }
-        // Convert element to string if needed
-        var elem = pop(arr)
-        push(arr, elem)  // Put it back
+        // Use array indexing instead of pop/push
+        var elem = arr[i]
         result = result + elem
         i = i + 1
     }
