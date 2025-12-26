@@ -156,7 +156,9 @@ project "test"
 
   links {
     "munit",
-    "wasm_verify"
+    "wasm_verify",
+    "sox_runtime",
+    "sox_runtime_shared"
   }
 
   libdirs {
