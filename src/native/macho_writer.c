@@ -544,6 +544,7 @@ bool macho_create_executable_object_file(const char* filename, const uint8_t* co
 
 // Include arm64_encoder.h for relocation types
 #include "arm64_encoder.h"
+#include "codegen_arm64.h"
 
 bool macho_create_object_file_with_arm64_relocs(const char* filename, const uint8_t* code,
                                                  size_t code_size, const char* function_name,
@@ -653,6 +654,16 @@ bool macho_create_object_file_with_arm64_relocs(const char* filename, const uint
                     // Use same type as CALL26 for now
                     macho_reloc_type = 2;
                     fprintf(stderr, "[RELOC]   Type: ARM64_RELOC_JUMP26 -> Mach-O type 2\n");
+                    break;
+                case ARM64_RELOC_ADR_PREL_PG_HI21:
+                    // ARM64_RELOC_PAGE21 = 3 in Mach-O (for ADRP instruction)
+                    macho_reloc_type = 3;
+                    fprintf(stderr, "[RELOC]   Type: ARM64_RELOC_ADR_PREL_PG_HI21 -> Mach-O type 3 (PAGE21)\n");
+                    break;
+                case ARM64_RELOC_ADD_ABS_LO12_NC:
+                    // ARM64_RELOC_PAGEOFF12 = 4 in Mach-O (for ADD/LDR instruction)
+                    macho_reloc_type = 4;
+                    fprintf(stderr, "[RELOC]   Type: ARM64_RELOC_ADD_ABS_LO12_NC -> Mach-O type 4 (PAGEOFF12)\n");
                     break;
                 default:
                     // Skip unknown relocation types
@@ -798,6 +809,14 @@ bool macho_create_executable_object_file_with_arm64_relocs(const char* filename,
                     macho_reloc_type = 2;
                     fprintf(stderr, "[RELOC-EXE]   Type: ARM64_RELOC_JUMP26 -> Mach-O type 2\n");
                     break;
+                case ARM64_RELOC_ADR_PREL_PG_HI21:
+                    macho_reloc_type = 3;
+                    fprintf(stderr, "[RELOC-EXE]   Type: ARM64_RELOC_ADR_PREL_PG_HI21 -> Mach-O type 3 (PAGE21)\n");
+                    break;
+                case ARM64_RELOC_ADD_ABS_LO12_NC:
+                    macho_reloc_type = 4;
+                    fprintf(stderr, "[RELOC-EXE]   Type: ARM64_RELOC_ADD_ABS_LO12_NC -> Mach-O type 4 (PAGEOFF12)\n");
+                    break;
                 default:
                     fprintf(stderr, "[RELOC-EXE]   Type: UNKNOWN (%d), skipping\n", reloc->type);
                     continue;
@@ -830,4 +849,223 @@ bool macho_create_executable_object_file_with_arm64_relocs(const char* filename,
 
     macho_builder_free(builder);
     return result;
+}
+
+bool macho_create_object_file_with_arm64_relocs_and_strings(const char* filename, const uint8_t* code,
+                                                              size_t code_size, const char* function_name,
+                                                              uint32_t cputype, uint32_t cpusubtype,
+                                                              const arm64_relocation* relocations,
+                                                              int relocation_count,
+                                                              const string_literal* string_literals,
+                                                              int string_literal_count) {
+    const arm64_relocation_t* arm64_relocs = (const arm64_relocation_t*)relocations;
+    const string_literal_t* str_lits = (const string_literal_t*)string_literals;
+    macho_builder_t* builder = macho_builder_new(cputype, cpusubtype);
+
+    // Create __cstring section if we have string literals
+    int cstring_section = -1;
+    uint8_t* cstring_data = NULL;
+    size_t cstring_size = 0;
+
+    if (str_lits && string_literal_count > 0) {
+        fprintf(stderr, "[MACHO-STR] Creating __cstring section with %d strings\n", string_literal_count);
+
+        // Calculate total size (each string + null terminator)
+        for (int i = 0; i < string_literal_count; i++) {
+            cstring_size += str_lits[i].length + 1; // +1 for null terminator
+        }
+
+        // Allocate and build cstring data
+        cstring_data = (uint8_t*)malloc(cstring_size);
+        if (!cstring_data) {
+            fprintf(stderr, "[MACHO-STR] ERROR: Failed to allocate cstring data\n");
+            macho_builder_free(builder);
+            return false;
+        }
+
+        size_t offset = 0;
+        for (int i = 0; i < string_literal_count; i++) {
+            memcpy(cstring_data + offset, str_lits[i].data, str_lits[i].length);
+            cstring_data[offset + str_lits[i].length] = '\0';
+            offset += str_lits[i].length + 1;
+        }
+
+        // Add __cstring section
+        cstring_section = macho_add_section(builder, "__cstring", "__TEXT",
+                                             S_CSTRING_LITERALS,
+                                             cstring_data, cstring_size, 0);
+        fprintf(stderr, "[MACHO-STR] __cstring section index: %d\n", cstring_section);
+    }
+
+    // Add __text section
+    int text_section = macho_add_section(builder, "__text", "__TEXT",
+                                          S_REGULAR | S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS,
+                                          code, code_size, 4);
+
+    // Add function symbol (external, defined)
+    macho_add_symbol(builder, function_name, N_SECT | N_EXT, text_section + 1, 0);
+
+    // Add string literal symbols and track their indices
+    uint32_t* string_symbol_indices = NULL;
+    if (str_lits && string_literal_count > 0 && cstring_section >= 0) {
+        string_symbol_indices = (uint32_t*)malloc(string_literal_count * sizeof(uint32_t));
+        if (!string_symbol_indices) {
+            fprintf(stderr, "[MACHO-STR] ERROR: Failed to allocate string symbol indices\n");
+            free(cstring_data);
+            macho_builder_free(builder);
+            return false;
+        }
+
+        size_t offset = 0;
+        for (int i = 0; i < string_literal_count; i++) {
+            fprintf(stderr, "[MACHO-STR] Adding symbol %s at offset %zu in section %d\n",
+                   str_lits[i].symbol, offset, cstring_section + 1);
+            // Add symbol for string literal (local symbol, defined in __cstring section)
+            int sym_idx = macho_add_symbol(builder, str_lits[i].symbol, N_SECT, cstring_section + 1, offset);
+            string_symbol_indices[i] = (uint32_t)sym_idx;
+            offset += str_lits[i].length + 1;
+        }
+    }
+
+    // Process relocations (same as before)
+    fprintf(stderr, "[RELOC] Processing %d relocations\n", relocation_count);
+    if (arm64_relocs && relocation_count > 0) {
+        const char** symbol_names = (const char**)malloc(relocation_count * sizeof(char*));
+        uint32_t* symbol_indices = (uint32_t*)malloc(relocation_count * sizeof(uint32_t));
+
+        if (!symbol_names || !symbol_indices) {
+            fprintf(stderr, "[RELOC] ERROR: Failed to allocate relocation buffers\n");
+            free(symbol_names);
+            free(symbol_indices);
+            free(cstring_data);
+            free(string_symbol_indices);
+            macho_builder_free(builder);
+            return false;
+        }
+
+        int unique_symbols = 0;
+
+        // First pass: collect unique external symbols (skip local string symbols)
+        for (int i = 0; i < relocation_count; i++) {
+            const arm64_relocation_t* reloc = &arm64_relocs[i];
+
+            if (!reloc || !reloc->symbol) continue;
+
+            // Check if it's a local string symbol
+            bool is_local_string = false;
+            if (str_lits && string_literal_count > 0) {
+                for (int j = 0; j < string_literal_count; j++) {
+                    if (strcmp(reloc->symbol, str_lits[j].symbol) == 0) {
+                        is_local_string = true;
+                        break;
+                    }
+                }
+            }
+
+            // Skip local string symbols (already added above)
+            if (is_local_string) continue;
+
+            // Check if we've already added this symbol
+            int symbol_index = -1;
+            for (int j = 0; j < unique_symbols; j++) {
+                if (strcmp(symbol_names[j], reloc->symbol) == 0) {
+                    symbol_index = j;
+                    break;
+                }
+            }
+
+            if (symbol_index == -1) {
+                fprintf(stderr, "[RELOC]   Adding external symbol: %s\n", reloc->symbol);
+                symbol_index = macho_add_symbol(builder, reloc->symbol, N_UNDF | N_EXT, 0, 0);
+                symbol_names[unique_symbols] = reloc->symbol;
+                symbol_indices[unique_symbols] = symbol_index;
+                unique_symbols++;
+            }
+        }
+
+        // Second pass: add relocations
+        for (int i = 0; i < relocation_count; i++) {
+            const arm64_relocation_t* reloc = &arm64_relocs[i];
+            if (!reloc || !reloc->symbol) continue;
+
+            // Find the symbol index
+            uint32_t symbol_index = 0;
+            bool found = false;
+
+            // Check if it's a local string symbol
+            if (str_lits && string_literal_count > 0 && string_symbol_indices) {
+                for (int j = 0; j < string_literal_count; j++) {
+                    if (strcmp(reloc->symbol, str_lits[j].symbol) == 0) {
+                        // Use the actual symbol index from when we added the symbol
+                        symbol_index = string_symbol_indices[j];
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            // If not a string symbol, find in external symbols
+            if (!found) {
+                for (int j = 0; j < unique_symbols; j++) {
+                    if (strcmp(symbol_names[j], reloc->symbol) == 0) {
+                        symbol_index = symbol_indices[j];
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!found) {
+                fprintf(stderr, "[RELOC] WARNING: Symbol %s not found, skipping relocation\n", reloc->symbol);
+                continue;
+            }
+
+            // Convert relocation type
+            uint32_t macho_reloc_type = 0;
+            switch (reloc->type) {
+                case ARM64_RELOC_CALL26:
+                    macho_reloc_type = 2;
+                    break;
+                case ARM64_RELOC_JUMP26:
+                    macho_reloc_type = 2;
+                    break;
+                case ARM64_RELOC_ADR_PREL_PG_HI21:
+                    macho_reloc_type = 3;
+                    break;
+                case ARM64_RELOC_ADD_ABS_LO12_NC:
+                    macho_reloc_type = 4;
+                    break;
+                default:
+                    continue;
+            }
+
+            int32_t byte_offset = (int32_t)(reloc->offset * 4);
+            macho_add_relocation(builder, byte_offset, symbol_index, true, 2, true, macho_reloc_type);
+        }
+
+        free(symbol_names);
+        free(symbol_indices);
+    }
+
+    bool result = macho_write_file(builder, filename);
+
+    free(cstring_data);
+    free(string_symbol_indices);
+    macho_builder_free(builder);
+    return result;
+}
+
+bool macho_create_executable_object_file_with_arm64_relocs_and_strings(const char* filename, const uint8_t* code,
+                                                                         size_t code_size,
+                                                                         uint32_t cputype, uint32_t cpusubtype,
+                                                                         const arm64_relocation* relocations,
+                                                                         int relocation_count,
+                                                                         const string_literal* string_literals,
+                                                                         int string_literal_count) {
+    // For executable object files, use "main" as the entry point
+    // (Note: macho_add_symbol will prepend underscore to create "_main")
+    return macho_create_object_file_with_arm64_relocs_and_strings(filename, code, code_size, "main",
+                                                                    cputype, cpusubtype,
+                                                                    relocations, relocation_count,
+                                                                    string_literals, string_literal_count);
 }

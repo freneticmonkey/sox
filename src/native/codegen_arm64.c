@@ -19,6 +19,9 @@ codegen_arm64_context_t* codegen_arm64_new(ir_module_t* module) {
     ctx->global_vars = NULL;
     ctx->global_count = 0;
     ctx->global_capacity = 0;
+    ctx->string_literals = NULL;
+    ctx->string_literal_count = 0;
+    ctx->string_literal_capacity = 0;
     return ctx;
 }
 
@@ -39,6 +42,15 @@ void codegen_arm64_free(codegen_arm64_context_t* ctx) {
     }
     if (ctx->global_vars) {
         l_mem_free(ctx->global_vars, sizeof(global_var_entry_t) * ctx->global_capacity);
+    }
+    if (ctx->string_literals) {
+        // Free symbol names for each string literal
+        for (int i = 0; i < ctx->string_literal_count; i++) {
+            if (ctx->string_literals[i].symbol) {
+                l_mem_free(ctx->string_literals[i].symbol, strlen(ctx->string_literals[i].symbol) + 1);
+            }
+        }
+        l_mem_free(ctx->string_literals, sizeof(string_literal_t) * ctx->string_literal_capacity);
     }
 
     l_mem_free(ctx, sizeof(codegen_arm64_context_t));
@@ -401,6 +413,59 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
                     if (dest != ARM64_NO_REG) {
                         arm64_eor_reg_reg_reg(ctx->asm_, dest, dest, dest); // XOR = 0
                     }
+                }
+            }
+            break;
+        }
+
+        case IR_CONST_STRING: {
+            // String constant: allocate string at runtime
+            // Steps:
+            // 1. Add string literal to tracking (for later embedding in __cstring section)
+            // 2. Load string address using ADRP + ADD with page-relative relocations
+            // 3. Call sox_native_alloc_string(const char* chars, size_t length)
+            // 4. Result comes back in X0:X1 as value_t
+            if (instr->dest.type == IR_VAL_REGISTER && instr->dest.size == IR_SIZE_16BYTE) {
+                arm64_reg_pair_t dest_pair = get_register_pair_arm64(ctx, instr->dest);
+
+                // Register the string literal and get its symbol
+                int str_index = codegen_arm64_add_string_literal(ctx, instr->string_data, instr->string_length);
+                if (str_index < 0) {
+                    fprintf(stderr, "Error: Failed to add string literal\n");
+                    break;
+                }
+                const char* str_symbol = ctx->string_literals[str_index].symbol;
+
+                // Load address of string literal into X15 using ADRP + ADD
+                // ADRP X15, <page of string>
+                size_t adrp_offset = arm64_get_offset(ctx->asm_);
+                arm64_adrp(ctx->asm_, ARM64_X15, 0);
+                arm64_add_relocation(ctx->asm_, adrp_offset, ARM64_RELOC_ADR_PREL_PG_HI21, str_symbol, 0);
+
+                // ADD X15, X15, <offset within page>
+                size_t add_offset = arm64_get_offset(ctx->asm_);
+                arm64_add_reg_reg_imm(ctx->asm_, ARM64_X15, ARM64_X15, 0);
+                arm64_add_relocation(ctx->asm_, add_offset, ARM64_RELOC_ADD_ABS_LO12_NC, str_symbol, 0);
+
+                // Set up arguments for sox_native_alloc_string(const char* chars, size_t length)
+                // X0 = chars (address in X15)
+                // X1 = length
+                arm64_mov_reg_reg(ctx->asm_, ARM64_X0, ARM64_X15);
+                arm64_mov_reg_imm(ctx->asm_, ARM64_X1, instr->string_length);
+
+                // Call sox_native_alloc_string
+                size_t call_offset = arm64_get_offset(ctx->asm_);
+                arm64_bl(ctx->asm_, 0);
+                arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26, "sox_native_alloc_string", 0);
+
+                // Result is in X0:X1 (value_t) - move to destination
+                if (dest_pair.is_spilled) {
+                    // Store to stack
+                    arm64_stp(ctx->asm_, ARM64_X0, ARM64_X1, ARM64_FP, dest_pair.spill_offset);
+                } else if (dest_pair.low != ARM64_NO_REG && dest_pair.is_pair) {
+                    // Move to register pair
+                    arm64_mov_reg_reg(ctx->asm_, dest_pair.low, ARM64_X0);
+                    arm64_mov_reg_reg(ctx->asm_, dest_pair.high, ARM64_X1);
                 }
             }
             break;
@@ -1204,6 +1269,49 @@ arm64_relocation_t* codegen_arm64_get_relocations(codegen_arm64_context_t* ctx, 
         }
     }
     return ctx->asm_->relocations;
+}
+
+int codegen_arm64_add_string_literal(codegen_arm64_context_t* ctx, const char* data, size_t length) {
+    if (!ctx || !data) return -1;
+
+    // Grow capacity if needed
+    if (ctx->string_literal_capacity < ctx->string_literal_count + 1) {
+        int old_capacity = ctx->string_literal_capacity;
+        ctx->string_literal_capacity = (old_capacity < 4) ? 4 : old_capacity * 2;
+        ctx->string_literals = (string_literal_t*)l_mem_realloc(
+            ctx->string_literals,
+            sizeof(string_literal_t) * old_capacity,
+            sizeof(string_literal_t) * ctx->string_literal_capacity
+        );
+    }
+
+    // Create symbol name: .L.str.N
+    char symbol[32];
+    snprintf(symbol, sizeof(symbol), ".L.str.%d", ctx->string_literal_count);
+
+    // Allocate and copy symbol
+    size_t symbol_len = strlen(symbol) + 1;
+    char* symbol_copy = (char*)l_mem_alloc(symbol_len);
+    memcpy(symbol_copy, symbol, symbol_len);
+
+    // Store string literal
+    string_literal_t* lit = &ctx->string_literals[ctx->string_literal_count];
+    lit->data = data;  // Note: We assume the data pointer remains valid (from IR)
+    lit->length = length;
+    lit->symbol = symbol_copy;
+    lit->section_index = -1;  // Will be set during object file generation
+    lit->section_offset = 0;  // Will be set during object file generation
+
+    return ctx->string_literal_count++;
+}
+
+string_literal_t* codegen_arm64_get_string_literals(codegen_arm64_context_t* ctx, int* count) {
+    if (!ctx) {
+        *count = 0;
+        return NULL;
+    }
+    *count = ctx->string_literal_count;
+    return ctx->string_literals;
 }
 
 void codegen_arm64_print(codegen_arm64_context_t* ctx) {

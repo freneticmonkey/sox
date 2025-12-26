@@ -40,20 +40,41 @@ This script will:
 | `variables.sox` | Variable assignment and access | ✅ PASS |
 | `multiple_vars.sox` | Multiple variables with operations | ✅ PASS |
 | `comparisons.sox` | Comparison operators (==, !=, <, >) | ✅ PASS |
-| `logic.sox` | Logical operators (and, or, not) | ❌ TIMEOUT |
-| `strings.sox` | String constant printing | ❌ TIMEOUT |
+| `logic.sox` | Logical operators (and, or, not) | ✅ PASS |
+| `strings.sox` | String constant printing | ⚠️  PARTIAL (outputs nil) |
 
 ## Known Issues
 
-### logic.sox - Logical Operators Timeout
-The `and` and `or` operators cause native binaries to hang during execution. This is a known bug in the logical operator implementation for native code generation.
+### strings.sox - String Constants Not Fully Implemented
+String constants are detected and handled by the IR builder, but full string support requires embedding string data in the object file, which is not yet implemented. Currently, string constants are loaded as `nil` values.
 
-**Status**: Bug identified, fix pending
+**Status**: Partial implementation complete, full support pending
 
-### strings.sox - String Constants Timeout
-String constant handling in native code causes execution timeouts. This is likely related to object/string allocation in the native runtime.
+**Current State (2025-12-26)**:
+- ✅ IR builder detects string constants and creates `IR_CONST_STRING` instructions
+- ✅ String data is extracted and stored in IR
+- ✅ ARM64 codegen generates valid code (loads NIL as placeholder)
+- ✅ No crashes or timeouts
+- ❌ Actual string values not yet embedded in object file
 
-**Status**: Bug identified, fix pending
+**To Implement Full String Support**:
+1. Add `__cstring` or `__data` section support to Mach-O writer
+2. Embed string literal data in object file
+3. Create symbols for each string literal
+4. Generate PC-relative addressing (ADRP + ADD) with relocations to load string addresses
+5. Generate calls to `sox_native_alloc_string(char* data, size_t length)`
+6. Return allocated string `value_t`
+
+### Previous Issue: Logical Operators Timeout (RESOLVED)
+
+**Root Cause**: The IR builder was not properly tracking jump targets and creating basic blocks for jumps. Jump labels were allocated but never associated with actual code blocks, causing jumps to invalid addresses.
+
+**Fix Applied (2025-12-26)**: Implemented two-pass IR building:
+1. First pass scans bytecode to identify all jump targets and pre-allocates labels
+2. Second pass builds IR using pre-allocated labels and creates new basic blocks at jump target positions
+3. Jump instructions now correctly reference actual code locations
+
+This fix resolved the logical operators (`and`, `or`) timeout issue. Logical operators use short-circuit evaluation with conditional jumps, which now work correctly.
 
 ## Adding New Tests
 

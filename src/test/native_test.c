@@ -199,6 +199,19 @@ static MunitResult _test_native_compilation(const MunitParameter params[], void 
 
 MunitSuite l_native_test_setup() {
 
+    // Native code generation is only implemented for ARM64
+    // Skip tests on other architectures
+#if defined(__x86_64__) && !defined(__aarch64__)
+    printf("⚠️  Skipping native tests: Native code generation is only supported on ARM64 platforms\n");
+    static MunitSuite empty_suite = {
+        .prefix = (char *)"native/",
+        .tests = NULL,
+        .suites = NULL,
+        .iterations = 1,
+        .options = MUNIT_SUITE_OPTION_NONE
+    };
+    return empty_suite;
+#else
     static char* files[] = {
         "src/test/scripts/native/constants.sox",
         "src/test/scripts/native/variables.sox",
@@ -236,4 +249,5 @@ MunitSuite l_native_test_setup() {
     };
 
     return suite;
+#endif
 }
