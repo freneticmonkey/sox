@@ -699,6 +699,21 @@ static value_t _sys_getenv(int argCount, value_t* args) {
     return OBJ_VAL(l_copy_string(value, strlen(value)));
 }
 
+static value_t _sys_on_exit(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("sysOnExit(): requires 1 parameter (function)"));
+    }
+
+    value_t handler = args[0];
+
+    if (!IS_CLOSURE(handler) && !IS_FUNCTION(handler)) {
+        return OBJ_VAL(_native_error("sysOnExit(): parameter must be a function"));
+    }
+
+    l_vm_register_exit_handler(handler);
+    return NIL_VAL;
+}
+
 static value_t _sys_exit(int argCount, value_t* args) {
     int exit_code = 0;
 
@@ -710,6 +725,9 @@ static value_t _sys_exit(int argCount, value_t* args) {
     } else if (argCount > 1) {
         return OBJ_VAL(_native_error("sysExit(): takes 0 or 1 parameters"));
     }
+
+    // Call cleanup before exiting
+    l_vm_cleanup();
 
     exit(exit_code);
     return NIL_VAL;
@@ -810,6 +828,7 @@ void l_table_add_native() {
     // System functions
     l_vm_define_native("sysArgs", _sys_args);
     l_vm_define_native("sysGetenv", _sys_getenv);
+    l_vm_define_native("sysOnExit", _sys_on_exit);
     l_vm_define_native("sysExit", _sys_exit);
     l_vm_define_native("sysPlatform", _sys_platform);
     l_vm_define_native("sysSleep", _sys_sleep);

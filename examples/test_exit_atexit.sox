@@ -1,0 +1,15 @@
+// test_exit_atexit.sox - Test that handlers are called on normal termination
+print("Starting test...")
+
+import "modules/sys"
+
+fn cleanup() {
+    print("Cleanup called via atexit!")
+}
+
+print("Registering handler...")
+sys.onExit(cleanup)
+print("Handler registered")
+
+print("Exiting normally (no explicit exit call)...")
+// Program ends here - cleanup should still be called via atexit()

@@ -11,13 +11,38 @@ fn getenv(name) {
     return sysGetenv(name)
 }
 
+// Register a cleanup handler to be called on program exit
+//
+// Handlers are called in reverse order of registration (LIFO - last in, first out).
+// This allows proper cleanup ordering, similar to defer statements in other languages.
+//
+// The handler function will be called when exit() is called explicitly.
+//
+// Example usage:
+//   import "sys"
+//
+//   fn cleanup() {
+//       print("Cleaning up...")
+//   }
+//
+//   sys.onExit(cleanup)
+//   // ... do work ...
+//   sys.exit(0)  // cleanup() will be called before exit
+//
+// Note: Handlers are NOT called on:
+// - Normal program termination (return from main)
+// - Abnormal termination (crashes, signals)
+// - Direct calls to C's exit() function (use sys.exit() instead)
+fn onExit(handler) {
+    return sysOnExit(handler)
+}
+
 // Exit the program with optional exit code
 //
-// IMPORTANT: This function terminates the program immediately without
-// performing cleanup operations such as:
-// - Flushing file buffers
-// - Running destructors or finalizers
-// - Releasing allocated resources
+// This function now performs cleanup before terminating:
+// - Calls all registered onExit() handlers in reverse order
+// - Flushes stdout and stderr buffers
+// - Then terminates with the specified exit code
 //
 // The exit code follows Unix conventions:
 // - 0 indicates success
@@ -28,10 +53,8 @@ fn getenv(name) {
 // - A fatal error requires immediate termination
 // - Running in a script/batch context where exit codes matter
 //
-// Avoid exit() when:
-// - Normal function returns can propagate errors
-// - Resources need explicit cleanup (files, network connections)
-// - Running as part of a larger application or library
+// Prefer normal return from main when possible, as this allows
+// proper stack unwinding and resource cleanup.
 fn exit(code) {
     if (code == nil) {
         sysExit(0)
@@ -74,6 +97,7 @@ fn time() {
 return {
     args: args,
     getenv: getenv,
+    onExit: onExit,
     exit: exit,
     platform: platform,
     sleep: sleep,

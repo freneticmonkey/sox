@@ -1,0 +1,41 @@
+// test_exit_handlers.sox - Test exit handler cleanup functionality
+print("=== Exit Handler Test ===")
+print("")
+
+import "modules/sys"
+
+// Define handler functions
+fn handler1() {
+    print("Handler 1: This should be called LAST (LIFO order)")
+}
+
+fn handler2() {
+    print("Handler 2: This should be called SECOND")
+}
+
+fn handler3() {
+    print("Handler 3: This should be called FIRST")
+}
+
+print("Registering exit handlers...")
+
+// Register handlers
+sys.onExit(handler1)
+print("Registered handler 1")
+
+sys.onExit(handler2)
+print("Registered handler 2")
+
+sys.onExit(handler3)
+print("Registered handler 3")
+
+print("")
+print("All handlers registered. Now exiting...")
+print("Handlers should be called in reverse order (3, 2, 1):")
+print("")
+
+// Exit - this should trigger all handlers in reverse order
+sys.exit(0)
+
+// This should never be printed
+print("ERROR: This line should never execute!")
