@@ -34,6 +34,7 @@
 
 // Section flags
 #define S_REGULAR 0x0
+#define S_CSTRING_LITERALS 0x2
 #define S_ATTR_PURE_INSTRUCTIONS 0x80000000
 #define S_ATTR_SOME_INSTRUCTIONS 0x00000400
 
@@ -234,6 +235,9 @@ bool macho_create_executable_object_file(const char* filename, const uint8_t* co
 // Forward declaration - opaque type (actual definition in arm64_encoder.h as arm64_relocation_t)
 typedef void* arm64_relocation;
 
+// Forward declaration - opaque type (actual definition in codegen_arm64.h as string_literal_t)
+typedef void* string_literal;
+
 // High-level API: create object file with ARM64 relocations
 bool macho_create_object_file_with_arm64_relocs(const char* filename, const uint8_t* code,
                                                  size_t code_size, const char* function_name,
@@ -247,5 +251,23 @@ bool macho_create_executable_object_file_with_arm64_relocs(const char* filename,
                                                             uint32_t cputype, uint32_t cpusubtype,
                                                             const arm64_relocation* relocations,
                                                             int relocation_count);
+
+// High-level API: create object file with ARM64 relocations and string literals
+bool macho_create_object_file_with_arm64_relocs_and_strings(const char* filename, const uint8_t* code,
+                                                              size_t code_size, const char* function_name,
+                                                              uint32_t cputype, uint32_t cpusubtype,
+                                                              const arm64_relocation* relocations,
+                                                              int relocation_count,
+                                                              const string_literal* string_literals,
+                                                              int string_literal_count);
+
+// High-level API: create executable-ready object file with ARM64 relocations and string literals
+bool macho_create_executable_object_file_with_arm64_relocs_and_strings(const char* filename, const uint8_t* code,
+                                                                         size_t code_size,
+                                                                         uint32_t cputype, uint32_t cpusubtype,
+                                                                         const arm64_relocation* relocations,
+                                                                         int relocation_count,
+                                                                         const string_literal* string_literals,
+                                                                         int string_literal_count);
 
 #endif
