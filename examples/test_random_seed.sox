@@ -1,0 +1,44 @@
+// test_random_seed.sox - Test that random seed is initialized
+print("=== Random Seed Test ===")
+
+import "modules/math"
+
+print("Testing random number generation with automatic seeding...")
+print("")
+
+print("First call to random():")
+print(math.random())
+
+print("Second call to random():")
+print(math.random())
+
+print("Third call to random():")
+print(math.random())
+
+print("")
+print("First call to randomInt(1, 100):")
+print(math.randomInt(1, 100))
+
+print("Second call to randomInt(1, 100):")
+print(math.randomInt(1, 100))
+
+print("Third call to randomInt(1, 100):")
+print(math.randomInt(1, 100))
+
+print("")
+print("Testing manual seed...")
+math.srand(12345)
+
+print("After srand(12345), random():")
+print(math.random())
+
+print("Resetting seed to 12345...")
+math.srand(12345)
+
+print("After srand(12345) again, random() (should be same):")
+print(math.random())
+
+print("")
+print("Random seed test complete!")
+print("Run this test multiple times - the first random values should differ each run,")
+print("but the values after srand(12345) should always be the same.")

@@ -1,6 +1,10 @@
 // math.sox - Complete math utilities module
 // Combines native implementations with pure Sox functions
 
+// Initialize random seed with current time
+// Multiply by 1000000 to get microseconds-like precision
+mathSrand(clock() * 1000000)
+
 // Module-level constants
 var pi = 3.14159265359
 var e = 2.71828182846
@@ -96,6 +100,11 @@ fn randomRange(minVal, maxVal) {
     return minVal + random() * (maxVal - minVal)
 }
 
+// Seed the random number generator
+fn srand(seed) {
+    return mathSrand(seed)
+}
+
 // Degree/radian conversion
 fn toRadians(degrees) {
     return degrees * pi / 180
@@ -138,6 +147,7 @@ return {
     random: random,
     randomInt: randomInt,
     randomRange: randomRange,
+    srand: srand,
     toRadians: toRadians,
     toDegrees: toDegrees,
     isEven: isEven,

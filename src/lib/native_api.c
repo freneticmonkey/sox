@@ -455,6 +455,18 @@ static value_t _math_random_int(int argCount, value_t* args) {
     return NUMBER_VAL(min + rand() % (max - min + 1));
 }
 
+static value_t _math_srand(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("mathSrand(): requires 1 parameter"));
+    }
+    if (!IS_NUMBER(args[0])) {
+        return OBJ_VAL(_native_error("mathSrand(): seed must be a number"));
+    }
+    unsigned int seed = (unsigned int)AS_NUMBER(args[0]);
+    srand(seed);
+    return NIL_VAL;
+}
+
 // Array functions
 static value_t _array_slice(int argCount, value_t* args) {
     if (argCount < 2 || argCount > 3) {
@@ -740,6 +752,7 @@ void l_table_add_native() {
     l_vm_define_native("mathTan", _math_tan);
     l_vm_define_native("mathRandom", _math_random);
     l_vm_define_native("mathRandomInt", _math_random_int);
+    l_vm_define_native("mathSrand", _math_srand);
 
     // Array functions
     l_vm_define_native("arraySlice", _array_slice);
