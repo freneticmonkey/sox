@@ -862,7 +862,16 @@ bool macho_create_object_file_with_arm64_relocs_and_strings(const char* filename
     const string_literal_t* str_lits = (const string_literal_t*)string_literals;
     macho_builder_t* builder = macho_builder_new(cputype, cpusubtype);
 
-    // Create __cstring section if we have string literals
+    // IMPORTANT: Add __text section FIRST so code relocations go to section 0
+    // (The writer puts all relocations in section 0, so it must be the code section)
+    int text_section = macho_add_section(builder, "__text", "__TEXT",
+                                          S_REGULAR | S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS,
+                                          code, code_size, 4);
+
+    // Add function symbol (external, defined)
+    macho_add_symbol(builder, function_name, N_SECT | N_EXT, text_section + 1, 0);
+
+    // Create __cstring section AFTER __text if we have string literals
     int cstring_section = -1;
     uint8_t* cstring_data = NULL;
     size_t cstring_size = 0;
@@ -890,20 +899,12 @@ bool macho_create_object_file_with_arm64_relocs_and_strings(const char* filename
             offset += str_lits[i].length + 1;
         }
 
-        // Add __cstring section
+        // Add __cstring section (will be section 1, after __text)
         cstring_section = macho_add_section(builder, "__cstring", "__TEXT",
                                              S_CSTRING_LITERALS,
                                              cstring_data, cstring_size, 0);
         fprintf(stderr, "[MACHO-STR] __cstring section index: %d\n", cstring_section);
     }
-
-    // Add __text section
-    int text_section = macho_add_section(builder, "__text", "__TEXT",
-                                          S_REGULAR | S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS,
-                                          code, code_size, 4);
-
-    // Add function symbol (external, defined)
-    macho_add_symbol(builder, function_name, N_SECT | N_EXT, text_section + 1, 0);
 
     // Add string literal symbols and track their indices
     uint32_t* string_symbol_indices = NULL;

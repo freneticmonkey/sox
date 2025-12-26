@@ -8,6 +8,9 @@
 #include "test/wasm_test.h"
 #include "test/calling_convention_tests.h"
 #include "test/native_test.h"
+#include "test/linker_test.h"
+
+extern MunitSuite elf_executable_suite;
 
 int main(int argc, char* argv[]) {
     printf("Starting sox unit tests...\n");
@@ -20,6 +23,8 @@ int main(int argc, char* argv[]) {
         *get_wasm_suite(),
         l_calling_convention_test_setup(),
         l_native_test_setup(),
+        l_linker_test_setup(),
+        elf_executable_suite,
         NULL,
     };
 

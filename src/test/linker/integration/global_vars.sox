@@ -1,0 +1,20 @@
+// Phase 6.2 Integration Test: Global variable references
+// Tests that global variables work correctly across compilation
+
+var globalCounter = 0;
+var globalMessage = "Hello from globals";
+
+fun increment() {
+    globalCounter = globalCounter + 1;
+}
+
+fun main() {
+    globalCounter = 10;
+    increment();
+    increment();
+    increment();
+
+    print(globalCounter);  // Should print: 13
+
+    return 0;
+}
