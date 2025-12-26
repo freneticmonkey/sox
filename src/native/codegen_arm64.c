@@ -317,6 +317,9 @@ static void emit_function_epilogue_arm64(codegen_arm64_context_t* ctx) {
         arm64_ldp(ctx->asm_, ARM64_X19, ARM64_X20, ARM64_SP, 0);
     }
 
+    // Set return value to 0 (success) for main()
+    arm64_mov_reg_imm(ctx->asm_, ARM64_X0, 0);
+
     // Deallocate stack frame
     arm64_mov_reg_reg(ctx->asm_, ARM64_SP, ARM64_FP);
 
