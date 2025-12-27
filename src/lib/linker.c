@@ -7,6 +7,15 @@
 #include <sys/stat.h>
 #include <sys/utsname.h>
 
+// TODO: Custom linker headers will be added when integration is complete
+// #include "../native/linker_core.h"
+// #include "../native/object_reader.h"
+// #include "../native/symbol_resolver.h"
+// #include "../native/section_layout.h"
+// #include "../native/relocation_processor.h"
+// #include "../native/elf_executable.h"
+// #include "../native/macho_executable.h"
+
 #define MAX_LINKERS 5
 #define MAX_CMD_LEN 1024
 
@@ -436,65 +445,43 @@ void linker_free_list(linker_info_t* list) {
 // ============================================================================
 
 // Helper: Determine if a link job is simple enough for custom linker
-// For now, always returns false since custom linker phases 1-5 not implemented
 bool linker_is_simple_link_job(const linker_options_t* options) {
-    // TODO: Implement heuristics when custom linker is ready
-    // Simple cases might include:
-    // - Single object file
-    // - No external library dependencies (except runtime)
-    // - No complex relocations
-    // - Standard entry point
+    // For initial integration, consider jobs simple if:
+    // - Single input file
+    // - Linking runtime library
+    // - Standard target (linux/macos x86_64/arm64)
 
-    // For now, custom linker is not ready, so return false
-    (void)options;  // Unused
-    return false;
+    bool single_file = (options->input_file != NULL &&
+                       (options->input_files == NULL || options->input_file_count == 0));
+
+    bool supported_platform = (
+        (strcmp(options->target_os, "linux") == 0 ||
+         strcmp(options->target_os, "macos") == 0) &&
+        (strcmp(options->target_arch, "x86_64") == 0 ||
+         strcmp(options->target_arch, "arm64") == 0)
+    );
+
+    return single_file && supported_platform;
 }
 
 // Custom linker implementation - Phase 6.1 Integration Layer
 // This orchestrates all 5 phases of the custom linker
 int linker_link_custom(const linker_options_t* options) {
     if (options->verbose_linking || options->verbose) {
-        fprintf(stderr, "[CUSTOM LINKER] Starting custom linking process\n");
+        fprintf(stderr, "[CUSTOM LINKER] Custom linker requested\n");
         fprintf(stderr, "[CUSTOM LINKER] Output: %s\n", options->output_file);
     }
 
-    // TODO: Phase 1: Load object files
-    // linker_context_t* context = linker_context_new();
-    // for (int i = 0; i < options->input_file_count; i++) {
-    //     linker_object_t* obj = linker_read_object(options->input_files[i]);
-    //     linker_context_add_object(context, obj);
-    // }
+    // TODO: Custom linker integration pending
+    // The custom linker phases (1-5) are implemented but the integration layer
+    // that orchestrates them with linker_context_t is not yet complete.
+    // Each phase uses specialized types (symbol_resolver_t, section_layout_t, etc.)
+    // that need proper initialization from the linker_context_t.
+    //
+    // For now, fall back to system linker until the integration is completed.
 
-    // TODO: Phase 2: Resolve symbols
-    // if (!symbol_resolver_resolve(context->symbols)) {
-    //     fprintf(stderr, "Error: Symbol resolution failed\n");
-    //     return 1;
-    // }
-
-    // TODO: Phase 3: Layout sections
-    // section_layout_compute(context->layout);
-
-    // TODO: Phase 4: Process relocations
-    // if (!relocation_processor_process_all(context->relocations)) {
-    //     fprintf(stderr, "Error: Relocation processing failed\n");
-    //     return 1;
-    // }
-
-    // TODO: Phase 5: Generate executable
-    // bool success = false;
-    // if (strcmp(options->target_os, "linux") == 0) {
-    //     success = elf_write_executable(options->output_file, context);
-    // } else if (strcmp(options->target_os, "macos") == 0) {
-    //     success = macho_write_executable(options->output_file, context);
-    // }
-    // linker_context_free(context);
-    // return success ? 0 : 1;
-
-    // For now, fall back to system linker since Phases 1-5 not yet implemented
-    if (options->verbose_linking || options->verbose) {
-        fprintf(stderr, "[CUSTOM LINKER] Phases 1-5 not yet implemented\n");
-        fprintf(stderr, "[CUSTOM LINKER] Falling back to system linker\n");
-    }
+    fprintf(stderr, "Warning: Custom linker integration not yet complete\n");
+    fprintf(stderr, "Falling back to system linker...\n\n");
 
     // Get preferred system linker
     linker_info_t linker = linker_get_preferred(options->target_os, options->target_arch);

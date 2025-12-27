@@ -30,6 +30,7 @@ typedef struct {
     bool native_emit_object;
     bool native_debug_output;
     int native_optimization_level;
+    bool use_custom_linker;        // Use custom linker instead of system linker
 
     vm_args_t args;
 } vm_config_t;

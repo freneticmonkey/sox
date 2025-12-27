@@ -28,6 +28,7 @@ typedef struct {
     bool native_emit_object;
     bool native_debug_output;
     int native_optimization_level;  // 0-3
+    bool use_custom_linker;    // Use custom linker instead of system linker
 
     // Internal
     int argc;
