@@ -1,0 +1,47 @@
+// test_test.sox - Test the testing module
+print("=== Testing Module Test ===")
+print("")
+
+import "modules/test"
+
+print("--- Basic Assertions ---")
+test.assert(true, "true should pass")
+test.assert(1 == 1, "1 == 1 should pass")
+test.assert(5 > 3, "5 > 3 should pass")
+
+print("")
+print("--- Equality Assertions ---")
+test.assertEqual(5, 5, "5 equals 5")
+test.assertEqual("hello", "hello", "strings match")
+test.assertNotEqual(5, 10, "5 not equal to 10")
+
+print("")
+print("--- Nil Assertions ---")
+test.assertNil(nil, "nil is nil")
+test.assertNotNil(5, "5 is not nil")
+test.assertNotNil("hello", "string is not nil")
+
+print("")
+print("--- Type Assertions ---")
+test.assertType(5, "<number>", "5 is a number")
+test.assertType("hello", "String", "hello is a string")
+test.assertType(true, "<bool>", "true is a boolean")
+
+print("")
+print("--- Boolean Assertions ---")
+test.assertTrue(true, "true is true")
+test.assertTrue(5 > 3, "5 > 3 is true")
+test.assertFalse(false, "false is false")
+test.assertFalse(5 < 3, "5 < 3 is false")
+
+print("")
+print("--- Intentional Failures (for demonstration) ---")
+test.assert(false, "This should fail (testing failure reporting)")
+test.assertEqual(5, 10, "This should fail (5 != 10)")
+
+// Print summary
+test.summary()
+
+print("")
+print("Testing module test complete!")
+print("(Not calling runAndExit() to avoid terminating)")

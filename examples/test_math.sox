@@ -1,0 +1,78 @@
+// test_math.sox - Test math module
+print("=== Math Module Test ===")
+
+import "modules/math"
+
+// Test constants
+print("Testing constants...")
+print("pi = ")
+print(math.pi)
+print("e = ")
+print(math.e)
+
+// Test basic functions
+print("Testing basic functions...")
+print("abs(-5) = ")
+print(math.abs(0 - 5))
+
+print("square(4) = ")
+print(math.square(4))
+
+print("max(10, 20) = ")
+print(math.max(10, 20))
+
+print("min(10, 20) = ")
+print(math.min(10, 20))
+
+// Test native math functions
+print("Testing native functions...")
+print("sqrt(16) = ")
+print(math.sqrt(16))
+
+print("pow(2, 3) = ")
+print(math.pow(2, 3))
+
+print("floor(3.7) = ")
+print(math.floor(3.7))
+
+print("ceil(3.2) = ")
+print(math.ceil(3.2))
+
+print("round(3.5) = ")
+print(math.round(3.5))
+
+// Test trig
+print("Testing trig functions...")
+var sinVal = math.sin(math.pi / 2)
+print("sin(pi/2) = ")
+print(sinVal)
+
+var cosVal = math.cos(0)
+print("cos(0) = ")
+print(cosVal)
+
+// Test random
+print("Testing random...")
+var r = math.random()
+print("random() in [0, 1]: ")
+print(r)
+
+var ri = math.randomInt(1, 10)
+print("randomInt(1, 10): ")
+print(ri)
+
+// Test utility functions
+print("Testing utility functions...")
+print("clamp(15, 0, 10) = ")
+print(math.clamp(15, 0, 10))
+
+print("sign(5) = ")
+print(math.sign(5))
+
+print("isEven(4) = ")
+print(math.isEven(4))
+
+print("isOdd(5) = ")
+print(math.isOdd(5))
+
+print("Math tests complete!")

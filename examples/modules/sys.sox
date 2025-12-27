@@ -1,0 +1,108 @@
+// sys.sox - System utilities module
+// Provides access to system-level operations and environment
+
+// Get command-line arguments as an array
+fn args() {
+    return sysArgs()
+}
+
+// Get environment variable value
+fn getenv(name) {
+    return sysGetenv(name)
+}
+
+// Register a cleanup handler to be called on program exit
+//
+// Handlers are called in reverse order of registration (LIFO - last in, first out).
+// This allows proper cleanup ordering, similar to defer statements in other languages.
+//
+// The handler function will be called when exit() is called explicitly.
+//
+// Example usage:
+//   import "sys"
+//
+//   fn cleanup() {
+//       print("Cleaning up...")
+//   }
+//
+//   sys.onExit(cleanup)
+//   // ... do work ...
+//   sys.exit(0)  // cleanup() will be called before exit
+//
+// Note: Handlers are NOT called on:
+// - Normal program termination (return from main)
+// - Abnormal termination (crashes, signals)
+// - Direct calls to C's exit() function (use sys.exit() instead)
+fn onExit(handler) {
+    return sysOnExit(handler)
+}
+
+// Exit the program with optional exit code
+//
+// This function now performs cleanup before terminating:
+// - Calls all registered onExit() handlers in reverse order
+// - Flushes stdout and stderr buffers
+// - Then terminates with the specified exit code
+//
+// The exit code follows Unix conventions:
+// - 0 indicates success
+// - Non-zero indicates an error condition
+//
+// Use exit() when:
+// - The program has completed its intended work
+// - A fatal error requires immediate termination
+// - Running in a script/batch context where exit codes matter
+//
+// Prefer normal return from main when possible, as this allows
+// proper stack unwinding and resource cleanup.
+fn exit(code) {
+    if (code == nil) {
+        sysExit(0)
+    } else {
+        sysExit(code)
+    }
+}
+
+// Get the current platform name
+fn platform() {
+    return sysPlatform()
+}
+
+// Sleep for specified seconds (supports fractional seconds)
+fn sleep(seconds) {
+    return sysSleep(seconds)
+}
+
+// Check if running on Windows
+fn isWindows() {
+    return platform() == "windows"
+}
+
+// Check if running on macOS
+fn isDarwin() {
+    return platform() == "darwin"
+}
+
+// Check if running on Linux
+fn isLinux() {
+    return platform() == "linux"
+}
+
+// Get current time in seconds since epoch
+fn time() {
+    return clock()
+}
+
+// Export public API
+return {
+    args: args,
+    getenv: getenv,
+    onExit: onExit,
+    exit: exit,
+    platform: platform,
+    sleep: sleep,
+    isWindows: isWindows,
+    isDarwin: isDarwin,
+    isLinux: isLinux,
+    time: time
+}
