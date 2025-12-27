@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #include "wasm_generator.h"
 #include "lib/memory.h"
@@ -260,7 +261,12 @@ static WasmErrorCode _wasm_generate_import_section(wasm_generator_t* generator) 
 
     // Update section size with proper LEB128 encoding
     size_t content_size = generator->buffer_size - content_start;
-    return _wasm_encode_leb128_at(generator, size_pos, content_size, NULL);
+    // WASM spec limits section size to 4GB (uint32_t max)
+    if (content_size > UINT32_MAX) {
+        generator->error = WASM_ERROR;
+        return generator->error;
+    }
+    return _wasm_encode_leb128_at(generator, size_pos, (uint32_t)content_size, NULL);
 }
 
 static WasmErrorCode _wasm_generate_function_section(wasm_generator_t* generator) {

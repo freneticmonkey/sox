@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <math.h>
+#include <limits.h>
 
 #if defined(_WIN32) || defined(_WIN64)
 #include <windows.h>
@@ -234,8 +235,14 @@ static value_t _string_substring(int argCount, value_t* args) {
     }
 
     obj_string_t* str = AS_STRING(args[0]);
+
+    // Validate string length fits in int
+    if (str->length > (size_t)INT_MAX) {
+        return OBJ_VAL(_native_error("stringSubstring(): string too large"));
+    }
+
     int start = (int)AS_NUMBER(args[1]);
-    int end = str->length;
+    int end = (int)str->length;
 
     if (argCount == 3) {
         if (!IS_NUMBER(args[2])) {
@@ -245,7 +252,7 @@ static value_t _string_substring(int argCount, value_t* args) {
     }
 
     if (start < 0) start = 0;
-    if (end > (int)str->length) end = str->length;
+    if (end > (int)str->length) end = (int)str->length;
     if (start >= end) return OBJ_VAL(l_copy_string("", 0));
 
     return OBJ_VAL(l_copy_string(str->chars + start, end - start));
@@ -494,8 +501,14 @@ static value_t _array_slice(int argCount, value_t* args) {
     }
 
     obj_array_t* source = AS_ARRAY(args[0]);
+
+    // Validate array size fits in int
+    if (source->values.count > (size_t)INT_MAX) {
+        return OBJ_VAL(_native_error("arraySlice(): array too large"));
+    }
+
     int start = (int)AS_NUMBER(args[1]);
-    int end = source->values.count;
+    int end = (int)source->values.count;
 
     if (argCount == 3) {
         if (!IS_NUMBER(args[2])) {
@@ -505,7 +518,7 @@ static value_t _array_slice(int argCount, value_t* args) {
     }
 
     if (start < 0) start = 0;
-    if (end > source->values.count) end = source->values.count;
+    if (end > (int)source->values.count) end = (int)source->values.count;
     if (start >= end) return OBJ_VAL(l_new_array());
 
     return OBJ_VAL(l_copy_array(source, start, end));
@@ -522,7 +535,12 @@ static value_t _array_reverse(int argCount, value_t* args) {
     obj_array_t* source = AS_ARRAY(args[0]);
     obj_array_t* result = l_new_array();
 
-    for (int i = source->values.count - 1; i >= 0; i--) {
+    // Validate array size fits in int
+    if (source->values.count > (size_t)INT_MAX) {
+        return OBJ_VAL(_native_error("arrayReverse(): array too large"));
+    }
+
+    for (int i = (int)source->values.count - 1; i >= 0; i--) {
         l_push_array(result, source->values.values[i]);
     }
 

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 codegen_arm64_context_t* codegen_arm64_new(ir_module_t* module) {
     codegen_arm64_context_t* ctx = (codegen_arm64_context_t*)l_mem_alloc(sizeof(codegen_arm64_context_t));
@@ -1210,8 +1211,14 @@ bool codegen_arm64_generate_function(codegen_arm64_context_t* ctx, ir_function_t
         int target_label = ctx->jump_patches[i].target_label;
 
         if (target_label < ctx->label_count && ctx->label_offsets[target_label] >= 0) {
+            // Validate offset fits in int32_t range (instructions are 4 bytes)
+            if (offset > (size_t)(INT32_MAX / 4)) {
+                fprintf(stderr, "ERROR: Jump patch offset too large: %zu\n", offset);
+                return false;
+            }
+
             int32_t target_offset = ctx->label_offsets[target_label] * 4; // Instructions are 4 bytes
-            int32_t current_offset = offset * 4;
+            int32_t current_offset = (int32_t)(offset * 4);
             int32_t rel = target_offset - current_offset;
 
             // Patch the jump offset
@@ -1257,7 +1264,7 @@ arm64_relocation_t* codegen_arm64_get_relocations(codegen_arm64_context_t* ctx, 
     fprintf(stderr, "[CODEGEN] Extracting relocations: count=%d, ptr=%p\n", *count, ctx->asm_->relocations);
     if (*count > 0 && ctx->asm_->relocations) {
         for (int i = 0; i < *count; i++) {
-            fprintf(stderr, "[CODEGEN]   [%d] offset=%u, type=%d, symbol=%s\n",
+            fprintf(stderr, "[CODEGEN]   [%d] offset=%zu, type=%d, symbol=%s\n",
                    i, ctx->asm_->relocations[i].offset, ctx->asm_->relocations[i].type,
                    ctx->asm_->relocations[i].symbol ? ctx->asm_->relocations[i].symbol : "<NULL>");
         }
