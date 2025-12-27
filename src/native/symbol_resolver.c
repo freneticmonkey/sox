@@ -81,18 +81,67 @@ uint32_t symbol_hash(const char* name) {
     return hash;
 }
 
-/* Check if a symbol is from the runtime library */
+/* Check if a symbol is from the system C library */
+static bool is_system_library_symbol(const char* name) {
+    if (name == NULL) {
+        return false;
+    }
+
+    /* Common C library functions that should be resolved by dynamic linker */
+    static const char* libc_symbols[] = {
+        /* Memory management */
+        "malloc", "calloc", "realloc", "free", "memcpy", "memmove", "memset",
+        "memcmp", "__memcpy_chk", "__memmove_chk", "__memset_chk",
+
+        /* String functions */
+        "strlen", "strcmp", "strncmp", "strcpy", "strncpy", "strcat", "strncat",
+        "strchr", "strrchr", "strstr", "strdup", "__strcpy_chk", "__strcat_chk",
+
+        /* I/O functions */
+        "printf", "fprintf", "sprintf", "snprintf", "vprintf", "vfprintf",
+        "puts", "fputs", "fputc", "putchar", "fgets", "fread", "fwrite",
+        "fopen", "fclose", "fflush", "fseek", "ftell", "rewind",
+        "__sprintf_chk", "__snprintf_chk", "__vsnprintf_chk",
+
+        /* File descriptors */
+        "stdin", "stdout", "stderr", "__stdinp", "__stdoutp", "__stderrp",
+
+        /* Other standard functions */
+        "exit", "abort", "atexit", "qsort", "atoi", "atof", "strtol", "strtod",
+        "isdigit", "isalpha", "isspace", "tolower", "toupper",
+
+        /* Math functions */
+        "pow", "sqrt", "sin", "cos", "tan", "exp", "log", "floor", "ceil",
+
+        /* Thread-local storage (macOS) */
+        "_tlv_bootstrap",
+
+        NULL  /* Sentinel */
+    };
+
+    for (int i = 0; libc_symbols[i] != NULL; i++) {
+        if (strcmp(name, libc_symbols[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Check if a symbol is from the runtime library or system library */
 bool is_runtime_symbol(const char* name) {
     if (name == NULL) {
         return false;
     }
 
+    /* Check Sox runtime symbols */
     for (int i = 0; runtime_symbol_names[i] != NULL; i++) {
         if (strcmp(name, runtime_symbol_names[i]) == 0) {
             return true;
         }
     }
-    return false;
+
+    /* Check system library symbols */
+    return is_system_library_symbol(name);
 }
 
 /*

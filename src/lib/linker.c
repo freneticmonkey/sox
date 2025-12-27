@@ -15,6 +15,7 @@
 #include "../native/relocation_processor.h"
 #include "../native/elf_executable.h"
 #include "../native/macho_executable.h"
+#include "../native/archive_reader.h"
 
 #define MAX_LINKERS 5
 #define MAX_CMD_LEN 1024
@@ -508,6 +509,48 @@ int linker_link_custom(const linker_options_t* options) {
         linker_object_free(obj);
         linker_context_free(context);
         return 1;
+    }
+
+    // Phase 1.5: Extract runtime library if needed
+    if (options->link_runtime) {
+        if (options->verbose_linking || options->verbose) {
+            fprintf(stderr, "[CUSTOM LINKER] Phase 1.5: Extracting runtime library...\n");
+        }
+
+        // Search for runtime library in common locations
+        const char* candidates[] = {
+            "./build/libsox_runtime.a",
+            "./build/x64/Debug/libsox_runtime.a",
+            "./build/x64/Release/libsox_runtime.a",
+            "./bin/x64/Debug/libsox_runtime.a",
+            "./bin/x64/Release/libsox_runtime.a",
+            NULL
+        };
+
+        const char* runtime_path = NULL;
+        struct stat st;
+        for (int i = 0; candidates[i] != NULL; i++) {
+            if (stat(candidates[i], &st) == 0) {
+                runtime_path = candidates[i];
+                if (options->verbose_linking || options->verbose) {
+                    fprintf(stderr, "[CUSTOM LINKER] Found runtime library: %s\n", runtime_path);
+                }
+                break;
+            }
+        }
+
+        if (!runtime_path) {
+            fprintf(stderr, "Error: Runtime library not found (searched standard locations)\n");
+            linker_context_free(context);
+            return 1;
+        }
+
+        // Extract runtime objects from archive
+        if (!archive_extract_objects(runtime_path, context, options->verbose_linking || options->verbose)) {
+            fprintf(stderr, "Error: Failed to extract runtime library objects\n");
+            linker_context_free(context);
+            return 1;
+        }
     }
 
     // Phase 2: Symbol resolution
