@@ -67,6 +67,7 @@ int main(int argc, const char* argv[]) {
         config.native_emit_object = args.native_emit_object;
         config.native_debug_output = args.native_debug_output;
         config.native_optimization_level = args.native_optimization_level;
+        config.use_custom_linker = args.use_custom_linker;
 
         l_init_memory();
         l_init_vm(&config);
@@ -90,6 +91,7 @@ int main(int argc, const char* argv[]) {
         config.native_emit_object = args.native_emit_object;
         config.native_debug_output = args.native_debug_output;
         config.native_optimization_level = args.native_optimization_level;
+        config.use_custom_linker = args.use_custom_linker;
 
         int status = l_run_file(&config);
 

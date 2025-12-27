@@ -27,12 +27,13 @@ void print_help(const char* program_name) {
     struct arg_lit* native_obj = arg_lit0(NULL, "native-obj", "Emit object file (skip linking)");
     struct arg_lit* native_debug = arg_lit0(NULL, "native-debug", "Enable debug output during native code generation");
     struct arg_int* native_opt = arg_int0(NULL, "native-opt", "LEVEL", "Optimization level 0-3 (default: 0)");
+    struct arg_lit* custom_linker = arg_lit0(NULL, "custom-linker", "Use Sox custom linker instead of system linker (experimental)");
 
     struct arg_end* end = arg_end(20);
 
     void* argtable[] = { help, version, input, serialise, suppress, wasm, wat,
                          native, native_out, native_arch, native_os, native_obj,
-                         native_debug, native_opt, end };
+                         native_debug, native_opt, custom_linker, end };
 
     printf("Sox %s\n", VERSION);
     printf("A bytecode-based virtual machine interpreter for a toy programming language\n");
@@ -54,6 +55,8 @@ void print_help(const char* program_name) {
     printf("                                  Generate object file instead of executable\n");
     printf("  %s script.sox --native --native-arch arm64 --native-os macos\n", program_name);
     printf("                                  Cross-compile to ARM64 macOS\n");
+    printf("  %s script.sox --native --custom-linker\n", program_name);
+    printf("                                  Use custom Sox linker (experimental)\n");
     printf("  %s script.sox --serialise       Cache compiled bytecode\n", program_name);
     printf("\nFor more information, visit: https://github.com/freneticmonkey/sox\n");
 
@@ -99,12 +102,13 @@ bool parse_arguments(int argc, const char* argv[], sox_args_t* args) {
     struct arg_lit* native_obj = arg_lit0(NULL, "native-obj", "Emit object file");
     struct arg_lit* native_debug = arg_lit0(NULL, "native-debug", "Debug output");
     struct arg_int* native_opt = arg_int0(NULL, "native-opt", "LEVEL", "Optimization level 0-3");
+    struct arg_lit* custom_linker = arg_lit0(NULL, "custom-linker", "Use custom linker");
 
     struct arg_end* end = arg_end(20);
 
     void* argtable[] = { help, version, input, serialise, suppress, wasm, wat,
                          native, native_out, native_arch, native_os, native_obj,
-                         native_debug, native_opt, end };
+                         native_debug, native_opt, custom_linker, end };
 
     // Parse arguments
     int nerrors = arg_parse(argc, (char**)argv, argtable);
@@ -211,6 +215,7 @@ bool parse_arguments(int argc, const char* argv[], sox_args_t* args) {
         // Default to executable (emit_object = false) unless --native-obj is specified
         args->native_emit_object = (native_obj->count > 0);
         args->native_debug_output = (native_debug->count > 0);
+        args->use_custom_linker = (custom_linker->count > 0);
 
         if (native_opt->count > 0) {
             int opt_level = native_opt->ival[0];

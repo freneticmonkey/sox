@@ -314,22 +314,6 @@ int _generate_native(vm_config_t *config, const char* path, const char* source) 
     // Otherwise, try to link the object file into an executable
     printf("[4/4] Linking object file into executable...\n");
 
-    // Detect available linker
-    linker_info_t linker = linker_get_preferred(config->native_target_os, config->native_target_arch);
-
-    if (!linker.available) {
-        fprintf(stderr, "Error: No linker available for %s-%s\n",
-                config->native_target_os, config->native_target_arch);
-        fprintf(stderr, "Available linkers: gcc, clang, ld\n");
-        fprintf(stderr, "To generate object file instead, use --native-obj flag\n");
-
-        // Clean up temp file
-        remove(object_file);
-        return 70;
-    }
-
-    printf("Using linker: %s (%s)\n", linker.name, linker.path);
-
     // Prepare linker options
     linker_options_t linker_opts = {
         .input_file = object_file,
@@ -337,11 +321,12 @@ int _generate_native(vm_config_t *config, const char* path, const char* source) 
         .target_os = config->native_target_os,
         .target_arch = config->native_target_arch,
         .link_runtime = true,  // Link with libsox_runtime for runtime functions
-        .verbose = config->native_debug_output
+        .verbose = config->native_debug_output,
+        .mode = config->use_custom_linker ? LINKER_MODE_CUSTOM : LINKER_MODE_SYSTEM
     };
 
-    // Invoke the linker
-    int link_result = linker_invoke(linker, &linker_opts);
+    // Use unified linker API (auto-selects system/custom based on mode)
+    int link_result = linker_link(&linker_opts);
 
     // Clean up temporary object file
     if (link_result == 0) {
