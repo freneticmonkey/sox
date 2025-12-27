@@ -541,8 +541,8 @@ void section_layout_print(section_layout_t* layout) {
     }
 
     printf("Section Layout:\n");
-    printf("  Base address: 0x%016lx\n", layout->base_address);
-    printf("  Total size: %zu bytes (0x%zx)\n", layout->total_size, layout->total_size);
+    printf("  Base address: 0x%016llx\n", layout->base_address);
+    printf("  Total size: %llu bytes (0x%llx)\n", layout->total_size, layout->total_size);
     printf("  Page size: %zu bytes\n", layout->page_size);
     printf("  Platform: %s\n", platform_format_name(layout->target_format));
     printf("\n");
@@ -552,7 +552,7 @@ void section_layout_print(section_layout_t* layout) {
         merged_section_t* section = &layout->sections[i];
         printf("  [%d] %s (%s)\n", i, section->name,
                section_type_name(section->type));
-        printf("      Virtual address: 0x%016lx\n", section->vaddr);
+        printf("      Virtual address: 0x%016llx\n", section->vaddr);
         printf("      Size: %zu bytes (0x%zx)\n", section->size, section->size);
         printf("      Alignment: %zu bytes\n", section->alignment);
         printf("      Flags: 0x%08x\n", section->flags);

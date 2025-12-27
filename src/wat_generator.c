@@ -138,7 +138,7 @@ static WatErrorCode _wat_generate_value(wat_generator_t* generator, value_t valu
         _wat_append(generator, "\"\n");
         _wat_append(generator, "    i32.const 0  ;; string pointer placeholder\n");
         _wat_append(generator, "    i32.const ");
-        _wat_append_int(generator, string->length);
+        _wat_append_int(generator, (int)string->length);
         _wat_append(generator, "  ;; string length\n");
     } else {
         generator->error = WAT_ERROR_INVALID_VALUE_TYPE;

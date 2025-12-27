@@ -585,7 +585,7 @@ bool macho_create_object_file_with_arm64_relocs(const char* filename, const uint
         fprintf(stderr, "[RELOC] First pass: collecting unique symbols\n");
         for (int i = 0; i < relocation_count; i++) {
             const arm64_relocation_t* reloc = &arm64_relocs[i];
-            fprintf(stderr, "[RELOC]   [%d] offset=%u, type=%d, symbol=%s\n", i, reloc->offset, reloc->type, reloc->symbol ? reloc->symbol : "<NULL>");
+            fprintf(stderr, "[RELOC]   [%d] offset=%zu, type=%d, symbol=%s\n", i, reloc->offset, reloc->type, reloc->symbol ? reloc->symbol : "<NULL>");
 
             if (!reloc || !reloc->symbol) {
                 fprintf(stderr, "[RELOC] ERROR: NULL relocation or symbol at index %d\n", i);
@@ -674,7 +674,7 @@ bool macho_create_object_file_with_arm64_relocs(const char* filename, const uint
             // For BL instruction: PC-relative, 32-bit field (actually 26 bits in the instruction)
             // reloc->offset is in instructions, need to convert to bytes
             int32_t byte_offset = (int32_t)(reloc->offset * 4);
-            fprintf(stderr, "[RELOC]   Adding relocation: offset=%d (instr offset %u * 4), symbol_index=%d, type=%d\n",
+            fprintf(stderr, "[RELOC]   Adding relocation: offset=%d (instr offset %zu * 4), symbol_index=%d, type=%d\n",
                    byte_offset, reloc->offset, symbol_index, macho_reloc_type);
 
             macho_add_relocation(builder, byte_offset,
@@ -741,7 +741,7 @@ bool macho_create_executable_object_file_with_arm64_relocs(const char* filename,
         fprintf(stderr, "[RELOC-EXE] First pass: collecting unique symbols\n");
         for (int i = 0; i < relocation_count; i++) {
             const arm64_relocation_t* reloc = &arm64_relocs[i];
-            fprintf(stderr, "[RELOC-EXE]   [%d] offset=%u, type=%d, symbol=%s\n", i, reloc->offset, reloc->type, reloc->symbol ? reloc->symbol : "<NULL>");
+            fprintf(stderr, "[RELOC-EXE]   [%d] offset=%zu, type=%d, symbol=%s\n", i, reloc->offset, reloc->type, reloc->symbol ? reloc->symbol : "<NULL>");
 
             if (!reloc || !reloc->symbol) {
                 fprintf(stderr, "[RELOC-EXE] ERROR: NULL relocation or symbol at index %d\n", i);
@@ -823,7 +823,7 @@ bool macho_create_executable_object_file_with_arm64_relocs(const char* filename,
             }
 
             int32_t byte_offset = (int32_t)(reloc->offset * 4);
-            fprintf(stderr, "[RELOC-EXE]   Adding relocation: offset=%d (instr offset %u * 4), symbol_index=%d, type=%d\n",
+            fprintf(stderr, "[RELOC-EXE]   Adding relocation: offset=%d (instr offset %zu * 4), symbol_index=%d, type=%d\n",
                    byte_offset, reloc->offset, symbol_index, macho_reloc_type);
 
             macho_add_relocation(builder, byte_offset,

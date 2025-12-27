@@ -708,7 +708,7 @@ static InterpretResult _run() {
                 
                 // calculate the range values - nil values indicate the start or end of the array
                 int start_index = IS_NIL(start) ? 0 : (int)start.as.number;
-                int end_index = IS_NIL(end) ? array->values.count-1 : (int)end.as.number;
+                int end_index = IS_NIL(end) ? (int)(array->values.count-1) : (int)end.as.number;
                 
                 l_push(OBJ_VAL(l_copy_array(array, start_index, end_index)));
                 break;

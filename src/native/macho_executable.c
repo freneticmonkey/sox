@@ -312,7 +312,7 @@ bool macho_write_executable(const char* output_path,
             strncpy(text_sect.segname, SEG_TEXT, 16);
             text_sect.addr = text_vm_addr + current_offset;
             text_sect.size = context->merged_sections[i].size;
-            text_sect.offset = text_file_offset + current_offset;
+            text_sect.offset = (uint32_t)(text_file_offset + current_offset);
             text_sect.align = 4;  /* 2^4 = 16 bytes for ARM64 */
             text_sect.reloff = 0;
             text_sect.nreloc = 0;
@@ -340,7 +340,7 @@ bool macho_write_executable(const char* output_path,
             strncpy(const_sect.segname, SEG_TEXT, 16);
             const_sect.addr = text_vm_addr + current_offset;
             const_sect.size = context->merged_sections[i].size;
-            const_sect.offset = text_file_offset + current_offset;
+            const_sect.offset = (uint32_t)(text_file_offset + current_offset);
             const_sect.align = 3;  /* 2^3 = 8 bytes */
             const_sect.reloff = 0;
             const_sect.nreloc = 0;
@@ -386,7 +386,7 @@ bool macho_write_executable(const char* output_path,
             strncpy(data_sect.segname, SEG_DATA, 16);
             data_sect.addr = data_vm_addr + current_offset;
             data_sect.size = context->merged_sections[i].size;
-            data_sect.offset = data_file_offset + current_offset;
+            data_sect.offset = (uint32_t)(data_file_offset + current_offset);
             data_sect.align = 3;  /* 2^3 = 8 bytes */
             data_sect.reloff = 0;
             data_sect.nreloc = 0;
@@ -447,7 +447,7 @@ bool macho_write_executable(const char* output_path,
     dylinker_command_t dyld_cmd = {0};
     dyld_cmd.cmd = LC_LOAD_DYLINKER;
     size_t dyld_path_len = strlen(DYLD_PATH) + 1;
-    dyld_cmd.cmdsize = sizeof(dylinker_command_t) + align_to(dyld_path_len, 8);
+    dyld_cmd.cmdsize = (uint32_t)(sizeof(dylinker_command_t) + align_to(dyld_path_len, 8));
     dyld_cmd.name_offset = sizeof(dylinker_command_t);
 
     if (!write_struct(f, &dyld_cmd, sizeof(dyld_cmd))) {
