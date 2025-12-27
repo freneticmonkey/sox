@@ -148,9 +148,13 @@ bool relocation_processor_process_one(relocation_processor_t* proc,
 
     /* Get the symbol */
     if (reloc->symbol_index < 0 || reloc->symbol_index >= obj->symbol_count) {
+        char msg[256];
+        snprintf(msg, sizeof(msg),
+                "Invalid symbol index %d in relocation (obj has %d symbols, file: %s)",
+                reloc->symbol_index, obj->symbol_count,
+                obj->filename ? obj->filename : "<unknown>");
         add_error(proc, RELOC_ERROR_UNDEFINED_SYMBOL,
-                  "Invalid symbol index in relocation",
-                  NULL, reloc->offset, object_index, reloc->section_index);
+                  msg, NULL, reloc->offset, object_index, reloc->section_index);
         return false;
     }
 
