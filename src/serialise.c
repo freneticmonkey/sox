@@ -186,7 +186,7 @@ void _serialise_value_array(serialiser_t* serialiser, value_array_t* array) {
     BLOCK_START("Write Value Array")
 #endif
 
-    _serialise_buf_write_int(serialiser->buffer, array->count);
+    _serialise_buf_write_int(serialiser->buffer, (int)array->count);
     for (int i = 0; i < array->count; i++) {
         l_serialise_value(serialiser, &array->values[i]);
     }

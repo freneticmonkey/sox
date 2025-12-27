@@ -430,3 +430,155 @@ void linker_free_list(linker_info_t* list) {
         free(list);
     }
 }
+
+// ============================================================================
+// Phase 6.1: Main Linker API - Integration & Mode Selection
+// ============================================================================
+
+// Helper: Determine if a link job is simple enough for custom linker
+// For now, always returns false since custom linker phases 1-5 not implemented
+bool linker_is_simple_link_job(const linker_options_t* options) {
+    // TODO: Implement heuristics when custom linker is ready
+    // Simple cases might include:
+    // - Single object file
+    // - No external library dependencies (except runtime)
+    // - No complex relocations
+    // - Standard entry point
+
+    // For now, custom linker is not ready, so return false
+    (void)options;  // Unused
+    return false;
+}
+
+// Custom linker implementation - Phase 6.1 Integration Layer
+// This orchestrates all 5 phases of the custom linker
+int linker_link_custom(const linker_options_t* options) {
+    if (options->verbose_linking || options->verbose) {
+        fprintf(stderr, "[CUSTOM LINKER] Starting custom linking process\n");
+        fprintf(stderr, "[CUSTOM LINKER] Output: %s\n", options->output_file);
+    }
+
+    // TODO: Phase 1: Load object files
+    // linker_context_t* context = linker_context_new();
+    // for (int i = 0; i < options->input_file_count; i++) {
+    //     linker_object_t* obj = linker_read_object(options->input_files[i]);
+    //     linker_context_add_object(context, obj);
+    // }
+
+    // TODO: Phase 2: Resolve symbols
+    // if (!symbol_resolver_resolve(context->symbols)) {
+    //     fprintf(stderr, "Error: Symbol resolution failed\n");
+    //     return 1;
+    // }
+
+    // TODO: Phase 3: Layout sections
+    // section_layout_compute(context->layout);
+
+    // TODO: Phase 4: Process relocations
+    // if (!relocation_processor_process_all(context->relocations)) {
+    //     fprintf(stderr, "Error: Relocation processing failed\n");
+    //     return 1;
+    // }
+
+    // TODO: Phase 5: Generate executable
+    // bool success = false;
+    // if (strcmp(options->target_os, "linux") == 0) {
+    //     success = elf_write_executable(options->output_file, context);
+    // } else if (strcmp(options->target_os, "macos") == 0) {
+    //     success = macho_write_executable(options->output_file, context);
+    // }
+    // linker_context_free(context);
+    // return success ? 0 : 1;
+
+    // For now, fall back to system linker since Phases 1-5 not yet implemented
+    if (options->verbose_linking || options->verbose) {
+        fprintf(stderr, "[CUSTOM LINKER] Phases 1-5 not yet implemented\n");
+        fprintf(stderr, "[CUSTOM LINKER] Falling back to system linker\n");
+    }
+
+    // Get preferred system linker
+    linker_info_t linker = linker_get_preferred(options->target_os, options->target_arch);
+    if (!linker.available) {
+        fprintf(stderr, "Error: No system linker available for fallback\n");
+        return 1;
+    }
+
+    return linker_invoke(linker, options);
+}
+
+// Main linking entry point - Phase 6.1 API
+// Selects between system and custom linker based on mode
+int linker_link(const linker_options_t* options) {
+    if (options == NULL) {
+        fprintf(stderr, "Error: NULL options provided to linker_link\n");
+        return 1;
+    }
+
+    if (options->output_file == NULL) {
+        fprintf(stderr, "Error: No output file specified\n");
+        return 1;
+    }
+
+    // Validate we have at least one input file
+    bool has_input = false;
+    if (options->input_file != NULL) {
+        has_input = true;
+    } else if (options->input_files != NULL && options->input_file_count > 0) {
+        has_input = true;
+    }
+
+    if (!has_input) {
+        fprintf(stderr, "Error: No input files specified\n");
+        return 1;
+    }
+
+    if (options->verbose_linking || options->verbose) {
+        fprintf(stderr, "\n=== Sox Linker ===\n");
+        fprintf(stderr, "Mode: ");
+        switch (options->mode) {
+            case LINKER_MODE_SYSTEM:
+                fprintf(stderr, "SYSTEM (using external linker)\n");
+                break;
+            case LINKER_MODE_CUSTOM:
+                fprintf(stderr, "CUSTOM (using sox internal linker)\n");
+                break;
+            case LINKER_MODE_AUTO:
+                fprintf(stderr, "AUTO (will auto-select)\n");
+                break;
+        }
+        fprintf(stderr, "Target: %s-%s\n", options->target_os, options->target_arch);
+        fprintf(stderr, "Output: %s\n", options->output_file);
+    }
+
+    // Route to appropriate linker based on mode
+    if (options->mode == LINKER_MODE_SYSTEM) {
+        // Explicit request for system linker
+        if (options->verbose_linking || options->verbose) {
+            fprintf(stderr, "Using system linker (explicit)\n");
+        }
+        linker_info_t linker = linker_get_preferred(options->target_os, options->target_arch);
+        return linker_invoke(linker, options);
+
+    } else if (options->mode == LINKER_MODE_CUSTOM) {
+        // Explicit request for custom linker
+        if (options->verbose_linking || options->verbose) {
+            fprintf(stderr, "Using custom linker (explicit)\n");
+        }
+        return linker_link_custom(options);
+
+    } else {
+        // Auto mode: use custom for simple cases, system for complex
+        if (linker_is_simple_link_job(options)) {
+            if (options->verbose_linking || options->verbose) {
+                fprintf(stderr, "Using custom linker (auto-selected)\n");
+            }
+            return linker_link_custom(options);
+        } else {
+            if (options->verbose_linking || options->verbose) {
+                fprintf(stderr, "Using system linker (auto-selected)\n");
+            }
+            linker_info_t linker = linker_get_preferred(options->target_os, options->target_arch);
+            return linker_invoke(linker, options);
+        }
+    }
+}

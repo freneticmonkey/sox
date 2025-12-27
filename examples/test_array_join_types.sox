@@ -1,0 +1,62 @@
+// test_array_join_types.sox - Test array join() with different value types
+print("=== Array Join Type Conversion Tests ===")
+
+import "modules/array"
+
+print("")
+print("Testing arrayJoin() with different types...")
+
+// Test with strings only
+var arr1 []
+push(arr1, "hello")
+push(arr1, "world")
+var result1 = array.join(arr1, " ")
+print("Strings: ")
+print(result1)
+
+// Test with numbers
+var arr2 []
+push(arr2, "Number:")
+push(arr2, 42)
+push(arr2, 3.14)
+var result2 = array.join(arr2, " ")
+print("Numbers: ")
+print(result2)
+
+// Test with booleans
+var arr3 []
+push(arr3, "Boolean:")
+push(arr3, true)
+push(arr3, false)
+var result3 = array.join(arr3, " ")
+print("Booleans: ")
+print(result3)
+
+// Test with nil
+var arr4 []
+push(arr4, "Nil:")
+push(arr4, nil)
+var result4 = array.join(arr4, " ")
+print("Nil: ")
+print(result4)
+
+// Test mixed types
+var arr5 []
+push(arr5, "Mixed:")
+push(arr5, 42)
+push(arr5, true)
+push(arr5, nil)
+push(arr5, "end")
+var result5 = array.join(arr5, ", ")
+print("Mixed: ")
+print(result5)
+
+// Test empty array
+var arr6 []
+var result6 = array.join(arr6, ",")
+print("Empty: '")
+print(result6)
+print("'")
+
+print("")
+print("All type conversion tests complete!")

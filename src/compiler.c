@@ -1592,7 +1592,7 @@ static char* _derive_module_name(const char* path, int length) {
     }
 
     const char* name_start = last_slash ? last_slash : path;
-    int name_length = length - (name_start - path);
+    int name_length = (int)(length - (name_start - path));
 
     // Remove .sox extension if present
     if (name_length > 4 &&
@@ -1638,7 +1638,7 @@ static void _import_single() {
     // If no alias was provided, derive module name from path
     if (module_name == NULL) {
         module_name = _derive_module_name(path, path_length);
-        name_length = strlen(module_name);
+        name_length = (int)strlen(module_name);
         name_allocated = true;  // We allocated this, need to free it
 
         // Create a token for the derived module name

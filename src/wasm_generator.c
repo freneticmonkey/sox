@@ -221,7 +221,7 @@ static WasmErrorCode _wasm_generate_type_section(wasm_generator_t* generator) {
 
     // Update section size with proper LEB128 encoding
     size_t content_size = generator->buffer_size - content_start;
-    return _wasm_encode_leb128_at(generator, size_pos, content_size, NULL);
+    return _wasm_encode_leb128_at(generator, size_pos, (uint32_t)content_size, NULL);
 }
 
 static WasmErrorCode _wasm_generate_import_section(wasm_generator_t* generator) {
@@ -284,7 +284,7 @@ static WasmErrorCode _wasm_generate_function_section(wasm_generator_t* generator
 
     // Update section size
     size_t content_size = generator->buffer_size - content_start;
-    return _wasm_encode_leb128_at(generator, size_pos, content_size, NULL);
+    return _wasm_encode_leb128_at(generator, size_pos, (uint32_t)content_size, NULL);
 }
 
 static WasmErrorCode _wasm_generate_export_section(wasm_generator_t* generator) {
@@ -317,7 +317,7 @@ static WasmErrorCode _wasm_generate_export_section(wasm_generator_t* generator) 
 
     // Update section size
     size_t content_size = generator->buffer_size - content_start;
-    return _wasm_encode_leb128_at(generator, size_pos, content_size, NULL);
+    return _wasm_encode_leb128_at(generator, size_pos, (uint32_t)content_size, NULL);
 }
 
 // Helper macro to check buffer space before write operations
@@ -502,7 +502,7 @@ static WasmErrorCode _wasm_generate_code_section(wasm_generator_t* generator, ob
     }
 
     // Now write the function body with correct size
-    _wasm_append_leb128_u32(generator, temp_body_size);
+    _wasm_append_leb128_u32(generator, (uint32_t)temp_body_size);
     if (generator->error != WASM_OK) {
         free(temp_body);
         return generator->error;
@@ -519,7 +519,7 @@ static WasmErrorCode _wasm_generate_code_section(wasm_generator_t* generator, ob
 
     // Update section size
     size_t content_size = generator->buffer_size - content_start;
-    return _wasm_encode_leb128_at(generator, size_pos, content_size, NULL);
+    return _wasm_encode_leb128_at(generator, size_pos, (uint32_t)content_size, NULL);
 }
 
 WasmErrorCode l_wasm_generate_from_function(wasm_generator_t* generator, obj_function_t* function) {

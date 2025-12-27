@@ -1,0 +1,223 @@
+// array.sox - Array/collection manipulation utilities
+// Combines native implementations with pure Sox functional programming
+
+// Functional programming operations (pure Sox)
+fn map(arr, func) {
+    var result []
+    var i = 0
+    var length = len(arr)
+
+    while (i < length) {
+        push(result, func(arr[i]))
+        i = i + 1
+    }
+
+    return result
+}
+
+fn filter(arr, predicate) {
+    var result []
+    var i = 0
+    var length = len(arr)
+
+    while (i < length) {
+        if (predicate(arr[i])) {
+            push(result, arr[i])
+        }
+        i = i + 1
+    }
+
+    return result
+}
+
+fn reduce(arr, func, initial) {
+    var accumulator = initial
+    var i = 0
+    var length = len(arr)
+
+    while (i < length) {
+        accumulator = func(accumulator, arr[i])
+        i = i + 1
+    }
+
+    return accumulator
+}
+
+// Array slicing (native implementation)
+fn slice(arr, start, end) {
+    if (end == nil) {
+        return arraySlice(arr, start)
+    }
+    return arraySlice(arr, start, end)
+}
+
+// Array reversal (native implementation)
+fn reverse(arr) {
+    return arrayReverse(arr)
+}
+
+// Array search (native implementation)
+fn indexOf(arr, value) {
+    return arrayIndexOf(arr, value)
+}
+
+fn contains(arr, value) {
+    return arrayContains(arr, value)
+}
+
+// Array to string (native implementation)
+fn join(arr, separator) {
+    return arrayJoin(arr, separator)
+}
+
+// Pure Sox implementations
+fn forEach(arr, func) {
+    var i = 0
+    var length = len(arr)
+
+    while (i < length) {
+        func(arr[i])
+        i = i + 1
+    }
+}
+
+fn find(arr, predicate) {
+    var i = 0
+    var length = len(arr)
+
+    while (i < length) {
+        if (predicate(arr[i])) {
+            return arr[i]
+        }
+        i = i + 1
+    }
+
+    return nil
+}
+
+fn findIndex(arr, predicate) {
+    var i = 0
+    var length = len(arr)
+
+    while (i < length) {
+        if (predicate(arr[i])) {
+            return i
+        }
+        i = i + 1
+    }
+
+    return -1
+}
+
+fn every(arr, predicate) {
+    var i = 0
+    var length = len(arr)
+
+    while (i < length) {
+        if (!predicate(arr[i])) {
+            return false
+        }
+        i = i + 1
+    }
+
+    return true
+}
+
+fn some(arr, predicate) {
+    var i = 0
+    var length = len(arr)
+
+    while (i < length) {
+        if (predicate(arr[i])) {
+            return true
+        }
+        i = i + 1
+    }
+
+    return false
+}
+
+fn concat(arr1, arr2) {
+    var result []
+    var i = 0
+
+    while (i < len(arr1)) {
+        push(result, arr1[i])
+        i = i + 1
+    }
+
+    i = 0
+    while (i < len(arr2)) {
+        push(result, arr2[i])
+        i = i + 1
+    }
+
+    return result
+}
+
+fn flatten(arr) {
+    var result []
+    var i = 0
+
+    while (i < len(arr)) {
+        var elem = arr[i]
+        if (type(elem) == "Array") {
+            var j = 0
+            while (j < len(elem)) {
+                push(result, elem[j])
+                j = j + 1
+            }
+        } else {
+            push(result, elem)
+        }
+        i = i + 1
+    }
+
+    return result
+}
+
+fn first(arr) {
+    if (len(arr) > 0) {
+        return arr[0]
+    }
+    return nil
+}
+
+fn last(arr) {
+    var length = len(arr)
+    if (length > 0) {
+        return arr[length - 1]
+    }
+    return nil
+}
+
+fn take(arr, n) {
+    return slice(arr, 0, n)
+}
+
+fn drop(arr, n) {
+    return slice(arr, n, len(arr))
+}
+
+// Export public API
+return {
+    map: map,
+    filter: filter,
+    reduce: reduce,
+    forEach: forEach,
+    find: find,
+    findIndex: findIndex,
+    every: every,
+    some: some,
+    slice: slice,
+    reverse: reverse,
+    indexOf: indexOf,
+    contains: contains,
+    join: join,
+    concat: concat,
+    flatten: flatten,
+    first: first,
+    last: last,
+    take: take,
+    drop: drop
+}

@@ -127,6 +127,15 @@ void l_init_vm(vm_config_t *config) {
     vm.init_string = NULL;
     vm.init_string = l_new_string("init");
 
+    // Initialize exit handlers
+    vm.exit_handlers = NULL;
+    vm.exit_handler_count = 0;
+    vm.exit_handler_capacity = 0;
+    vm.cleanup_done = false;
+
+    // Register cleanup with atexit for safety
+    atexit(l_vm_cleanup);
+
     // native lib functions
     l_table_add_native();
 }
@@ -138,8 +147,65 @@ void l_free_vm() {
 
     vm.init_string = NULL;
 
+    // Free exit handlers array
+    if (vm.exit_handlers != NULL) {
+        free(vm.exit_handlers);
+        vm.exit_handlers = NULL;
+    }
+    vm.exit_handler_count = 0;
+    vm.exit_handler_capacity = 0;
+
     l_unregister_mark_roots_cb(_mark_roots);
     l_register_garbage_collect_cb(_garbage_collect);
+}
+
+void l_vm_register_exit_handler(value_t handler) {
+    // Grow array if needed
+    if (vm.exit_handler_count >= vm.exit_handler_capacity) {
+        int new_capacity = vm.exit_handler_capacity == 0 ? 8 : vm.exit_handler_capacity * 2;
+        vm.exit_handlers = realloc(vm.exit_handlers, sizeof(value_t) * new_capacity);
+        if (vm.exit_handlers == NULL) {
+            fprintf(stderr, "Failed to allocate memory for exit handlers\n");
+            return;
+        }
+        vm.exit_handler_capacity = new_capacity;
+    }
+
+    vm.exit_handlers[vm.exit_handler_count++] = handler;
+}
+
+void l_vm_cleanup() {
+    // Make cleanup idempotent - only run once
+    if (vm.cleanup_done) {
+        return;
+    }
+    vm.cleanup_done = true;
+
+    // Call user-registered exit handlers in reverse order (LIFO)
+    for (int i = vm.exit_handler_count - 1; i >= 0; i--) {
+        value_t handler = vm.exit_handlers[i];
+
+        if (IS_CLOSURE(handler) || IS_FUNCTION(handler)) {
+            // Reset stack to clean state before each handler
+            _reset_stack();
+
+            // Try to call the handler
+            // We need to be careful here - if the handler fails, we continue cleanup
+            l_push(handler);
+            if (_call_value(handler, 0)) {
+                // Run the handler - ignore errors, continue with next handler
+                l_run();
+            }
+        }
+    }
+
+    // Flush output streams
+    fflush(stdout);
+    fflush(stderr);
+
+    // Note: We don't call l_free_vm() here because that would be done
+    // by the normal shutdown sequence. This cleanup is just for flushing
+    // buffers and calling user handlers.
 }
 
 static InterpretResult _run() {
@@ -708,7 +774,7 @@ static InterpretResult _run() {
                 
                 // calculate the range values - nil values indicate the start or end of the array
                 int start_index = IS_NIL(start) ? 0 : (int)start.as.number;
-                int end_index = IS_NIL(end) ? array->values.count-1 : (int)end.as.number;
+                int end_index = IS_NIL(end) ? (int)(array->values.count-1) : (int)end.as.number;
                 
                 l_push(OBJ_VAL(l_copy_array(array, start_index, end_index)));
                 break;

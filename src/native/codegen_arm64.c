@@ -361,6 +361,9 @@ static void emit_function_epilogue_arm64(codegen_arm64_context_t* ctx) {
     // Restore X19-X20 (runtime context pointer and pair)
     arm64_ldp(ctx->asm_, ARM64_X19, ARM64_X20, ARM64_SP, 0);
 
+    // Set return value to 0 (success) for main()
+    arm64_mov_reg_imm(ctx->asm_, ARM64_X0, 0);
+
     // Deallocate stack frame
     arm64_mov_reg_reg(ctx->asm_, ARM64_SP, ARM64_FP);
 
@@ -942,6 +945,7 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
                 // 16-byte composite type: marshal to X0:X1 and X2:X3, call runtime
                 arm64_reg_pair_t op1_pair = get_register_pair_arm64(ctx, instr->operand1);
                 arm64_reg_pair_t op2_pair = get_register_pair_arm64(ctx, instr->operand2);
+                arm64_reg_pair_t dest_pair = get_register_pair_arm64(ctx, instr->dest);
 
                 // Load operand1 into X0:X1
                 if (op1_pair.is_spilled) {
@@ -985,26 +989,16 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
                 arm64_bl(ctx->asm_, 0);
                 arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26, func_name, 0);
 
-                // Result comes back in X0:X1 as a value_t (boolean)
-                // Destination should be 16-byte register pair
-                if (instr->dest.size == IR_SIZE_16BYTE) {
-                    arm64_reg_pair_t dest_pair = get_register_pair_arm64(ctx, instr->dest);
-                    if (dest_pair.low != ARM64_NO_REG && dest_pair.is_pair) {
-                        // Copy X0:X1 to destination pair
-                        if (dest_pair.low != ARM64_X0) {
-                            arm64_mov_reg_reg(ctx->asm_, dest_pair.low, ARM64_X0);
-                        }
-                        if (dest_pair.high != ARM64_X1) {
-                            arm64_mov_reg_reg(ctx->asm_, dest_pair.high, ARM64_X1);
-                        }
+                // Copy result from X0:X1 to dest pair
+                if (dest_pair.is_spilled) {
+                    store_value_to_spill(ctx, instr->dest.as.reg, dest_pair.spill_offset,
+                                        IR_SIZE_16BYTE, ARM64_X0, ARM64_X1);
+                } else if (dest_pair.low != ARM64_NO_REG && dest_pair.is_pair) {
+                    if (dest_pair.low != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, dest_pair.low, ARM64_X0);
                     }
-                } else {
-                    // Fallback for 8-byte destination (legacy)
-                    arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
-                    if (dest != ARM64_NO_REG) {
-                        if (dest != ARM64_X0) {
-                            arm64_mov_reg_reg(ctx->asm_, dest, ARM64_X0);
-                        }
+                    if (dest_pair.high != ARM64_X1) {
+                        arm64_mov_reg_reg(ctx->asm_, dest_pair.high, ARM64_X1);
                     }
                 }
             } else {
