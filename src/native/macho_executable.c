@@ -215,11 +215,6 @@ bool macho_set_entry_point(linker_context_t* context) {
     /* Set entry point to _main's final address */
     context->entry_point = main_sym->final_address;
 
-    if (context->options.verbose) {
-        printf("Entry point set to _main at 0x%llx\n",
-               (unsigned long long)context->entry_point);
-    }
-
     return true;
 }
 
@@ -557,20 +552,6 @@ bool macho_write_executable(const char* output_path,
     if (chmod(output_path, 0755) != 0) {
         fprintf(stderr, "Mach-O warning: Failed to set executable permissions\n");
         /* Not a fatal error, continue */
-    }
-
-    if (context->options.verbose) {
-        printf("Mach-O executable written to: %s\n", output_path);
-        printf("  Base address: 0x%llx\n", (unsigned long long)base_addr);
-        printf("  Entry point: 0x%llx\n", (unsigned long long)context->entry_point);
-        printf("  __TEXT: 0x%llx - 0x%llx (%llu bytes)\n",
-               (unsigned long long)text_vm_addr,
-               (unsigned long long)(text_vm_addr + text_size),
-               (unsigned long long)text_size);
-        printf("  __DATA: 0x%llx - 0x%llx (%llu bytes)\n",
-               (unsigned long long)data_vm_addr,
-               (unsigned long long)(data_vm_addr + data_size),
-               (unsigned long long)data_size);
     }
 
     return true;
