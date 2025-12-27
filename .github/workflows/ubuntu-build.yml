@@ -34,10 +34,14 @@ jobs:
         run: |
           make build-tools
           make build
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '15.0'
 
       - name: Run Tests
         run: |
           make build-tools
           make test
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '15.0'
 
       - run: echo "🍏 This job's status is ${{ job.status }}."

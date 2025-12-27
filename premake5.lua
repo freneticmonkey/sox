@@ -127,6 +127,9 @@ project "sox"
       "c",
       --  "tracy",
     }
+    xcodebuildsettings {
+      ["MACOSX_DEPLOYMENT_TARGET"] = "15.0"
+    }
 
   filter "system:windows"
     defines {
@@ -197,6 +200,9 @@ project "test"
     }
     linkoptions {
       "-rpath", "@loader_path"
+    }
+    xcodebuildsettings {
+      ["MACOSX_DEPLOYMENT_TARGET"] = "15.0"
     }
 
   filter "system:linux"
@@ -269,7 +275,10 @@ project "sox_runtime"
   filter "system:macosx"
     defines { "SOX_RUNTIME_MACOS" }
     buildoptions { "-fvisibility=hidden" }
-  
+    xcodebuildsettings {
+      ["MACOSX_DEPLOYMENT_TARGET"] = "15.0"
+    }
+
   filter "system:linux"
     defines { "SOX_RUNTIME_LINUX" }
     buildoptions { "-fvisibility=hidden", "-fPIC" }
@@ -301,7 +310,10 @@ project "sox_runtime_shared"
     defines { "SOX_RUNTIME_MACOS" }
     buildoptions { "-fvisibility=hidden" }
     linkoptions { "-dynamiclib" }
-  
+    xcodebuildsettings {
+      ["MACOSX_DEPLOYMENT_TARGET"] = "15.0"
+    }
+
   filter "system:linux"
     defines { "SOX_RUNTIME_LINUX" }
     buildoptions { "-fvisibility=hidden", "-fPIC" }
