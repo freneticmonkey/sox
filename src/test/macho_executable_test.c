@@ -354,7 +354,7 @@ static MunitTest macho_executable_tests[] = {
 
 /* Test suite */
 const MunitSuite macho_executable_suite = {
-    "/macho_executable",
+    "macho_executable",
     macho_executable_tests,
     NULL,
     1,

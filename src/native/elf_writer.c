@@ -15,6 +15,8 @@ elf_builder_t* elf_builder_new(void) {
     builder->sections = NULL;
     builder->section_count = 0;
     builder->section_capacity = 0;
+    builder->section_data = NULL;
+    builder->section_data_capacity = 0;
     builder->strtab = NULL;
     builder->strtab_size = 0;
     builder->strtab_capacity = 0;
@@ -48,6 +50,14 @@ void elf_builder_free(elf_builder_t* builder) {
     }
     if (builder->sections) {
         l_mem_free(builder->sections, sizeof(Elf64_Shdr) * builder->section_capacity);
+    }
+    if (builder->section_data) {
+        for (int i = 0; i < builder->section_count; i++) {
+            if (builder->section_data[i]) {
+                l_mem_free(builder->section_data[i], builder->sections[i].sh_size);
+            }
+        }
+        l_mem_free(builder->section_data, sizeof(uint8_t*) * builder->section_data_capacity);
     }
     if (builder->strtab) {
         l_mem_free(builder->strtab, builder->strtab_capacity);
@@ -94,6 +104,16 @@ int elf_add_section(elf_builder_t* builder, const char* name, uint32_t type,
         );
     }
 
+    if (builder->section_data_capacity < builder->section_count + 1) {
+        int old_capacity = builder->section_data_capacity;
+        builder->section_data_capacity = (old_capacity < 8) ? 8 : old_capacity * 2;
+        builder->section_data = (uint8_t**)l_mem_realloc(
+            builder->section_data,
+            sizeof(uint8_t*) * old_capacity,
+            sizeof(uint8_t*) * builder->section_data_capacity
+        );
+    }
+
     Elf64_Shdr* shdr = &builder->sections[builder->section_count];
     memset(shdr, 0, sizeof(Elf64_Shdr));
 
@@ -107,6 +127,14 @@ int elf_add_section(elf_builder_t* builder, const char* name, uint32_t type,
     shdr->sh_info = 0;
     shdr->sh_addralign = (type == SHT_PROGBITS) ? 16 : 1;
     shdr->sh_entsize = (type == SHT_SYMTAB) ? sizeof(Elf64_Sym) : 0;
+
+    /* Store section data */
+    if (data != NULL && size > 0) {
+        builder->section_data[builder->section_count] = (uint8_t*)l_mem_alloc(size);
+        memcpy(builder->section_data[builder->section_count], data, size);
+    } else {
+        builder->section_data[builder->section_count] = NULL;
+    }
 
     return builder->section_count++;
 }
@@ -202,9 +230,37 @@ bool elf_write_file(elf_builder_t* builder, const char* filename, uint16_t machi
 
     // Write section data and record offsets
     for (int i = 0; i < builder->section_count; i++) {
+        // Align to section alignment requirement
+        uint64_t align = builder->sections[i].sh_addralign;
+        if (align > 1) {
+            while (builder->size % align != 0) {
+                uint8_t zero = 0;
+                write_data(builder, &zero, 1);
+            }
+        }
+
         section_data_offsets[i] = builder->size;
-        // For now, we don't write actual section data here
-        // It would be added by the caller
+
+        // Write actual section data
+        // Special handling for dynamic sections that may have been updated after creation
+        if (builder->sections[i].sh_type == SHT_SYMTAB && builder->symtab) {
+            // Use current symbol table data
+            size_t symtab_size = builder->symtab_count * sizeof(Elf64_Sym);
+            builder->sections[i].sh_size = symtab_size;
+            write_data(builder, (uint8_t*)builder->symtab, symtab_size);
+        } else if (builder->sections[i].sh_type == SHT_STRTAB && builder->strtab) {
+            // Use current string table data
+            builder->sections[i].sh_size = builder->strtab_size;
+            write_data(builder, (uint8_t*)builder->strtab, builder->strtab_size);
+        } else if (builder->sections[i].sh_type == SHT_RELA && builder->rela) {
+            // Use current relocation table data
+            size_t rela_size = builder->rela_count * sizeof(Elf64_Rela);
+            builder->sections[i].sh_size = rela_size;
+            write_data(builder, (uint8_t*)builder->rela, rela_size);
+        } else if (builder->section_data[i] != NULL && builder->sections[i].sh_size > 0) {
+            // Use stored section data
+            write_data(builder, builder->section_data[i], builder->sections[i].sh_size);
+        }
     }
 
     // Update section header offsets
@@ -221,10 +277,20 @@ bool elf_write_file(elf_builder_t* builder, const char* filename, uint16_t machi
         write_data(builder, &builder->sections[i], sizeof(Elf64_Shdr));
     }
 
+    // Find the section header string table index
+    // The section names are stored in the .strtab section (type SHT_STRTAB)
+    int shstrndx = 0;
+    for (int i = 0; i < builder->section_count; i++) {
+        if (builder->sections[i].sh_type == SHT_STRTAB) {
+            shstrndx = i + 1; // +1 to account for null section at index 0
+            break;
+        }
+    }
+
     // Update ELF header with section info
     ehdr.e_shoff = shoff;
     ehdr.e_shnum = builder->section_count + 1; // +1 for null section
-    ehdr.e_shstrndx = 1; // String table is usually section 1
+    ehdr.e_shstrndx = shstrndx;
 
     memcpy(builder->data, &ehdr, sizeof(ehdr));
 

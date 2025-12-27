@@ -49,7 +49,7 @@ MunitSuite l_linker_test_setup(void) {
 
     /* Return combined suite */
     return (MunitSuite) {
-        .prefix = (char*)"/linker",
+        .prefix = (char*)"linker/",
         .tests = NULL,  /* No tests at this level */
         .suites = linker_suites,
         .iterations = 1,

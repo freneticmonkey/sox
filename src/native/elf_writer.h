@@ -119,6 +119,10 @@ typedef struct {
     int section_count;
     int section_capacity;
 
+    // Section data storage
+    uint8_t** section_data;
+    int section_data_capacity;
+
     // String table
     char* strtab;
     size_t strtab_size;

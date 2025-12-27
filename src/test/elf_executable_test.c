@@ -494,7 +494,7 @@ static MunitTest elf_executable_tests[] = {
 };
 
 MunitSuite elf_executable_suite = {
-    "/elf_executable",
+    "elf_executable",
     elf_executable_tests,
     NULL,
     1,

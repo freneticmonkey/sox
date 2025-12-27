@@ -671,15 +671,18 @@ bool macho_create_object_file_with_arm64_relocs(const char* filename, const uint
                     continue;
             }
 
-            // For BL instruction: PC-relative, 32-bit field (actually 26 bits in the instruction)
+            // Determine PC-relative flag based on relocation type
+            // ARM64_RELOC_PAGEOFF12 (type 4) is NOT PC-relative, others are
+            bool is_pcrel = (macho_reloc_type != 4);  // false for PAGEOFF12, true for others
+
             // reloc->offset is in instructions, need to convert to bytes
             int32_t byte_offset = (int32_t)(reloc->offset * 4);
-            fprintf(stderr, "[RELOC]   Adding relocation: offset=%d (instr offset %zu * 4), symbol_index=%d, type=%d\n",
-                   byte_offset, reloc->offset, symbol_index, macho_reloc_type);
+            fprintf(stderr, "[RELOC]   Adding relocation: offset=%d (instr offset %zu * 4), symbol_index=%d, type=%d, pcrel=%d\n",
+                   byte_offset, reloc->offset, symbol_index, macho_reloc_type, is_pcrel);
 
             macho_add_relocation(builder, byte_offset,
                                 symbol_index,  // Use the correct symbol index
-                                true,  // PC-relative
+                                is_pcrel,      // PC-relative flag (false for PAGEOFF12)
                                 2,  // 32-bit field
                                 true,  // external
                                 macho_reloc_type);
@@ -822,13 +825,17 @@ bool macho_create_executable_object_file_with_arm64_relocs(const char* filename,
                     continue;
             }
 
+            // Determine PC-relative flag based on relocation type
+            // ARM64_RELOC_PAGEOFF12 (type 4) is NOT PC-relative, others are
+            bool is_pcrel = (macho_reloc_type != 4);  // false for PAGEOFF12, true for others
+
             int32_t byte_offset = (int32_t)(reloc->offset * 4);
-            fprintf(stderr, "[RELOC-EXE]   Adding relocation: offset=%d (instr offset %zu * 4), symbol_index=%d, type=%d\n",
-                   byte_offset, reloc->offset, symbol_index, macho_reloc_type);
+            fprintf(stderr, "[RELOC-EXE]   Adding relocation: offset=%d (instr offset %zu * 4), symbol_index=%d, type=%d, pcrel=%d\n",
+                   byte_offset, reloc->offset, symbol_index, macho_reloc_type, is_pcrel);
 
             macho_add_relocation(builder, byte_offset,
                                 symbol_index,  // Use the correct symbol index
-                                true,  // PC-relative
+                                is_pcrel,      // PC-relative flag (false for PAGEOFF12)
                                 2,  // 32-bit field
                                 true,  // external
                                 macho_reloc_type);
@@ -1040,8 +1047,12 @@ bool macho_create_object_file_with_arm64_relocs_and_strings(const char* filename
                     continue;
             }
 
+            // Determine PC-relative flag based on relocation type
+            // ARM64_RELOC_PAGEOFF12 (type 4) is NOT PC-relative, others are
+            bool is_pcrel = (macho_reloc_type != 4);  // false for PAGEOFF12, true for others
+
             int32_t byte_offset = (int32_t)(reloc->offset * 4);
-            macho_add_relocation(builder, byte_offset, symbol_index, true, 2, true, macho_reloc_type);
+            macho_add_relocation(builder, byte_offset, symbol_index, is_pcrel, 2, true, macho_reloc_type);
         }
 
         free(symbol_names);

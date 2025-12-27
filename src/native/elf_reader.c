@@ -423,9 +423,19 @@ static bool elf_parse_relocations(linker_object_t* obj, elf_parse_context_t* ctx
         /* Get target section index */
         int target_section = shdr->sh_info;
 
+        /* Validate relocation table offset and size */
+        CHECK_OFFSET_SIZE(shdr->sh_offset, shdr->sh_size, ctx->size,
+                         "Relocation table extends beyond file");
+
         /* Get relocation entries */
         const Elf64_Rela* relocations = (const Elf64_Rela*)(ctx->data + shdr->sh_offset);
         int reloc_count = (int)(shdr->sh_size / sizeof(Elf64_Rela));
+
+        /* Map target section index to linker section index */
+        int linker_section_index = -1;
+        if (target_section > 0 && target_section < ctx->num_elf_sections) {
+            linker_section_index = ctx->section_index_map[target_section];
+        }
 
         /* Parse each relocation */
         for (int j = 0; j < reloc_count; j++) {
@@ -441,7 +451,7 @@ static bool elf_parse_relocations(linker_object_t* obj, elf_parse_context_t* ctx
             reloc->offset = elf_rela->r_offset;
             reloc->addend = elf_rela->r_addend;
             reloc->symbol_index = ELF64_R_SYM(elf_rela->r_info);
-            reloc->section_index = target_section - 1; /* Adjust for our indexing */
+            reloc->section_index = linker_section_index;
             reloc->object_index = 0;
 
             /* Map relocation type */
