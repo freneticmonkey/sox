@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "chunk.h"
 #include "vm.h"
@@ -34,11 +35,19 @@ void l_write_chunk(chunk_t* chunk, uint8_t byte, int line)
 }
 
 int l_add_constant(chunk_t* chunk, value_t value) {
+    // Check if constant pool is approaching bytecode limit (256 constants max)
+    // This check should ideally be done in the compiler, but we validate here too
+    if (chunk->constants.count >= 256) {
+        fprintf(stderr, "ERROR: Constant pool full (max 256 constants)\n");
+        return -1;
+    }
+
     l_push(value);
     l_write_value_array(&chunk->constants, value);
     l_pop();
-    // return the index of the new constant
-    return chunk->constants.count - 1;
+
+    // Safe cast - we know count <= 256 from check above
+    return (int)(chunk->constants.count - 1);
 }
 
 
@@ -86,6 +95,8 @@ int l_op_get_arg_size_bytes(const chunk_t* chunk, int ip) {
         case OP_CALL:
         case OP_METHOD:
         case OP_CONSTANT:
+        case OP_TABLE_FIELD:
+        case OP_IMPORT:
             return 1;
 
         case OP_JUMP:

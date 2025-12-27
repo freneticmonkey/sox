@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 codegen_context_t* codegen_new(ir_module_t* module) {
     codegen_context_t* ctx = (codegen_context_t*)l_mem_alloc(sizeof(codegen_context_t));
@@ -570,7 +571,13 @@ bool codegen_generate_function(codegen_context_t* ctx, ir_function_t* func) {
         int target_label = ctx->jump_patches[i].target_label;
 
         if (target_label < ctx->label_count && ctx->label_offsets[target_label] >= 0) {
-            int32_t rel = ctx->label_offsets[target_label] - (offset + 4);
+            // Validate offset fits in int32_t range
+            if (offset > (size_t)(INT32_MAX - 4)) {
+                fprintf(stderr, "ERROR: Jump patch offset too large: %zu\n", offset);
+                return false;
+            }
+
+            int32_t rel = ctx->label_offsets[target_label] - ((int32_t)offset + 4);
             // Patch the jump offset
             ctx->asm_->code.code[offset] = rel & 0xFF;
             ctx->asm_->code.code[offset + 1] = (rel >> 8) & 0xFF;
