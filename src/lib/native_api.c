@@ -362,6 +362,36 @@ static value_t _string_split(int argCount, value_t* args) {
     return OBJ_VAL(result);
 }
 
+static value_t _string_reverse(int argCount, value_t* args) {
+    if (argCount != 1) {
+        return OBJ_VAL(_native_error("stringReverse(): invalid parameter count"));
+    }
+    if (!IS_STRING(args[0])) {
+        return OBJ_VAL(_native_error("stringReverse(): parameter must be a string"));
+    }
+    
+    obj_string_t* str = AS_STRING(args[0]);
+    
+    // Handle empty string
+    if (str->length == 0) {
+        return OBJ_VAL(l_copy_string("", 0));
+    }
+    
+    // Allocate buffer for reversed string
+    char* reversed = malloc(str->length + 1);
+    if (reversed == NULL) {
+        return OBJ_VAL(_native_error("stringReverse(): memory allocation failed"));
+    }
+    
+    // Reverse the string: O(n) time complexity
+    for (size_t i = 0; i < str->length; i++) {
+        reversed[i] = str->chars[str->length - 1 - i];
+    }
+    reversed[str->length] = '\0';
+    
+    return OBJ_VAL(l_take_string(reversed, str->length));
+}
+
 // Math functions
 static value_t _math_sqrt(int argCount, value_t* args) {
     if (argCount != 1) {
@@ -726,11 +756,21 @@ static value_t _sys_exit(int argCount, value_t* args) {
         return OBJ_VAL(_native_error("sysExit(): takes 0 or 1 parameters"));
     }
 
+    /* Perform graceful cleanup before exiting:
+     * 1. Flush all stdio buffers to ensure output is written
+     * 2. Free VM resources (strings, globals, modules tables)
+     * 3. Exit with the specified code
+     * Note: This function does not return to the VM. */
+    fflush(NULL);  // Flush all open output streams
+
     // Call cleanup before exiting
     l_vm_cleanup();
-
+  
+    // Clean up VM resources
+    l_free_vm();   
+  
     exit(exit_code);
-    return NIL_VAL;
+    return NIL_VAL;  // Unreachable - required for function signature compliance
 }
 
 static value_t _sys_platform(int argCount, value_t* args) {
@@ -804,6 +844,7 @@ void l_table_add_native() {
     l_vm_define_native("stringStartsWith", _string_starts_with);
     l_vm_define_native("stringEndsWith", _string_ends_with);
     l_vm_define_native("stringSplit", _string_split);
+    l_vm_define_native("stringReverse", _string_reverse);
 
     // Math functions
     l_vm_define_native("mathSqrt", _math_sqrt);
