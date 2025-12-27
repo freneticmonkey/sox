@@ -14,6 +14,7 @@
 #include "../../ext/munit/munit.h"
 #include <string.h>
 #include <stdio.h>
+#include <inttypes.h>
 
 /* Test: Create and destroy section layout */
 static MunitResult test_section_layout_lifecycle(const MunitParameter params[], void* data) {

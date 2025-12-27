@@ -637,7 +637,7 @@ bool symbol_resolver_compute_addresses(symbol_resolver_t* resolver,
                  * The section_index references the merged section in the layout.
                  */
                 if (sym->section_index >= layout->section_count) {
-                    fprintf(stderr, "Symbol resolver error: Symbol '%s' references "
+                    fprintf(stderr, "Internal error: Symbol resolver: Symbol '%s' references "
                             "invalid section %d (max %d)\n",
                             sym->name, sym->section_index, layout->section_count - 1);
                     return false;

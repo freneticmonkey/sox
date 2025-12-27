@@ -425,6 +425,7 @@ static MunitResult test_hash_table_resize(const MunitParameter params[], void* d
     linker_object_t* obj = linker_object_new("test.o", PLATFORM_FORMAT_ELF);
 
     /* Add enough symbols to exceed load factor */
+    /* Explicitly truncate to int (intentional floor operation for test capacity) */
     int num_symbols = (int)(initial_size * 0.8);  /* 80% of initial capacity */
     for (int i = 0; i < num_symbols; i++) {
         linker_symbol_t* sym = linker_object_add_symbol(obj);
