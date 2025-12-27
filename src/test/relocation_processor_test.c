@@ -582,7 +582,7 @@ static MunitTest relocation_processor_tests[] = {
 };
 
 static const MunitSuite relocation_processor_suite = {
-    "sox/linker/relocation_processor",
+    "relocation_processor",
     relocation_processor_tests,
     NULL,
     1,

@@ -419,7 +419,7 @@ static MunitTest elf_reader_tests[] = {
 
 /* Test suite for elf_reader */
 const MunitSuite elf_reader_suite = {
-    "/elf_reader",
+    "elf_reader",
     elf_reader_tests,
     NULL,
     1,

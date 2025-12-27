@@ -513,7 +513,7 @@ static MunitTest section_layout_tests[] = {
 };
 
 static const MunitSuite section_layout_suite = {
-    "/section_layout",
+    "section_layout",
     section_layout_tests,
     NULL,
     1,

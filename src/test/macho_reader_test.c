@@ -377,7 +377,7 @@ static MunitTest macho_reader_tests[] = {
 
 /* Export test suite */
 const MunitSuite macho_reader_test_suite = {
-    "/macho_reader",
+    "macho_reader",
     macho_reader_tests,
     NULL,
     1,

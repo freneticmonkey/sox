@@ -492,7 +492,7 @@ static MunitTest symbol_resolver_tests[] = {
 };
 
 const MunitSuite symbol_resolver_suite = {
-    "/symbol_resolver",
+    "symbol_resolver",
     symbol_resolver_tests,
     NULL,
     1,
