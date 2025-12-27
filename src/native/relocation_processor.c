@@ -156,11 +156,29 @@ bool relocation_processor_process_one(relocation_processor_t* proc,
 
     linker_symbol_t* symbol = &obj->symbols[reloc->symbol_index];
 
-    /* Look up symbol in global table */
-    linker_symbol_t* target_symbol = symbol_resolver_lookup(proc->symbols, symbol->name);
-    if (!target_symbol || !target_symbol->is_defined) {
+    /* Use the symbol directly from the object file.
+     * For LOCAL symbols: symbol_resolver_compute_addresses() computed final_address
+     * For GLOBAL/WEAK symbols: also computed in symbol_resolver_compute_addresses()
+     * For runtime/system symbols: final_address == 0 (resolved by dynamic linker)
+     */
+
+    /* Check if symbol is defined or is a runtime/system symbol */
+    bool is_runtime = (symbol->defining_object == -1) || is_runtime_symbol(symbol->name);
+
+    if (!symbol->is_defined && !is_runtime) {
         char msg[256];
         snprintf(msg, sizeof(msg), "Undefined symbol in relocation: %s", symbol->name);
+        add_error(proc, RELOC_ERROR_UNDEFINED_SYMBOL,
+                  msg, symbol->name, reloc->offset, object_index, reloc->section_index);
+        return false;
+    }
+
+    /* Verify final_address was computed (except for runtime symbols) */
+    if (symbol->is_defined && symbol->final_address == 0 && !is_runtime) {
+        char msg[256];
+        snprintf(msg, sizeof(msg),
+                "Symbol '%s' has no computed address (internal linker error)",
+                symbol->name);
         add_error(proc, RELOC_ERROR_UNDEFINED_SYMBOL,
                   msg, symbol->name, reloc->offset, object_index, reloc->section_index);
         return false;
@@ -186,11 +204,11 @@ bool relocation_processor_process_one(relocation_processor_t* proc,
     }
 
     /* Calculate addresses:
-     * S = target_symbol.final_address
+     * S = symbol.final_address (computed in Phase 3)
      * A = relocation.addend
      * P = relocation.offset + section_base_in_merged_section */
 
-    uint64_t S = target_symbol->final_address;
+    uint64_t S = symbol->final_address;
     int64_t A = reloc->addend;
 
     /* Get the offset of this section within the merged section */

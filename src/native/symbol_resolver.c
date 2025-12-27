@@ -665,6 +665,9 @@ int symbol_resolver_get_object_index(symbol_resolver_t* resolver,
  *
  * This separates symbol resolution (Phase 2) from address computation,
  * which depends on section layout results.
+ *
+ * IMPORTANT: This computes addresses for BOTH global/weak AND local symbols.
+ * Local symbols are not in the hash table but still need addresses for relocations.
  */
 bool symbol_resolver_compute_addresses(symbol_resolver_t* resolver,
                                         section_layout_t* layout) {
@@ -673,7 +676,7 @@ bool symbol_resolver_compute_addresses(symbol_resolver_t* resolver,
         return false;
     }
 
-    /* Iterate through all symbols in the hash table */
+    /* Part 1: Iterate through all GLOBAL/WEAK symbols in the hash table */
     for (size_t i = 0; i < resolver->table_size; i++) {
         symbol_table_entry_t* entry = resolver->table[i];
 
@@ -711,6 +714,61 @@ bool symbol_resolver_compute_addresses(symbol_resolver_t* resolver,
             }
 
             entry = entry->next;
+        }
+    }
+
+    /* Part 2: Compute addresses for LOCAL symbols (not in hash table) */
+    for (int obj_idx = 0; obj_idx < resolver->object_count; obj_idx++) {
+        linker_object_t* obj = resolver->objects[obj_idx];
+        if (!obj) continue;
+
+        for (int sym_idx = 0; sym_idx < obj->symbol_count; sym_idx++) {
+            linker_symbol_t* symbol = &obj->symbols[sym_idx];
+
+            /* Skip if already computed (global/weak from hash table) */
+            if (symbol->final_address != 0) continue;
+
+            /* Skip undefined symbols */
+            if (!symbol->is_defined) continue;
+
+            /* Skip runtime/system symbols (external, defining_object == -1) */
+            if (symbol->defining_object == -1) continue;
+
+            /* Only process LOCAL symbols with valid section */
+            if (symbol->binding != SYMBOL_BINDING_LOCAL || symbol->section_index < 0) {
+                continue;
+            }
+
+            /* Find the merged section containing this object's section contribution */
+            bool found = false;
+            for (int merged_idx = 0; merged_idx < layout->section_count; merged_idx++) {
+                merged_section_t* merged = &layout->sections[merged_idx];
+
+                /* Search contributions for matching object/section */
+                section_contribution_t* contrib = merged->contributions;
+                while (contrib != NULL) {
+                    if (contrib->object_index == obj_idx &&
+                        contrib->section_index == symbol->section_index) {
+
+                        /* Calculate final address:
+                         * merged_base + contribution_offset + symbol_offset */
+                        symbol->final_address = merged->vaddr
+                                              + contrib->offset_in_merged
+                                              + symbol->value;
+                        found = true;
+                        break;
+                    }
+                    contrib = contrib->next;
+                }
+
+                if (found) break;
+            }
+
+            if (!found && symbol->binding == SYMBOL_BINDING_LOCAL) {
+                fprintf(stderr, "Warning: Could not find contribution for local symbol '%s' "
+                        "in object %d, section %d\n",
+                        symbol->name, obj_idx, symbol->section_index);
+            }
         }
     }
 
