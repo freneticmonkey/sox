@@ -1,0 +1,10 @@
+// Phase 6.2 Integration Test: Multi-object linking - Module A
+// This file defines utility functions that will be called from Module B
+
+fun multiply(a, b) {
+    return a * b;
+}
+
+fun square(x) {
+    return multiply(x, x);
+}

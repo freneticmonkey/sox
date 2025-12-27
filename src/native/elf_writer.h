@@ -73,6 +73,7 @@ typedef struct {
 #define SHT_SYMTAB 2
 #define SHT_STRTAB 3
 #define SHT_RELA 4
+#define SHT_NOBITS 8
 
 // Section flags
 #define SHF_WRITE 0x1
@@ -87,7 +88,12 @@ typedef struct {
 #define STT_NOTYPE 0
 #define STT_FUNC 2
 
+// Special section indices
 #define STN_UNDEF 0
+#define SHN_UNDEF 0         // Undefined section
+#define SHN_ABS 0xFFF1      // Absolute values
+#define SHN_COMMON 0xFFF2   // Common symbols
+#define SHN_LORESERVE 0xFF00 // Start of reserved indices
 
 // Relocation types (x86-64)
 #define R_X86_64_NONE 0

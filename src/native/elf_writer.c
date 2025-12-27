@@ -477,6 +477,7 @@ bool elf_create_object_file_with_relocations_and_strings(const char* filename, c
     // Add string table section (placeholder, will be filled later)
     int strtab_section = elf_add_section(builder, ".strtab", SHT_STRTAB,
                                          0, NULL, 0);
+    (void)strtab_section; // Reserved for future use
 
     // Add symbols
     // Symbol 0: null symbol (required by ELF)

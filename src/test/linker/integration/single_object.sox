@@ -1,0 +1,14 @@
+// Phase 6.2 Integration Test: Single object file linking
+// This test verifies that a simple Sox program can be compiled to
+// a native object file and then linked into an executable using
+// the linker_link() API
+
+fun add(a, b) {
+    return a + b;
+}
+
+fun main() {
+    var result = add(5, 7);
+    print(result);  // Should print: 12
+    return 0;
+}

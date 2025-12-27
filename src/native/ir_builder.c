@@ -106,7 +106,7 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
     builder->stack_count = 0;
 
     // Set up local variables
-    ir_func->local_count = function->chunk.constants.count + 10; // Estimate
+    ir_func->local_count = (int)function->chunk.constants.count + 10; // Estimate
     ir_func->upvalue_count = function->upvalue_count;
     ir_builder_ensure_locals(builder, ir_func->local_count);
 
@@ -180,6 +180,7 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
         }
         uint8_t instruction = chunk->code[ip];
         int line = chunk->lines[ip];
+        (void)line; // Line number available for debugging if needed
         ip++;
 
         switch (instruction) {
