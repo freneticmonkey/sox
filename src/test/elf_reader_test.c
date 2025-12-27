@@ -106,17 +106,17 @@ static MunitResult test_parse_elf_with_relocations(const MunitParameter params[]
         0xC3                            /* ret */
     };
 
-    /* Create a relocation entry */
+    /* Create a relocation entry (must match codegen_relocation_t layout) */
     typedef struct {
+        size_t offset;
         const char* symbol;
-        uint32_t offset;
         uint32_t type;
         int64_t addend;
     } test_relocation_t;
 
     test_relocation_t reloc = {
-        .symbol = "external_func",
         .offset = 1,
+        .symbol = "external_func",
         .type = R_X86_64_PC32,
         .addend = -4
     };
@@ -220,17 +220,17 @@ static MunitResult test_parse_arm64_relocations(const MunitParameter params[], v
         0xC0, 0x03, 0x5F, 0xD6   /* ret */
     };
 
-    /* Create relocation for ARM64 */
+    /* Create relocation for ARM64 (must match codegen_relocation_t layout) */
     typedef struct {
+        size_t offset;
         const char* symbol;
-        uint32_t offset;
         uint32_t type;
         int64_t addend;
     } test_relocation_t;
 
     test_relocation_t reloc = {
-        .symbol = "arm64_func",
         .offset = 0,
+        .symbol = "arm64_func",
         .type = R_AARCH64_CALL26,
         .addend = 0
     };
