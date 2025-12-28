@@ -138,13 +138,40 @@ sox/
 
 **Build Targets:**
 ```bash
-make deps          # Install dependencies (~3 min)
-make build-tools   # Build Go tools (~30 sec)
-make debug         # Debug build (~4 sec)
-make release       # Optimized build
-make test          # Run test suite (~13 sec)
-make clean         # Clean build artifacts
+# Main build targets
+make install-deps       # Install dependencies
+make build-tools        # Build Go tools
+make build-debug        # Debug build
+make build-release      # Release build (optimized)
+make build              # Default (debug + tools)
+make test               # Run test suite
+make clean              # Clean all build artifacts
+
+# Runtime library targets
+make build-runtime-static   # Build static runtime library
+make build-runtime-shared   # Build shared runtime library
+make build-runtime          # Build both static and shared
+make install-runtime        # Install runtime to /usr/local/lib
+
+# Security testing targets
+make test-asan             # Run tests with AddressSanitizer
+make test-ubsan            # Run tests with UndefinedBehaviorSanitizer
+make test-security         # Run all security tests
+make help-security         # Show security testing help
 ```
+
+**Build Outputs:**
+
+On macOS ARM64, builds use Xcode projects in the `projects/` directory:
+- **Main executable:** `./build/sox` (sox compiler/interpreter)
+- **Test executable:** `./build/test` (unit test runner)
+- **Runtime library (static):**
+  - Build output: `./projects/obj/linuxARM64/Debug/sox_runtime/sox_runtime.build/Objects-normal/arm64/Binary/libsox_runtime.a`
+  - Expected location: `./build/libsox_runtime_arm64.a` (for custom linker)
+  - Note: May need manual copy after build: `cp ./projects/obj/.../libsox_runtime.a ./build/libsox_runtime_arm64.a`
+- **Runtime library (shared):** `./build/libsox_runtime.dylib` (macOS) or `./build/libsox_runtime.so` (Linux)
+
+The build system uses premake5 to generate Xcode projects on macOS, then invokes xcodebuild. This is why you'll see references to `projects/` directory rather than direct gcc/clang invocations.
 
 **Cross-Platform Support:**
 - Windows: Visual Studio 2022
