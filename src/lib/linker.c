@@ -677,6 +677,10 @@ int linker_link_custom(const linker_options_t* options) {
         dst->vaddr = src->vaddr;
         dst->flags = src->flags;
         dst->object_index = 0;  // Merged from multiple objects
+
+        // Transfer ownership: prevent double-free when both layout and context are freed
+        src->data = NULL;
+        src->name = NULL;
     }
 
     context->base_address = layout->base_address;
