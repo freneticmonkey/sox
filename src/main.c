@@ -25,6 +25,8 @@ static void _repl() {
 }
 
 int main(int argc, const char* argv[]) {
+    fprintf(stderr, "[MAIN] Entered main(), argc=%d\n", argc);
+
     // Parse command-line arguments
     sox_args_t args;
     if (!parse_arguments(argc, argv, &args)) {

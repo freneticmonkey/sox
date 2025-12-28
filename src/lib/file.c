@@ -232,6 +232,8 @@ int _generate_wasm_wat(vm_config_t *config, const char* path, const char* source
 }
 
 int _generate_native(vm_config_t *config, const char* path, const char* source) {
+    fprintf(stderr, "[FILE] Entered _generate_native(), path=%s\n", path);
+
     l_init_memory();
 
     // Initialize VM for compilation
@@ -336,6 +338,7 @@ int _generate_native(vm_config_t *config, const char* path, const char* source) 
         fprintf(stderr, "Error: Linking failed. Keeping object file: %s\n", object_file);
     }
 
+    fprintf(stderr, "[FILE] Exiting _generate_native() with result=%d\n", link_result);
     return link_result;
 }
 

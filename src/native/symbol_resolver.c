@@ -91,7 +91,7 @@ static bool is_system_library_symbol(const char* name) {
     static const char* libc_symbols[] = {
         /* Memory management */
         "malloc", "calloc", "realloc", "free", "memcpy", "memmove", "memset",
-        "memcmp", "__memcpy_chk", "__memmove_chk", "__memset_chk",
+        "memcmp", "bzero", "__memcpy_chk", "__memmove_chk", "__memset_chk",
 
         /* String functions */
         "strlen", "strcmp", "strncmp", "strcpy", "strncpy", "strcat", "strncat",

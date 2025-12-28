@@ -716,10 +716,16 @@ int linker_link_custom(const linker_options_t* options) {
     }
 
     // Clean up
+    fprintf(stderr, "[LINKER-CLEANUP] Starting cleanup...\n");
+    fprintf(stderr, "[LINKER-CLEANUP] Freeing relocation processor...\n");
     relocation_processor_free(reloc_proc);
+    fprintf(stderr, "[LINKER-CLEANUP] Freeing section layout...\n");
     section_layout_free(layout);
+    fprintf(stderr, "[LINKER-CLEANUP] Freeing symbol resolver...\n");
     symbol_resolver_free(resolver);
+    fprintf(stderr, "[LINKER-CLEANUP] Freeing linker context...\n");
     linker_context_free(context);
+    fprintf(stderr, "[LINKER-CLEANUP] Cleanup complete\n");
 
     if (success) {
         if (options->verbose_linking || options->verbose) {
