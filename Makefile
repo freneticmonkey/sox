@@ -175,12 +175,26 @@ ifeq (${THIS_OS},darwin)
 	xcodebuild -configuration "Release" ARCHS="${THIS_ARCH}" \
 	  -destination 'platform=macOS' \
 	  -project "projects/sox_runtime.xcodeproj" -target sox_runtime
+	@echo "Creating architecture-specific runtime library copy..."
+	mkdir -p build
+	cp ./build/libsox_runtime.a ./build/libsox_runtime_${THIS_ARCH}.a
+	@echo "Runtime library available at ./build/libsox_runtime.a and ./build/libsox_runtime_${THIS_ARCH}.a"
 endif
 ifeq (${THIS_OS},linux)
 	make -C projects sox_runtime config=release_linux64
+	@echo "Copying runtime library to build directory..."
+	mkdir -p build
+	cp projects/obj/linux64/Release/sox_runtime/libsox_runtime.a ./build/libsox_runtime.a
+	cp projects/obj/linux64/Release/sox_runtime/libsox_runtime.a ./build/libsox_runtime_${THIS_ARCH}.a
+	@echo "Runtime library copied to ./build/libsox_runtime.a and ./build/libsox_runtime_${THIS_ARCH}.a"
 endif
 ifeq (${THIS_OS},windows)
 	msbuild.exe ./projects/sox_runtime.sln -p:Platform="windows";Configuration=Release -target:sox_runtime
+	@echo "Copying runtime library to build directory..."
+	mkdir -p build
+	copy projects\obj\Windows\Release\sox_runtime\sox_runtime.lib .\build\libsox_runtime.a
+	copy projects\obj\Windows\Release\sox_runtime\sox_runtime.lib .\build\libsox_runtime_${THIS_ARCH}.a
+	@echo "Runtime library copied to .\build\libsox_runtime.a and .\build\libsox_runtime_${THIS_ARCH}.a"
 endif
 
 build-runtime-shared: gen
@@ -188,12 +202,21 @@ ifeq (${THIS_OS},darwin)
 	xcodebuild -configuration "Release" ARCHS="${THIS_ARCH}" \
 	  -destination 'platform=macOS' \
 	  -project "projects/sox_runtime_shared.xcodeproj" -target sox_runtime_shared
+	@echo "Shared runtime library built to ./build/libsox_runtime.dylib"
 endif
 ifeq (${THIS_OS},linux)
 	make -C projects sox_runtime_shared config=release_linux64
+	@echo "Copying shared runtime library to build directory..."
+	mkdir -p build
+	cp projects/obj/linux64/Release/sox_runtime_shared/libsox_runtime.so ./build/libsox_runtime.so
+	@echo "Shared runtime library copied to ./build/libsox_runtime.so"
 endif
 ifeq (${THIS_OS},windows)
 	msbuild.exe ./projects/sox_runtime_shared.sln -p:Platform="windows";Configuration=Release -target:sox_runtime_shared
+	@echo "Copying shared runtime library to build directory..."
+	mkdir -p build
+	copy projects\obj\Windows\Release\sox_runtime_shared\sox_runtime.dll .\build\sox_runtime.dll
+	@echo "Shared runtime library copied to .\build\sox_runtime.dll"
 endif
 
 build-runtime: build-runtime-static build-runtime-shared

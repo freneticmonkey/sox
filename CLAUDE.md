@@ -166,9 +166,9 @@ On macOS ARM64, builds use Xcode projects in the `projects/` directory:
 - **Main executable:** `./build/sox` (sox compiler/interpreter)
 - **Test executable:** `./build/test` (unit test runner)
 - **Runtime library (static):**
-  - Build output: `./projects/obj/linuxARM64/Debug/sox_runtime/sox_runtime.build/Objects-normal/arm64/Binary/libsox_runtime.a`
-  - Expected location: `./build/libsox_runtime_arm64.a` (for custom linker)
-  - Note: May need manual copy after build: `cp ./projects/obj/.../libsox_runtime.a ./build/libsox_runtime_arm64.a`
+  - Standard location: `./build/libsox_runtime.a`
+  - Architecture-specific: `./build/libsox_runtime_${THIS_ARCH}.a` (e.g., `libsox_runtime_arm64.a`)
+  - The build automatically creates both copies for custom linker compatibility
 - **Runtime library (shared):** `./build/libsox_runtime.dylib` (macOS) or `./build/libsox_runtime.so` (Linux)
 
 The build system uses premake5 to generate Xcode projects on macOS, then invokes xcodebuild. This is why you'll see references to `projects/` directory rather than direct gcc/clang invocations.
