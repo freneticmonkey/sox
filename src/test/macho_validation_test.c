@@ -210,12 +210,12 @@ static MunitResult test_entry_point_offset_calculation(const MunitParameter para
     bool found_text = find_text_segment(output, &text_seg);
     munit_assert_true(found_text);
 
-    munit_logf(MUNIT_LOG_INFO, "__TEXT segment:");
+    munit_logf(MUNIT_LOG_INFO, "%s", "__TEXT segment:");
     munit_logf(MUNIT_LOG_INFO, "  vmaddr:   0x%llx", text_seg.vmaddr);
     munit_logf(MUNIT_LOG_INFO, "  fileoff:  %llu", text_seg.fileoff);
     munit_logf(MUNIT_LOG_INFO, "  vmsize:   %llu", text_seg.vmsize);
     munit_logf(MUNIT_LOG_INFO, "  filesize: %llu", text_seg.filesize);
-    munit_logf(MUNIT_LOG_INFO, "LC_MAIN:");
+    munit_logf(MUNIT_LOG_INFO, "%s", "LC_MAIN:");
     munit_logf(MUNIT_LOG_INFO, "  entryoff: %llu", main_cmd.entryoff);
 
     // Verify: entryoff should be >= text_seg.fileoff
