@@ -332,8 +332,10 @@ int _generate_native(vm_config_t *config, const char* path, const char* source) 
 
     // Clean up temporary object file
     if (link_result == 0) {
-        remove(object_file);
+        // TEMP: Keep object file for debugging
+        // remove(object_file);
         printf("Successfully linked executable: %s\n", final_output);
+        printf("DEBUG: Keeping object file: %s\n", object_file);
     } else {
         fprintf(stderr, "Error: Linking failed. Keeping object file: %s\n", object_file);
     }
