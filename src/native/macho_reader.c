@@ -360,10 +360,15 @@ static bool parse_section_relocations(linker_object_t* obj, const uint8_t* data,
 
         /* Set symbol index */
         if (external) {
+            /* External relocation - symbolnum is symbol table index */
             link_reloc->symbol_index = (int)symbolnum;
         } else {
-            /* Section-relative relocation - symbolnum is section number (1-based) */
-            link_reloc->symbol_index = -1;  /* No symbol, section-relative */
+            /* Section-relative relocation - symbolnum is section number (1-based in Mach-O)
+             * Encode as negative: -(section_num + 2)
+             * This allows: -2 = section 0, -3 = section 1, etc.
+             * And -1 remains as "invalid" marker */
+            int target_section = (int)symbolnum - 1;  /* Convert to 0-based */
+            link_reloc->symbol_index = -(target_section + 2);
         }
     }
 

@@ -518,7 +518,11 @@ int linker_link_custom(const linker_options_t* options) {
         }
 
         // Search for runtime library in common locations
+        // Try architecture-specific archives first (lipo-extracted), then universal binaries
         const char* candidates[] = {
+            "./build/libsox_runtime_arm64.a",   /* ARM64-specific (macOS) */
+            "./build/libsox_runtime_aarch64.a", /* ARM64-specific (Linux) */
+            "./build/libsox_runtime_x86_64.a",  /* x86_64-specific */
             "./build/libsox_runtime.a",
             "./build/x64/Debug/libsox_runtime.a",
             "./build/x64/Release/libsox_runtime.a",
@@ -685,6 +689,23 @@ int linker_link_custom(const linker_options_t* options) {
     }
     if (entry_sym && entry_sym->is_defined) {
         context->entry_point = entry_sym->final_address;
+        if (options->verbose_linking || options->verbose) {
+            fprintf(stderr, "[CUSTOM LINKER] Entry point: _main at 0x%llx\n",
+                    (unsigned long long)context->entry_point);
+        }
+    } else {
+        if (!entry_sym) {
+            fprintf(stderr, "Warning: Entry point symbol '_main' not found\n");
+        } else {
+            fprintf(stderr, "Warning: Entry point symbol '_main' found but not defined (is_defined=%d, final_address=0x%llx)\n",
+                    entry_sym->is_defined, (unsigned long long)entry_sym->final_address);
+        }
+        if (options->verbose_linking || options->verbose) {
+            fprintf(stderr, "[CUSTOM LINKER] Using default entry point: 0x%llx\n",
+                    (unsigned long long)context->base_address);
+        }
+        /* Default to start of __text section */
+        context->entry_point = context->base_address;
     }
 
     bool success = false;

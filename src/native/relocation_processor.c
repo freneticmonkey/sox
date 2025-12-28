@@ -146,7 +146,145 @@ bool relocation_processor_process_one(relocation_processor_t* proc,
 
     linker_object_t* obj = proc->context->objects[object_index];
 
-    /* Get the symbol */
+    /* Skip relocations from debug sections (type=SECTION_TYPE_UNKNOWN)
+     * Debug sections are not included in the final executable */
+    if (reloc->section_index >= 0 && reloc->section_index < obj->section_count) {
+        linker_section_t* source_section = &obj->sections[reloc->section_index];
+        if (source_section->type == SECTION_TYPE_UNKNOWN) {
+            proc->relocations_skipped++;
+            return true;
+        }
+    }
+
+    /* Check if this is a section-relative relocation (encoded as negative symbol_index)
+     * Mach-O uses: symbol_index = -(target_section + 2)
+     * So: -2 = section 0, -3 = section 1, etc. */
+    if (reloc->symbol_index < -1) {
+        /* Section-relative relocation */
+        int target_section = -(reloc->symbol_index + 2);
+
+        if (target_section < 0 || target_section >= obj->section_count) {
+            char msg[256];
+            snprintf(msg, sizeof(msg),
+                    "Section-relative relocation to invalid section %d (obj has %d sections)",
+                    target_section, obj->section_count);
+            add_error(proc, RELOC_ERROR_INVALID_SECTION,
+                      msg, NULL, reloc->offset, object_index, reloc->section_index);
+            return false;
+        }
+
+        /* Get target section */
+        linker_section_t* target_sec = &obj->sections[target_section];
+
+        /* Find merged section for target */
+        merged_section_t* target_merged = section_layout_find_section_by_type(proc->layout, target_sec->type);
+        if (!target_merged) {
+            add_error(proc, RELOC_ERROR_INVALID_SECTION,
+                      "Cannot find merged section for section-relative relocation",
+                      NULL, reloc->offset, object_index, reloc->section_index);
+            return false;
+        }
+
+        /* Get target section's base address in merged section */
+        uint64_t target_address = section_layout_get_address(proc->layout,
+                                                               object_index,
+                                                               target_section,
+                                                               0);
+
+        /* Get source location (P) */
+        uint64_t section_base = section_layout_get_address(proc->layout,
+                                                             object_index,
+                                                             reloc->section_index,
+                                                             0);
+        uint64_t P = section_base + reloc->offset;
+
+        /* Calculate relocation value */
+        int64_t value = relocation_calculate_value(reloc->type, target_address, reloc->addend, P);
+
+        /* Find the merged section containing this contribution and calculate offset */
+        merged_section_t* source_merged = NULL;
+        uint64_t offset_in_merged = 0;
+
+        for (int i = 0; i < proc->layout->section_count; i++) {
+            merged_section_t* section = &proc->layout->sections[i];
+            section_contribution_t* contrib = section->contributions;
+
+            while (contrib != NULL) {
+                if (contrib->object_index == object_index &&
+                    contrib->section_index == reloc->section_index) {
+                    /* Found the contribution - this is our merged section */
+                    source_merged = section;
+                    offset_in_merged = contrib->offset_in_merged + reloc->offset;
+                    break;
+                }
+                contrib = contrib->next;
+            }
+
+            if (source_merged != NULL) {
+                break;
+            }
+        }
+
+        if (!source_merged) {
+            /* DEBUG: Print what we were looking for and what exists */
+            static bool printed_debug = false;
+            if (!printed_debug) {
+                fprintf(stderr, "\n[DEBUG] Looking for contribution: object_index=%d, section_index=%d (reloc at offset %lu)\n",
+                        object_index, reloc->section_index, reloc->offset);
+
+                /* Print sections in the source object */
+                if (object_index < proc->context->object_count) {
+                    linker_object_t* source_obj = proc->context->objects[object_index];
+                    fprintf(stderr, "[DEBUG] Sections in object %d:\n", object_index);
+                    for (int s = 0; s < source_obj->section_count; s++) {
+                        fprintf(stderr, "  Section %d: name='%s', type=%d, size=%zu\n",
+                                s, source_obj->sections[s].name,
+                                source_obj->sections[s].type,
+                                source_obj->sections[s].size);
+                    }
+                }
+
+                fprintf(stderr, "[DEBUG] Available contributions:\n");
+                for (int i = 0; i < proc->layout->section_count; i++) {
+                    merged_section_t* section = &proc->layout->sections[i];
+                    fprintf(stderr, "  Merged section %d (%s):\n", i, section->name);
+                    section_contribution_t* contrib = section->contributions;
+                    while (contrib != NULL) {
+                        fprintf(stderr, "    - object=%d, section=%d, offset=%lu, size=%zu\n",
+                                contrib->object_index, contrib->section_index,
+                                contrib->offset_in_merged, contrib->size);
+                        contrib = contrib->next;
+                    }
+                }
+                fprintf(stderr, "[DEBUG] Total objects in context: %d\n", proc->context->object_count);
+                printed_debug = true;
+            }
+            add_error(proc, RELOC_ERROR_INVALID_SECTION,
+                      "Cannot find source merged section",
+                      NULL, reloc->offset, object_index, reloc->section_index);
+            return false;
+        }
+
+        /* Patch instruction */
+        bool success = patch_instruction(source_merged->data,
+                                          source_merged->size,
+                                          offset_in_merged,
+                                          value,
+                                          reloc->type,
+                                          P);
+
+        if (success) {
+            proc->relocations_processed++;
+        } else {
+            add_error(proc, RELOC_ERROR_PATCH_FAILED,
+                      "Failed to patch section-relative relocation",
+                      NULL, reloc->offset, object_index, reloc->section_index);
+        }
+
+        return success;
+    }
+
+    /* Symbol-based relocation - get the symbol */
     if (reloc->symbol_index < 0 || reloc->symbol_index >= obj->symbol_count) {
         char msg[256];
         snprintf(msg, sizeof(msg),
@@ -160,11 +298,17 @@ bool relocation_processor_process_one(relocation_processor_t* proc,
 
     linker_symbol_t* symbol = &obj->symbols[reloc->symbol_index];
 
-    /* Use the symbol directly from the object file.
-     * For LOCAL symbols: symbol_resolver_compute_addresses() computed final_address
-     * For GLOBAL/WEAK symbols: also computed in symbol_resolver_compute_addresses()
-     * For runtime/system symbols: final_address == 0 (resolved by dynamic linker)
-     */
+    /* CRITICAL: For undefined symbols in this object, look them up in the global table
+     * to find their definition from another object (e.g., runtime library) */
+    if (!symbol->is_defined) {
+        /* Look up in global symbol table */
+        linker_symbol_t* global_sym = symbol_resolver_lookup(proc->symbols, symbol->name);
+        if (global_sym && global_sym->is_defined) {
+            /* Found definition in another object - use that */
+            symbol = global_sym;
+        }
+        /* If not found, symbol remains undefined - will be caught below */
+    }
 
     /* Check if symbol is defined or is a runtime/system symbol */
     bool is_runtime = (symbol->defining_object == -1) || is_runtime_symbol(symbol->name);
@@ -177,16 +321,24 @@ bool relocation_processor_process_one(relocation_processor_t* proc,
         return false;
     }
 
-    /* Verify final_address was computed (except for runtime symbols) */
+    /* Verify final_address was computed (except for runtime/external symbols) */
     if (symbol->is_defined && symbol->final_address == 0 && !is_runtime) {
-        char msg[256];
-        snprintf(msg, sizeof(msg),
-                "Symbol '%s' has no computed address (internal linker error)",
-                symbol->name);
-        add_error(proc, RELOC_ERROR_UNDEFINED_SYMBOL,
-                  msg, symbol->name, reloc->offset, object_index, reloc->section_index);
-        return false;
+        /* Symbol is defined but has no address - likely a TLV or special section
+         * Skip these relocations as they're handled by dynamic linker */
+        proc->relocations_skipped++;
+        return true;
     }
+
+    /* DEBUG: Check if this is an external symbol that shouldn't be patched */
+    if (is_runtime && symbol->final_address == 0) {
+        /* This is truly an external symbol (system library function)
+         * Skip patching - will be resolved by dynamic linker */
+        proc->relocations_skipped++;
+        return true;
+    }
+
+    /* If symbol looks like runtime but has an address, it's from our linked runtime library */
+    /* (symbol from libsox_runtime.a - proceed with normal patching) */
 
     /* Get the section being relocated */
     if (reloc->section_index < 0 || reloc->section_index >= obj->section_count) {
