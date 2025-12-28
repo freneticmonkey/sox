@@ -698,10 +698,6 @@ int linker_link_custom(const linker_options_t* options) {
     }
     if (entry_sym && entry_sym->is_defined) {
         context->entry_point = entry_sym->final_address;
-        fprintf(stderr, "[CUSTOM LINKER] DEBUG: main symbol: value=0x%llx, section_index=%d, final_address=0x%llx\n",
-                (unsigned long long)entry_sym->value,
-                entry_sym->section_index,
-                (unsigned long long)entry_sym->final_address);
         if (options->verbose_linking || options->verbose) {
             fprintf(stderr, "[CUSTOM LINKER] Entry point: _main at 0x%llx\n",
                     (unsigned long long)context->entry_point);
@@ -729,16 +725,10 @@ int linker_link_custom(const linker_options_t* options) {
     }
 
     // Clean up
-    fprintf(stderr, "[LINKER-CLEANUP] Starting cleanup...\n");
-    fprintf(stderr, "[LINKER-CLEANUP] Freeing relocation processor...\n");
     relocation_processor_free(reloc_proc);
-    fprintf(stderr, "[LINKER-CLEANUP] Freeing section layout...\n");
     section_layout_free(layout);
-    fprintf(stderr, "[LINKER-CLEANUP] Freeing symbol resolver...\n");
     symbol_resolver_free(resolver);
-    fprintf(stderr, "[LINKER-CLEANUP] Freeing linker context...\n");
     linker_context_free(context);
-    fprintf(stderr, "[LINKER-CLEANUP] Cleanup complete\n");
 
     if (success) {
         if (options->verbose_linking || options->verbose) {

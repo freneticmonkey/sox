@@ -232,8 +232,6 @@ int _generate_wasm_wat(vm_config_t *config, const char* path, const char* source
 }
 
 int _generate_native(vm_config_t *config, const char* path, const char* source) {
-    fprintf(stderr, "[FILE] Entered _generate_native(), path=%s\n", path);
-
     l_init_memory();
 
     // Initialize VM for compilation
@@ -332,15 +330,11 @@ int _generate_native(vm_config_t *config, const char* path, const char* source) 
 
     // Clean up temporary object file
     if (link_result == 0) {
-        // TEMP: Keep object file for debugging
-        // remove(object_file);
+        remove(object_file);
         printf("Successfully linked executable: %s\n", final_output);
-        printf("DEBUG: Keeping object file: %s\n", object_file);
     } else {
         fprintf(stderr, "Error: Linking failed. Keeping object file: %s\n", object_file);
     }
-
-    fprintf(stderr, "[FILE] Exiting _generate_native() with result=%d\n", link_result);
     return link_result;
 }
 

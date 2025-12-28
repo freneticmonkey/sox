@@ -241,8 +241,6 @@ bool macho_set_entry_point(linker_context_t* context) {
  */
 bool macho_write_executable(const char* output_path,
                              linker_context_t* context) {
-    fprintf(stderr, "[MACHO-EXEC] Starting macho_write_executable for %s\n", output_path);
-
     if (output_path == NULL || context == NULL) {
         fprintf(stderr, "Mach-O error: NULL parameter passed to macho_write_executable\n");
         return false;
@@ -252,8 +250,6 @@ bool macho_write_executable(const char* output_path,
         fprintf(stderr, "Mach-O error: No sections to write\n");
         return false;
     }
-
-    fprintf(stderr, "[MACHO-EXEC] Merged sections: %d\n", context->merged_section_count);
 
     /* Calculate sizes */
     size_t page_size = get_page_size(PLATFORM_FORMAT_MACH_O);
@@ -696,15 +692,11 @@ bool macho_write_executable(const char* output_path,
 
     fclose(f);
 
-    fprintf(stderr, "[MACHO-EXEC] File written, setting permissions...\n");
-
     /* Set executable permissions (0755) */
     if (chmod(output_path, 0755) != 0) {
         fprintf(stderr, "Mach-O warning: Failed to set executable permissions\n");
         /* Not a fatal error, continue */
     }
-
-    fprintf(stderr, "[MACHO-EXEC] Successfully completed macho_write_executable\n");
 
     return true;
 }
