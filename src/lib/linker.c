@@ -687,12 +687,21 @@ int linker_link_custom(const linker_options_t* options) {
     context->total_size = layout->total_size;
 
     // Find entry point symbol
-    linker_symbol_t* entry_sym = symbol_resolver_lookup(resolver, "_main");
+    // Note: Mach-O reader strips underscore prefix, so we search for "main" not "_main"
+    // ELF uses "_start" or "main" depending on the runtime
+    linker_symbol_t* entry_sym = symbol_resolver_lookup(resolver, "main");
     if (!entry_sym && context->target_format == PLATFORM_FORMAT_ELF) {
         entry_sym = symbol_resolver_lookup(resolver, "_start");
+        if (!entry_sym) {
+            entry_sym = symbol_resolver_lookup(resolver, "main");
+        }
     }
     if (entry_sym && entry_sym->is_defined) {
         context->entry_point = entry_sym->final_address;
+        fprintf(stderr, "[CUSTOM LINKER] DEBUG: main symbol: value=0x%llx, section_index=%d, final_address=0x%llx\n",
+                (unsigned long long)entry_sym->value,
+                entry_sym->section_index,
+                (unsigned long long)entry_sym->final_address);
         if (options->verbose_linking || options->verbose) {
             fprintf(stderr, "[CUSTOM LINKER] Entry point: _main at 0x%llx\n",
                     (unsigned long long)context->entry_point);

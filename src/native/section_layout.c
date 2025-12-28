@@ -425,7 +425,12 @@ void section_layout_compute(section_layout_t* layout) {
           sizeof(merged_section_t), compare_sections_for_layout);
 
     /* Start address after headers (approximate) */
-    uint64_t addr = layout->base_address + layout->page_size;
+    /* For Mach-O, __TEXT segment starts at base_address (includes header in file) */
+    /* For ELF, skip page for ELF header and program headers */
+    uint64_t addr = layout->base_address;
+    if (layout->target_format != PLATFORM_FORMAT_MACH_O) {
+        addr += layout->page_size;
+    }
 
     /* Assign virtual addresses to each section */
     for (int i = 0; i < layout->section_count; i++) {
