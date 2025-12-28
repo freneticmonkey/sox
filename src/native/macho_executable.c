@@ -435,7 +435,10 @@ bool macho_write_executable(const char* output_path,
     entry_point_command_t main_cmd = {0};
     main_cmd.cmd = LC_MAIN;
     main_cmd.cmdsize = sizeof(entry_point_command_t);
-    main_cmd.entryoff = context->entry_point - text_vm_addr;
+    /* Calculate entry point as file offset, not virtual offset
+     * entry_point is virtual address, need to convert to file offset */
+    uint64_t entry_virt_offset = context->entry_point - text_vm_addr;
+    main_cmd.entryoff = text_file_offset + entry_virt_offset;
     main_cmd.stacksize = 0;  /* Use default */
 
     if (!write_struct(f, &main_cmd, sizeof(main_cmd))) {
