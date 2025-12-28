@@ -59,27 +59,27 @@ linker_context_t* linker_context_new(void) {
         return NULL;
     }
 
-    /* Set default options */
-    context->options.base_address = 0;  /* Platform-specific default */
-    context->options.verbose = false;
-    context->options.keep_debug_info = false;
-    context->options.output_filename = NULL;
-
     return context;
 }
 
 void linker_context_free(linker_context_t* context) {
+    fprintf(stderr, "[CONTEXT-FREE] Start, context=%p\n", context);
     if (context == NULL) {
+        fprintf(stderr, "[CONTEXT-FREE] Context is NULL, returning\n");
         return;
     }
 
     /* Free all object files */
+    fprintf(stderr, "[CONTEXT-FREE] Freeing %d object files...\n", context->object_count);
     for (int i = 0; i < context->object_count; i++) {
+        fprintf(stderr, "[CONTEXT-FREE] Freeing object %d...\n", i);
         linker_object_free(context->objects[i]);
     }
+    fprintf(stderr, "[CONTEXT-FREE] Freeing objects array...\n");
     free(context->objects);
 
     /* Free global symbols (if allocated) */
+    fprintf(stderr, "[CONTEXT-FREE] Freeing global symbols...\n");
     if (context->global_symbols != NULL) {
         for (int i = 0; i < context->global_symbol_count; i++) {
             linker_symbol_free(&context->global_symbols[i]);
@@ -88,20 +88,28 @@ void linker_context_free(linker_context_t* context) {
     }
 
     /* Free merged sections (if allocated) */
+    fprintf(stderr, "[CONTEXT-FREE] Freeing merged sections, count=%d, ptr=%p...\n",
+            context->merged_section_count, context->merged_sections);
     if (context->merged_sections != NULL) {
         for (int i = 0; i < context->merged_section_count; i++) {
+            fprintf(stderr, "[CONTEXT-FREE] Freeing merged section %d...\n", i);
             linker_section_free(&context->merged_sections[i]);
+            fprintf(stderr, "[CONTEXT-FREE] Freed merged section %d\n", i);
         }
+        fprintf(stderr, "[CONTEXT-FREE] Freeing merged sections array...\n");
         free(context->merged_sections);
     }
 
     /* Free executable data (if allocated) */
+    fprintf(stderr, "[CONTEXT-FREE] Freeing executable data...\n");
     if (context->executable_data != NULL) {
         free(context->executable_data);
     }
 
     /* Free the context itself */
+    fprintf(stderr, "[CONTEXT-FREE] Freeing context struct...\n");
     free(context);
+    fprintf(stderr, "[CONTEXT-FREE] Done\n");
 }
 
 bool linker_context_add_object(linker_context_t* context, linker_object_t* object) {
@@ -125,12 +133,6 @@ bool linker_context_add_object(linker_context_t* context, linker_object_t* objec
 
     /* Add object to array */
     context->objects[context->object_count++] = object;
-
-    if (context->options.verbose) {
-        printf("Added object file: %s (format: %s)\n",
-            object->filename ? object->filename : "<unknown>",
-            platform_format_name(object->format));
-    }
 
     return true;
 }
@@ -257,15 +259,21 @@ void linker_section_init(linker_section_t* section) {
 }
 
 void linker_section_free(linker_section_t* section) {
+    fprintf(stderr, "[SECTION-FREE] Start, section=%p\n", section);
     if (section == NULL) {
+        fprintf(stderr, "[SECTION-FREE] Section is NULL, returning\n");
         return;
     }
 
+    fprintf(stderr, "[SECTION-FREE] Freeing name=%p\n", section->name);
     free(section->name);
+    fprintf(stderr, "[SECTION-FREE] Freeing data=%p (size=%zu)\n", section->data, section->size);
     free(section->data);
 
     /* Zero out structure for safety */
+    fprintf(stderr, "[SECTION-FREE] Zeroing structure\n");
     memset(section, 0, sizeof(linker_section_t));
+    fprintf(stderr, "[SECTION-FREE] Done\n");
 }
 
 /*

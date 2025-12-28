@@ -81,18 +81,67 @@ uint32_t symbol_hash(const char* name) {
     return hash;
 }
 
-/* Check if a symbol is from the runtime library */
+/* Check if a symbol is from the system C library */
+static bool is_system_library_symbol(const char* name) {
+    if (name == NULL) {
+        return false;
+    }
+
+    /* Common C library functions that should be resolved by dynamic linker */
+    static const char* libc_symbols[] = {
+        /* Memory management */
+        "malloc", "calloc", "realloc", "free", "memcpy", "memmove", "memset",
+        "memcmp", "bzero", "__memcpy_chk", "__memmove_chk", "__memset_chk",
+
+        /* String functions */
+        "strlen", "strcmp", "strncmp", "strcpy", "strncpy", "strcat", "strncat",
+        "strchr", "strrchr", "strstr", "strdup", "__strcpy_chk", "__strcat_chk",
+
+        /* I/O functions */
+        "printf", "fprintf", "sprintf", "snprintf", "vprintf", "vfprintf",
+        "puts", "fputs", "fputc", "putchar", "fgets", "fread", "fwrite",
+        "fopen", "fclose", "fflush", "fseek", "ftell", "rewind",
+        "__sprintf_chk", "__snprintf_chk", "__vsnprintf_chk",
+
+        /* File descriptors */
+        "stdin", "stdout", "stderr", "__stdinp", "__stdoutp", "__stderrp",
+
+        /* Other standard functions */
+        "exit", "abort", "atexit", "qsort", "atoi", "atof", "strtol", "strtod",
+        "isdigit", "isalpha", "isspace", "tolower", "toupper",
+
+        /* Math functions */
+        "pow", "sqrt", "sin", "cos", "tan", "exp", "log", "floor", "ceil",
+
+        /* Thread-local storage (macOS) */
+        "_tlv_bootstrap",
+
+        NULL  /* Sentinel */
+    };
+
+    for (int i = 0; libc_symbols[i] != NULL; i++) {
+        if (strcmp(name, libc_symbols[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Check if a symbol is from the runtime library or system library */
 bool is_runtime_symbol(const char* name) {
     if (name == NULL) {
         return false;
     }
 
+    /* Check Sox runtime symbols */
     for (int i = 0; runtime_symbol_names[i] != NULL; i++) {
         if (strcmp(name, runtime_symbol_names[i]) == 0) {
             return true;
         }
     }
-    return false;
+
+    /* Check system library symbols */
+    return is_system_library_symbol(name);
 }
 
 /*
@@ -467,6 +516,8 @@ static bool resolve_phase1_collect_symbols(symbol_resolver_t* resolver,
                     /* Replace weak symbol with global symbol */
                     existing->symbol = symbol;
                     existing->object_index = obj_idx;
+                    /* Set defining_object on the new symbol */
+                    symbol->defining_object = obj_idx;
                 }
 
                 /* Weak symbol doesn't override anything */
@@ -489,6 +540,9 @@ static bool resolve_phase1_collect_symbols(symbol_resolver_t* resolver,
                     success = false;
                     continue;
                 }
+
+                /* CRITICAL: Set defining_object so address computation knows this symbol is defined */
+                symbol->defining_object = obj_idx;
 
                 resolver->defined_count++;
             }
@@ -608,14 +662,117 @@ int symbol_resolver_get_object_index(symbol_resolver_t* resolver,
 }
 
 /*
- * CRITICAL FIX #5: Compute Final Addresses for All Symbols
+ * Helper: Compute final address for a symbol using contribution-based lookup
+ *
+ * This is the CORRECT way to compute symbol addresses. It:
+ * 1. Gets the section from the object file containing the symbol
+ * 2. Finds the merged section by TYPE (not index!) - critical for multi-object linking
+ * 3. Finds the contribution from that object's section
+ * 4. Calculates: merged.vaddr + contribution.offset + symbol.value
+ *
+ * This works for ALL symbols (global, weak, local) from ALL objects.
+ */
+static bool compute_symbol_address(linker_symbol_t* symbol,
+                                   linker_object_t* obj,
+                                   int obj_idx,
+                                   section_layout_t* layout,
+                                   bool verbose) {
+    /* Skip undefined symbols */
+    if (!symbol->is_defined) {
+        symbol->final_address = 0;
+        return true;
+    }
+
+    /* Skip runtime/external symbols (defining_object == -1) */
+    if (symbol->defining_object == -1) {
+        symbol->final_address = 0;  /* External - resolved by dynamic linker */
+        if (verbose) {
+            fprintf(stderr, "[ADDR] Symbol '%s': EXTERNAL (runtime/system library)\n",
+                    symbol->name);
+        }
+        return true;
+    }
+
+    /* Handle absolute symbols (SHN_ABS - section_index == -1) */
+    if (symbol->section_index == -1) {
+        symbol->final_address = symbol->value;  /* Value IS the address */
+        if (verbose) {
+            fprintf(stderr, "[ADDR] Symbol '%s': ABSOLUTE, final=0x%llx\n",
+                    symbol->name, (unsigned long long)symbol->final_address);
+        }
+        return true;
+    }
+
+    /* Validate section index */
+    if (symbol->section_index < 0 || symbol->section_index >= obj->section_count) {
+        fprintf(stderr, "Error: Symbol '%s' references invalid section %d (max %d)\n",
+                symbol->name, symbol->section_index, obj->section_count - 1);
+        return false;
+    }
+
+    /* Get section from object file */
+    linker_section_t* obj_section = &obj->sections[symbol->section_index];
+
+    /* Find merged section by TYPE (not index!) - this is critical */
+    merged_section_t* merged = section_layout_find_section_by_type(layout, obj_section->type);
+    if (!merged) {
+        /* Skip symbols with unknown section types (like TLV sections) */
+        if (obj_section->type == SECTION_TYPE_UNKNOWN) {
+            if (verbose) {
+                fprintf(stderr, "[ADDR] Symbol '%s': SKIPPED (unknown section type)\n",
+                        symbol->name);
+            }
+            symbol->final_address = 0;  /* Treat as external */
+            return true;  /* Not fatal, just skip */
+        }
+        fprintf(stderr, "Error: No merged section for type %s (symbol '%s')\n",
+                section_type_name(obj_section->type), symbol->name);
+        return false;
+    }
+
+    /* Find contribution from this object's section */
+    section_contribution_t* contrib = merged->contributions;
+    while (contrib != NULL) {
+        if (contrib->object_index == obj_idx &&
+            contrib->section_index == symbol->section_index) {
+
+            /* Calculate final address: merged_base + contribution_offset + symbol_value */
+            symbol->final_address = merged->vaddr + contrib->offset_in_merged + symbol->value;
+
+            if (verbose) {
+                fprintf(stderr, "[ADDR] Symbol '%s': obj=%d, sec=%d(%s), "
+                        "merged_vaddr=0x%llx, contrib_offset=0x%llx, sym_value=0x%llx, "
+                        "final=0x%llx\n",
+                        symbol->name, obj_idx, symbol->section_index,
+                        section_type_name(obj_section->type),
+                        (unsigned long long)merged->vaddr,
+                        (unsigned long long)contrib->offset_in_merged,
+                        (unsigned long long)symbol->value,
+                        (unsigned long long)symbol->final_address);
+            }
+
+            return true;
+        }
+        contrib = contrib->next;
+    }
+
+    /* Contribution not found - this is an error */
+    fprintf(stderr, "Error: No contribution found for symbol '%s' in obj %d, section %d\n",
+            symbol->name, obj_idx, symbol->section_index);
+    return false;
+}
+
+/*
+ * CRITICAL FIX #6: Compute Final Addresses for All Symbols (Using Contribution Lookup)
  *
  * This function must be called AFTER section layout is complete (Phase 3).
  * It computes the final virtual addresses for all symbols based on:
- *   final_address = section_base_address + symbol_offset
+ *   final_address = merged_section_vaddr + contribution_offset + symbol_value
  *
- * This separates symbol resolution (Phase 2) from address computation,
- * which depends on section layout results.
+ * FIXED: Now uses contribution-based lookup instead of direct section_index,
+ * which was causing symbols from runtime library to get wrong addresses.
+ *
+ * This computes addresses for BOTH global/weak AND local symbols.
  */
 bool symbol_resolver_compute_addresses(symbol_resolver_t* resolver,
                                         section_layout_t* layout) {
@@ -624,44 +781,53 @@ bool symbol_resolver_compute_addresses(symbol_resolver_t* resolver,
         return false;
     }
 
-    /* Iterate through all symbols in the hash table */
+    /* Enable verbose mode for debugging (can be controlled via env var later) */
+    bool verbose = false;  /* Set to true to enable debug output */
+
+    /* Part 1: Compute addresses for GLOBAL/WEAK symbols in hash table */
     for (size_t i = 0; i < resolver->table_size; i++) {
         symbol_table_entry_t* entry = resolver->table[i];
 
         while (entry != NULL) {
             linker_symbol_t* sym = entry->symbol;
+            int obj_idx = entry->object_index;
 
-            if (sym->is_defined && sym->section_index >= 0) {
-                /*
-                 * Get section base address from layout.
-                 * The section_index references the merged section in the layout.
-                 */
-                if (sym->section_index >= layout->section_count) {
-                    fprintf(stderr, "Internal error: Symbol resolver: Symbol '%s' references "
-                            "invalid section %d (max %d)\n",
-                            sym->name, sym->section_index, layout->section_count - 1);
-                    return false;
-                }
+            /* Validate object index */
+            if (obj_idx < 0 || obj_idx >= resolver->object_count) {
+                fprintf(stderr, "Error: Invalid object index %d for symbol '%s'\n",
+                        obj_idx, sym->name);
+                return false;
+            }
 
-                merged_section_t* section = &layout->sections[sym->section_index];
+            linker_object_t* obj = resolver->objects[obj_idx];
 
-                /* Compute final address: section base + symbol offset */
-                sym->final_address = section->vaddr + sym->value;
-
-            } else if (!sym->is_defined) {
-                /* Undefined symbols keep final_address = 0 */
-                sym->final_address = 0;
-
-            } else if (sym->section_index == -1 && sym->is_defined) {
-                /*
-                 * Absolute symbols (SHN_ABS) or runtime symbols.
-                 * For absolute symbols, value IS the address.
-                 * For runtime symbols, address will be resolved by dynamic linker.
-                 */
-                sym->final_address = sym->value;
+            /* Use helper to compute address */
+            if (!compute_symbol_address(sym, obj, obj_idx, layout, verbose)) {
+                return false;
             }
 
             entry = entry->next;
+        }
+    }
+
+    /* Part 2: Compute addresses for LOCAL symbols (not in hash table) */
+    for (int obj_idx = 0; obj_idx < resolver->object_count; obj_idx++) {
+        linker_object_t* obj = resolver->objects[obj_idx];
+        if (!obj) continue;
+
+        for (int sym_idx = 0; sym_idx < obj->symbol_count; sym_idx++) {
+            linker_symbol_t* symbol = &obj->symbols[sym_idx];
+
+            /* Skip if already computed (global/weak from Part 1) */
+            if (symbol->final_address != 0) continue;
+
+            /* Only process LOCAL symbols */
+            if (symbol->binding != SYMBOL_BINDING_LOCAL) continue;
+
+            /* Use helper to compute address */
+            if (!compute_symbol_address(symbol, obj, obj_idx, layout, verbose)) {
+                /* Error already printed, but don't fail - continue with other symbols */
+            }
         }
     }
 

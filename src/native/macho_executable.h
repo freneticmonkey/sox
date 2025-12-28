@@ -52,8 +52,12 @@
 #define MH_EXECUTE 0x2              /* Executable file type */
 #define MH_PIE 0x200000             /* Position-independent executable */
 
-#define LC_MAIN 0x28                /* Entry point command (modern macOS) */
+#define LC_MAIN 0x80000028          /* Entry point command (modern macOS) */
 #define LC_LOAD_DYLINKER 0xe        /* Dynamic linker command */
+#define LC_SYMTAB 0x2               /* Symbol table */
+#define LC_DYSYMTAB 0xb             /* Dynamic symbol table */
+#define LC_UUID 0x1b                /* UUID */
+#define LC_BUILD_VERSION 0x32       /* Build version */
 
 #define VM_PROT_NONE 0x00           /* No protection */
 #define VM_PROT_READ 0x01           /* Read permission */
@@ -88,6 +92,13 @@ typedef struct {
     uint32_t name_offset;           /* Offset to dylinker path (usually 12) */
     /* Followed by null-terminated dylinker path string */
 } dylinker_command_t;
+
+/* UUID command structure (LC_UUID) */
+typedef struct {
+    uint32_t cmd;                   /* LC_UUID */
+    uint32_t cmdsize;               /* sizeof(uuid_command_t) */
+    uint8_t uuid[16];               /* 128-bit UUID */
+} uuid_command_t;
 
 /*
  * Main Mach-O Executable Writer API

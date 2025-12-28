@@ -21,7 +21,6 @@ typedef struct linker_section_t linker_section_t;
 typedef struct linker_symbol_t linker_symbol_t;
 typedef struct linker_relocation_t linker_relocation_t;
 typedef struct linker_context_t linker_context_t;
-typedef struct linker_options_t linker_options_t;
 
 /* Platform-specific object file formats */
 typedef enum {
@@ -137,14 +136,6 @@ struct linker_object_t {
     size_t raw_size;
 };
 
-/* Linker options */
-struct linker_options_t {
-    const char* output_filename;    /* Output executable filename */
-    bool verbose;                   /* Print verbose linking information */
-    bool keep_debug_info;           /* Keep debug symbols */
-    uint64_t base_address;          /* Base load address (0 = use default) */
-};
-
 /* Global linker context */
 struct linker_context_t {
     /* Input objects */
@@ -167,9 +158,6 @@ struct linker_context_t {
     uint8_t* executable_data;
     size_t executable_size;
     uint64_t entry_point;           /* Address of _start or main */
-
-    /* Options */
-    linker_options_t options;
 
     /* Target platform */
     platform_format_t target_format;
