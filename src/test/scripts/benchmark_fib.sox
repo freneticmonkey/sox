@@ -14,5 +14,6 @@ var duration = clock() - start;
 
 print "Result: ";
 print result;
-print "Time taken (seconds): ";
-print duration;
+// print "Time taken (seconds): ";
+// print duration;
+print "Done";

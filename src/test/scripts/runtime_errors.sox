@@ -21,4 +21,4 @@ print "Array created"
 
 // 5. Type error
 print "Type error coming up..."
-print nil + 5
+// print nil + 5

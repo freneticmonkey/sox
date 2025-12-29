@@ -1,0 +1,21 @@
+=== Test 1: Consecutive foreach statements ===
+Array1 - Index: 0, Value: 1
+Array1 - Index: 1, Value: 2
+Array2 - Index: 0, Value: 3
+Array2 - Index: 1, Value: 4
+=== Test 2: Complex token sequence ===
+Conditional foreach - Index: 0, Value: 10
+Conditional foreach - Index: 1, Value: 20
+Conditional foreach - Index: 2, Value: 30
+=== Test 3: Complex identifier parsing ===
+Position: 0, Element: alpha
+Position: 1, Element: beta
+Position: 2, Element: gamma
+=== Test 4: After control structures ===
+After while - Index: 0, Number: 100
+After while - Index: 1, Number: 200
+After while - Index: 2, Number: 300
+=== Test 5: Back-to-back foreach ===
+First: 0 = 1
+Second: 0 = 2
+Token linking tests completed

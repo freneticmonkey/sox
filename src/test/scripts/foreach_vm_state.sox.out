@@ -1,0 +1,46 @@
+=== Test 1: Iterator state consistency ===
+Starting iteration with array length: 5
+Iteration 0: value=10, remaining=4
+Iteration 1: value=20, remaining=3
+Iteration 2: value=30, remaining=2
+Mid-iteration check: Current index is 2
+Iteration 3: value=40, remaining=1
+Iteration 4: value=50, remaining=0
+Iteration completed
+=== Test 2: Multiple iterator state isolation ===
+Interleaved iteration pattern:
+Array A - Index: 0, Value: 1
+  Array B nested - Index: 1, Value: b
+Array A - Index: 1, Value: 2
+  Array B nested - Index: 1, Value: b
+Array A - Index: 2, Value: 3
+  Array B nested - Index: 1, Value: b
+=== Test 3: Iterator state with early termination ===
+Loop with break at index 2:
+Processing index 0 with value 5
+Processing index 1 with value 15
+Processing index 2 with value 25
+Breaking at index 2
+After early termination
+=== Test 4: Iterator state across function calls ===
+  Function processing: index=0, value=1
+Index 0: original=1, processed=2
+  Function processing: index=1, value=2
+Index 1: original=2, processed=4
+  Function processing: index=2, value=3
+Index 2: original=3, processed=6
+=== Test 5: Deep nesting iterator state ===
+Outer loop: i=0, val=1
+  Middle loop: j=0, val=10
+    Inner loop: k=0, val=100
+    State check: i=0, j=0, k=0
+Outer loop: i=1, val=2
+  Middle loop: j=0, val=10
+    Inner loop: k=0, val=100
+    State check: i=1, j=0, k=0
+=== Test 6: Iterator state edge cases ===
+Handling zero value at index 0
+Normal processing: index=1, value=1
+Normal processing: index=2, value=2
+Found target value 3 at index 3
+VM state management tests completed
