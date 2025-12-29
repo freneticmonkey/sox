@@ -277,11 +277,24 @@ int _generate_native(vm_config_t *config, const char* path, const char* source) 
 
     // If we need to generate an executable, use a temp object file
     const char* object_file = final_output;
-    char temp_object[256] = {0};
+    char temp_object[512] = {0};
 
     if (!config->native_emit_object) {
         // We'll generate a temporary object file and then link it
-        snprintf(temp_object, sizeof(temp_object), "%s.tmp.o", final_output);
+        // Check if the path + suffix will fit in the buffer
+        size_t final_len = strlen(final_output);
+        const char* suffix = ".tmp.o";
+        size_t suffix_len = strlen(suffix);
+
+        if (final_len + suffix_len + 1 > sizeof(temp_object)) {
+            fprintf(stderr, "Error: Output path too long (%zu chars). Maximum path length is %zu chars.\n",
+                    final_len, sizeof(temp_object) - suffix_len - 1);
+            l_free_vm();
+            l_free_memory();
+            return 70;  // Runtime error
+        }
+
+        snprintf(temp_object, sizeof(temp_object), "%s%s", final_output, suffix);
         object_file = temp_object;
     }
 

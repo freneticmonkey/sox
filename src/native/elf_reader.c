@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 
 /*
  * ELF Object File Reader Implementation
@@ -26,7 +27,7 @@
 #define CHECK_OFFSET_SIZE(offset, size, limit, msg) \
     do { \
         if ((size) > 0 && (offset) > (limit) - (size)) { \
-            fprintf(stderr, "ELF reader error: %s (offset=%llu, size=%llu, limit=%zu)\n", \
+            fprintf(stderr, "ELF reader error: %s (offset=%" PRIu64 ", size=%" PRIu64 ", limit=%zu)\n", \
                     (msg), (uint64_t)(offset), (uint64_t)(size), (size_t)(limit)); \
             return false; \
         } \
@@ -326,7 +327,7 @@ static bool elf_parse_symbols(linker_object_t* obj, elf_parse_context_t* ctx) {
          * ensure the string is properly null-terminated.
          */
         if (elf_sym->st_name >= strtab_shdr->sh_size) {
-            fprintf(stderr, "ELF reader error: Symbol %d name index %u out of bounds (strtab size: %llu)\n",
+            fprintf(stderr, "ELF reader error: Symbol %d name index %u out of bounds (strtab size: %" PRIu64 ")\n",
                     i, elf_sym->st_name, (uint64_t)strtab_shdr->sh_size);
             return false;
         }
