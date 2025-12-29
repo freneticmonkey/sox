@@ -271,6 +271,23 @@ bool macho_write_executable(const char* output_path,
     /* Calculate file offsets */
     uint64_t header_size = sizeof(mach_header_64_t);
     uint64_t text_file_offset = round_up_to_page(header_size + load_cmds_size, page_size);
+
+    /* Fix section virtual addresses to account for __TEXT segment headers
+     * The __TEXT segment starts at base_address in VM, but the actual code sections
+     * are offset by text_file_offset to account for Mach-O header and load commands */
+    for (int i = 0; i < context->merged_section_count; i++) {
+        if (context->merged_sections[i].type == SECTION_TYPE_TEXT ||
+            context->merged_sections[i].type == SECTION_TYPE_RODATA) {
+            /* Adjust vaddr to account for headers before code in __TEXT segment */
+            context->merged_sections[i].vaddr += text_file_offset;
+        }
+    }
+
+    /* Also adjust entry point to match the adjusted section addresses */
+    if (context->entry_point != 0) {
+        context->entry_point += text_file_offset;
+    }
+
     uint64_t data_file_offset = text_file_offset + round_up_to_page(text_size, page_size);
     uint64_t linkedit_file_offset = data_file_offset + round_up_to_page(data_filesize, page_size);
 
@@ -354,7 +371,8 @@ bool macho_write_executable(const char* output_path,
             section_64_t text_sect = {0};
             strncpy(text_sect.sectname, SECT_TEXT, 16);
             strncpy(text_sect.segname, SEG_TEXT, 16);
-            text_sect.addr = text_vm_addr + current_offset;
+            /* Use vaddr from merged section (already adjusted for headers) */
+            text_sect.addr = context->merged_sections[i].vaddr + current_offset;
             text_sect.size = context->merged_sections[i].size;
             text_sect.offset = (uint32_t)(text_file_offset + current_offset);
             text_sect.align = 4;  /* 2^4 = 16 bytes for ARM64 */
@@ -382,7 +400,8 @@ bool macho_write_executable(const char* output_path,
             section_64_t const_sect = {0};
             strncpy(const_sect.sectname, SECT_CONST, 16);
             strncpy(const_sect.segname, SEG_TEXT, 16);
-            const_sect.addr = text_vm_addr + current_offset;
+            /* Use vaddr from merged section (already adjusted for headers) */
+            const_sect.addr = context->merged_sections[i].vaddr + current_offset;
             const_sect.size = context->merged_sections[i].size;
             const_sect.offset = (uint32_t)(text_file_offset + current_offset);
             const_sect.align = 3;  /* 2^3 = 8 bytes */
