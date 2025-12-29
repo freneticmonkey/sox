@@ -143,7 +143,7 @@ class_compiler_t* _current_class;
 chunk_t*          _compiling_chunk;
 
 // Forward declarations
-static void _named_variable(token_t name, bool canAssign);
+static int _named_variable(token_t * name, bool canAssign);
 static token_t _synthetic_token(const char* text);
 
 static chunk_t* _current_chunk() {
@@ -190,7 +190,12 @@ static void _advance() {
     }
 
 #ifdef DEBUG_PRINT_TOKENS
-    fprintf(stdout, " `%.*s` ", _parser.current.length, _parser.current.start);
+    fprintf(stdout, " `%.*s` (%s)", 
+            _parser.current.length, 
+            _parser.current.start, 
+            l_token_type_to_string(_parser.current.type)
+        );
+
     fflush(stdout);
 #endif
 }
@@ -460,15 +465,18 @@ static int _resolve_upvalue(compiler_t* compiler, token_t* name) {
     return -1;
 }
 
-static void _add_local(token_t name) {
+static int _add_local(token_t name) {
     if ( _current->local_count > UINT8_COUNT ) {
         _error("Too many local variables in function");
-        return;
+        return -1;
     }
-    local_t* local = &_current->locals[_current->local_count++];
+    
+    int slot = _current->local_count++;
+    local_t* local = &_current->locals[slot];
     local->name = name;
     local->depth = -1;
     local->is_captured = false;
+    return slot;
 }
 
 static uint8_t _generate_variable(TokenType type, const char *hint) {
@@ -507,22 +515,22 @@ static uint8_t _generate_variable(TokenType type, const char *hint) {
     return _identifier_constant(&name);
 }
 
-static void _declare_variable() {
+static int _declare_variable() {
     if (_current->scope_depth == 0) 
-        return;
+        return -1;
 
-    token_t* name = &_parser.previous;
+    token_t name = _parser.previous;
     for (int i = _current->local_count - 1; i >= 0; i--) {
         local_t* local = &_current->locals[i];
         if (local->depth != -1 && local->depth < _current->scope_depth) {
             break; 
         }
 
-        if (_identifiers_equal(name, &local->name)) {
+        if (_identifiers_equal(&name, &local->name)) {
             _error("Already a variable with this name in this scope.");
         }
     }
-    _add_local(*name);
+    return _add_local(name);
 }
 
 static uint8_t _parse_variable(const char* errorMessage) {
@@ -635,7 +643,8 @@ static void _grouping(bool canAssign) {
 // Keys can be identifiers or strings
 static void _table_literal(bool canAssign) {
     // Call Table() to create a new table
-    _named_variable(_synthetic_token("Table"), false);  // Get Table function
+    token_t tableToken = _synthetic_token("Table");
+    _named_variable(&tableToken, false);  // Get Table function
     _emit_bytes(OP_CALL, 0);  // Call Table() with 0 args
 
     // Stack now has: [table]
@@ -699,7 +708,8 @@ static void _array_grouping(bool canAssign) {
         // Empty could be array or table - default to empty table for now
         _consume(TOKEN_RIGHT_BRACE, "Expect '}' after literal.");
         // Create empty table
-        _named_variable(_synthetic_token("Table"), false);
+        token_t tableToken = _synthetic_token("Table");
+        _named_variable(&tableToken, false);
         _emit_bytes(OP_CALL, 0);
         return;
     }
@@ -791,17 +801,17 @@ static void _string(bool canAssign) {
     );
 }
 
-static void _named_variable(token_t name, bool canAssign) {
+static int _named_variable(token_t * name, bool canAssign) {
     uint8_t getOp, setOp;
-    int arg = _resolve_local(_current, &name);
+    int arg = _resolve_local(_current, name);
     if (arg != -1) {
         getOp = OP_GET_LOCAL;
         setOp = OP_SET_LOCAL;
-    } else if ((arg = _resolve_upvalue(_current, &name)) != -1) {
+    } else if ((arg = _resolve_upvalue(_current, name)) != -1) {
         getOp = OP_GET_UPVALUE;
         setOp = OP_SET_UPVALUE;
     } else {
-        arg = _identifier_constant(&name);
+        arg = _identifier_constant(name);
         getOp = OP_GET_GLOBAL;
         setOp = OP_SET_GLOBAL;
     }
@@ -812,10 +822,11 @@ static void _named_variable(token_t name, bool canAssign) {
     } else {
         _emit_bytes(getOp, (uint8_t)arg);
     }
+    return arg;
 }
 
 static void _variable(bool canAssign) {
-    _named_variable(_parser.previous, canAssign);
+    _named_variable(&_parser.previous, canAssign);
 }
 
 static token_t _synthetic_token(const char* text) {
@@ -836,14 +847,16 @@ static void _super_(bool canAssign) {
     _consume(TOKEN_IDENTIFIER, "Expect superclass method name.");
     uint8_t name = _identifier_constant(&_parser.previous);
 
-    _named_variable(_synthetic_token("this"), false);
+    token_t this = _synthetic_token("this");
+    token_t super = _synthetic_token("super");
+    _named_variable(&this, false);
     if (_match(TOKEN_LEFT_PAREN)) {
         uint8_t argCount = _argument_list();
-        _named_variable(_synthetic_token("super"), false);
+        _named_variable(&super, false);
         _emit_bytes(OP_SUPER_INVOKE, name);
         _emit_byte(argCount);
     } else {
-        _named_variable(_synthetic_token("super"), false);
+        _named_variable(&super, false);
         _emit_bytes(OP_GET_SUPER, name);
     }
 }
@@ -940,6 +953,7 @@ parse_rule_t rules[] = {
     [TOKEN_SEMICOLON]     = {NULL,            NULL,     PREC_NONE},
     [TOKEN_SLASH]         = {NULL,            _binary,  PREC_FACTOR},
     [TOKEN_STAR]          = {NULL,            _binary,  PREC_FACTOR},
+    [TOKEN_UNDERSCORE]    = {NULL,            NULL,     PREC_NONE},
     [TOKEN_BANG]          = {_unary,          NULL,     PREC_NONE},
     [TOKEN_BANG_EQUAL]    = {NULL,            _binary,  PREC_EQUALITY},
     [TOKEN_EQUAL]         = {NULL,            NULL,     PREC_NONE},
@@ -956,8 +970,10 @@ parse_rule_t rules[] = {
     [TOKEN_ELSE]          = {NULL,            NULL,     PREC_NONE},
     [TOKEN_FALSE]         = {_literal,        NULL,     PREC_NONE},
     [TOKEN_FOR]           = {NULL,            NULL,     PREC_NONE},
+    [TOKEN_FOREACH]       = {NULL,            NULL,     PREC_NONE},
     [TOKEN_FUN]           = {NULL,            NULL,     PREC_NONE},
     [TOKEN_IF]            = {NULL,            NULL,     PREC_NONE},
+    [TOKEN_IN]            = {NULL,            NULL,     PREC_NONE},
     [TOKEN_NIL]           = {_literal,        NULL,     PREC_NONE},
     [TOKEN_OR]            = {NULL,            _or_,     PREC_OR},
     [TOKEN_PRINT]         = {NULL,            NULL,     PREC_NONE},
@@ -1199,12 +1215,12 @@ static void _class_declaration() {
         _add_local(_synthetic_token("super"));
         _define_variable(0);
 
-        _named_variable(className, false);
+        _named_variable(&className, false);
         _emit_byte(OP_INHERIT);
         classCompiler.has_superclass = true;
     }
 
-    _named_variable(className, false);
+    _named_variable(&className, false);
 
     _consume(TOKEN_LEFT_BRACE, "Expect '{' before class body.");
 
@@ -1262,14 +1278,7 @@ static void _array() {
             _expression();
         }
 
-    } 
-    // else {
-    //     // indexing into an array
-    //     _expression();
-    //     _consume(TOKEN_RIGHT_BRACKET, "Expect ']' after array declaration.");
-        
-    //     _emit_byte(OP_GET_ARRAY_INDEX);
-    // }
+    }
 }
 
 static void _var_declaration() {
@@ -1279,6 +1288,8 @@ static void _var_declaration() {
         _expression();
     } else if (_match(TOKEN_LEFT_BRACKET)) {
         _array();
+    } else if (_match(TOKEN_COMMA)) {
+        _var_declaration();
     } else {
         _emit_byte(OP_NIL);
     }
@@ -1293,6 +1304,207 @@ static void _expression_statement() {
     _emit_byte(OP_POP);
 }
 
+// static void _in_statement() {
+    
+//     // get the container
+//     _expression();
+
+//     loop_t loop;
+//     _loop_init(&loop);
+//     _loop_start(&loop);
+
+//     // generate local variables for the iterator, index, and value
+//     // int iter = _named_variable(_synthetic_token("iter"), true);
+//     // int index = _named_variable(_synthetic_token("index"), true);
+//     // int value = _named_variable(_synthetic_token("value"), true);
+
+//     token_t iterToken = _synthetic_token("iter");
+//     int iter = _add_local(iterToken);
+//     // _emit_byte(OP_NIL);
+//     _emit_bytes(OP_SET_LOCAL, iter);
+//     // _emit_byte(OP_POP);
+//     // _named_variable(iterToken, true);
+
+//     token_t indexToken = _synthetic_token("index");
+//     int index = _add_local(indexToken);
+//     // _emit_byte(OP_NIL);
+//     _emit_bytes(OP_SET_LOCAL, index);
+//     // _emit_byte(OP_POP);
+//     // _named_variable(indexToken, true);
+
+//     token_t valueToken = _synthetic_token("value");
+//     int value = _add_local(valueToken);
+//     // _emit_byte(OP_NIL);
+//     _emit_bytes(OP_SET_LOCAL, value);
+//     // _emit_byte(OP_POP);
+    
+//     // _named_variable(valueToken, true);
+
+//     // int iter = _resolve_local(_current, &iterToken);
+//     // _emit_byte(iter);
+
+//     // token_t indexToken = _synthetic_token("index");
+//     // _named_variable(indexToken, false);
+//     // int index = _resolve_local(_current, &indexToken);
+
+//     // token_t valueToken = _synthetic_token("value");
+//     // _named_variable(valueToken, false);
+//     // int value = _resolve_local(_current, &valueToken);
+
+//     // get the iterator from the container
+//     _emit_byte(OP_GET_ITERATOR);
+//     _emit_byte(iter);
+//     _emit_byte(index);
+//     _emit_byte(value);
+    
+
+//     // int index = _add_local(_synthetic_token("index"));
+//     // _named_variable(_synthetic_token("index"), false);
+//     // // _emit_byte(index);
+    
+//     // int value = _add_local(_synthetic_token("value"));
+//     // _named_variable(_synthetic_token("value"), false);
+//     // _emit_byte(value);
+
+//     // test for end condition
+//     // evaluate the iteration condition
+//     // get the value at the current index
+//     _emit_byte(OP_TEST_ITERATOR);
+//     _emit_byte(iter);
+
+//     // Jump out of the loop if the condition is false.
+//     _loop_test_exit();
+
+//     // process the for increment
+//     // if (!_match(TOKEN_LEFT_BRACE)) {
+    
+//         // set a jump location to skip to the loop body
+//         int bodyJump = _emit_jump(OP_JUMP);
+
+//         // store the increment location
+//         int incrementStart = _current_chunk()->count;
+
+//         // trigger the iterator next increment
+//         _emit_byte(OP_NEXT_ITERATOR);
+//         _emit_byte(iter);
+
+//         // now set a jump to location for the loop end condition check
+//         _loop_jump();
+
+//         // this will only be executed on entering the for loop
+//         // the jumps being setup will ensure that it is jumped over on
+//         // every subsequent iteration
+
+//         // reset the loop start to the beginning of the increment.
+//         _loop_update_start(incrementStart);
+
+//         // patch the pre-increment jump to the body location
+//         // this will skip the increment code after the loop end condition has been checked
+//         _patch_jump(bodyJump);
+//     // }
+
+//     _statement();
+
+//     // jump to either the increment code, or if no increment the loop end condition check
+//     _loop_jump();
+
+//     _loop_end();
+
+//     _end_scope();
+
+// }
+
+static void _foreach_statement() {
+    _begin_scope();
+
+    // Parse foreach variable declarations properly
+    // Expect: foreach var index, value in container
+    _consume(TOKEN_VAR, "Expect 'var' after 'foreach'.");
+    
+    // Parse index variable
+    _consume(TOKEN_IDENTIFIER, "Expect index variable name.");
+    token_t indexName = _parser.previous;
+    int indexSlot = _add_local(indexName);
+    _mark_initialized();
+    
+    _consume(TOKEN_COMMA, "Expect ',' after index variable.");
+    
+    // Parse value variable  
+    _consume(TOKEN_IDENTIFIER, "Expect value variable name.");
+    token_t valueName = _parser.previous;
+    int valueSlot = _add_local(valueName);
+    _mark_initialized();
+
+    // Check that the next token is an 'in'
+    _consume(TOKEN_IN, "Expect 'in' after foreach variables.");
+    
+    // Generate local variable for the iterator
+    token_t iterToken = _synthetic_token("iter");
+    int iterSlot = _add_local(iterToken);
+    _mark_initialized();
+    
+    // Parse the container expression that will be iterated
+    _expression();
+
+    // get the iterator from the container (execute only once)
+    _emit_byte(OP_GET_ITERATOR);
+
+    // send the local variables used for the iteration
+    _emit_byte(iterSlot);
+    _emit_byte(indexSlot);
+    _emit_byte(valueSlot);
+
+    // Loop restart point starts here (after iterator creation)
+    loop_t loop;
+    _loop_init(&loop);
+    _loop_start(&loop);
+
+    // test for end condition
+    // evaluate the iteration condition
+    // get the value at the current index
+    _emit_byte(OP_TEST_ITERATOR);
+    _emit_byte(iterSlot);
+
+    // Jump out of the loop if the condition is false.
+    _loop_test_exit();
+    
+    // set a jump location to skip to the loop body
+    int bodyJump = _emit_jump(OP_JUMP);
+
+    // store the increment location
+    int incrementStart = _current_chunk()->count;
+
+    // trigger the iterator next increment
+    _emit_byte(OP_NEXT_ITERATOR);
+    _emit_byte(iterSlot);
+
+    // now set a jump to location for the loop end condition check
+    _loop_jump();
+
+    // this will only be executed on entering the for loop
+    // the jumps being setup will ensure that it is jumped over on
+    // every subsequent iteration
+
+    // reset the loop start to the beginning of the increment.
+    _loop_update_start(incrementStart);
+
+    // patch the pre-increment jump to the body location
+    // this will skip the increment code after the loop end condition has been checked
+    _patch_jump(bodyJump);
+    
+    // Parse the foreach body as a block
+    _consume(TOKEN_LEFT_BRACE, "Expect '{' before foreach body.");
+    
+    _block();
+
+    // jump to either the increment code, or if no increment the loop end condition check
+    _loop_jump();
+
+    _loop_end();
+
+    _end_scope();
+}
+
 static void _for_statement() {
     _begin_scope();
 
@@ -1304,11 +1516,16 @@ static void _for_statement() {
     } else {
         _expression_statement();
     }
+
+    // if (_match(TOKEN_IN)) {
+    //     _in_statement();
+    //     return;
+    // } 
     
     loop_t loop;
     _loop_init(&loop);
     _loop_start(&loop);
-    
+
     // Process the for loop exit condition
     if (!_match(TOKEN_SEMICOLON)) {
         _expression();
@@ -1318,8 +1535,7 @@ static void _for_statement() {
         _loop_test_exit();
     }
 
-    // process the increment
-
+    // process the for increment
     if (!_match(TOKEN_LEFT_BRACE)) {
         // set a jump location to skip to the loop body
         int bodyJump = _emit_jump(OP_JUMP);
@@ -1564,6 +1780,7 @@ static void _synchronize() {
             case TOKEN_FUN:
             case TOKEN_VAR:
             case TOKEN_FOR:
+            case TOKEN_FOREACH:
             case TOKEN_IF:
             case TOKEN_SWITCH:
             case TOKEN_WHILE:
@@ -1747,6 +1964,8 @@ static void _statement() {
         _while_statement();
     } else if ( _match(TOKEN_FOR) ) {
         _for_statement();
+    } else if ( _match(TOKEN_FOREACH) ) {
+        _foreach_statement();
     } else if ( _match(TOKEN_LEFT_BRACE) ) {
         _begin_scope();
         _block();
@@ -1781,8 +2000,11 @@ obj_function_t* l_compile(const char* source) {
 
         // generate a global variable call which will access argc + argv from the
         // globals table
-        _named_variable(_synthetic_token("argc"), false);
-        _named_variable(_synthetic_token("argv"), false);
+        token_t argc = _synthetic_token("argc");
+        _named_variable(&argc, false);
+
+        token_t argv = _synthetic_token("argv");
+        _named_variable(&argv, false);
 
         _emit_bytes(OP_CALL, 2);
     }

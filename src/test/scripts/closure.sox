@@ -26,8 +26,8 @@ fn outer() {
 }
 
 var mid = outer();
-var in = mid();
-in();
+var inside = mid();
+inside();
 
 var globalOne;
 var globalTwo;

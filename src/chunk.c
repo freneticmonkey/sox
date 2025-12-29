@@ -79,6 +79,13 @@ int l_op_get_arg_size_bytes(const chunk_t* chunk, int ip) {
         case OP_INHERIT:
             return 0;
 
+        case OP_GET_ITERATOR:
+            return 3;
+        case OP_TEST_ITERATOR:
+            return 1;
+        case OP_NEXT_ITERATOR:
+            return 1;
+
         case OP_GET_LOCAL:
         case OP_SET_LOCAL:
         case OP_GET_UPVALUE:
@@ -124,9 +131,11 @@ int l_op_get_arg_size_bytes(const chunk_t* chunk, int ip) {
 
         case OP_CASE_FALLTHROUGH:
         case OP_ARRAY_EMPTY:
-        case OP_ARRAY_PUSH:
         case OP_ARRAY_RANGE:
             return 0;
+
+        case OP_ARRAY_PUSH:
+            return 1;
     }
 
     // TODO: Throw compile error here

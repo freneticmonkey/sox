@@ -73,6 +73,7 @@ MunitSuite l_scripts_test_setup() {
         "src/test/scripts/funcs.sox",
         "src/test/scripts/globals.sox",
         "src/test/scripts/hello.sox",
+        "src/test/scripts/iterator.sox",
         "src/test/scripts/locals.sox",
         "src/test/scripts/loops.sox",
         "src/test/scripts/main.sox",

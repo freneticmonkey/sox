@@ -3,6 +3,7 @@
 
 #include "common.h"
 #include "value.h"
+#include "iterator.h"
 
 typedef struct {
     obj_string_t* key;
@@ -23,6 +24,9 @@ bool l_table_get(table_t* table, obj_string_t* key, value_t* value);
 bool l_table_set(table_t* table, obj_string_t* key, value_t value);
 bool l_table_delete(table_t* table, obj_string_t* key);
 void l_table_add_all(table_t* from, table_t* to);
+
+// iterator functions
+void l_table_get_iterator(table_t * table, iterator_t * it);
 
 obj_string_t* l_table_find_string(table_t* table, const char* chars, size_t length, uint32_t hash);
 

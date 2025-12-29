@@ -69,8 +69,12 @@ static MunitResult _test_invalid_add(const MunitParameter params[], void *user_d
     l_init_memory();
     l_init_vm(&config);
 
-    // Test adding incompatible types (e.g., string + number without proper conversion)
-    const char* source = "var x = \"hello\" + true;";
+    // After foreach-impl merge, string concatenation supports auto-conversion
+    // So "hello" + true is now valid and produces "hellotrue"
+    // Test a genuinely invalid operation instead: adding non-numeric types without string involvement
+    // Actually, with the current implementation, any + with a string auto-converts
+    // So we'll test that nil + nil (both non-string, non-number) fails
+    const char* source = "var x = nil + nil;";
     InterpretResult result = l_interpret(source);
 
     // If compilation succeeded, run the code to catch runtime errors
