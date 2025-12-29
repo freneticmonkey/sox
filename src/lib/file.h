@@ -14,4 +14,8 @@ bool  l_file_delete(const char * path);
 // Module path resolution
 char* l_resolve_module_path(const char* module_path);
 
+// Directory scanning
+char** l_scan_directory(const char* dir_path, const char* extension, int* count);
+void   l_free_file_list(char** files, int count);
+
 #endif

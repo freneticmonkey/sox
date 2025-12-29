@@ -1,0 +1,52 @@
+=== Test 1: Foreach with conditionals ===
+Odd number at index 0: 1
+Even number at index 1: 2
+Odd number at index 2: 3
+Even number at index 3: 4
+Odd number at index 4: 5
+Even number at index 5: 6
+Odd number at index 6: 7
+Even number at index 7: 8
+Odd number at index 8: 9
+Even number at index 9: 10
+=== Test 2: Foreach with switch ===
+Grade A description:
+  Excellent!
+Grade B description:
+  Good job!
+Grade C description:
+  Average
+Grade D description:
+  Below average
+Grade F description:
+  Failed
+=== Test 3: Foreach with function calls ===
+Number: 2, Square: 4, Prime: true
+Number: 3, Square: 9, Prime: true
+Number: 4, Square: 16, Prime: false
+Number: 5, Square: 25, Prime: true
+Number: 6, Square: 36, Prime: false
+Number: 7, Square: 49, Prime: true
+Number: 8, Square: 64, Prime: false
+Number: 9, Square: 81, Prime: false
+Number: 10, Square: 100, Prime: false
+=== Test 4: Building containers in foreach ===
+Original: [1,2,3,4,5]
+Doubled: [2,4,6,8,10]
+Even only: [2,4]
+=== Test 5: Table construction ===
+People table:
+  Alice is 25 years old
+  Bob is 30 years old
+  Charlie is 35 years old
+=== Test 6: Performance with larger dataset ===
+Processed 100 elements, sum: 4950
+Average: 49.5
+=== Test 7: Foreach with defer ===
+Processing: 1
+Processing: 2
+Processing: 3
+Processed item: 3
+Processed item: 2
+Processed item: 1
+Processing completed

@@ -61,37 +61,35 @@ static MunitResult _run_file(const MunitParameter params[], void *user_data)
 }
 
 MunitSuite l_scripts_test_setup() {
-
-    static char* files[] = {
-        "src/test/scripts/argtest.sox",
-        "src/test/scripts/array.sox",
-        "src/test/scripts/classes.sox",
-        "src/test/scripts/closure.sox",
-        "src/test/scripts/control.sox",
-        "src/test/scripts/defer.sox",
-        "src/test/scripts/file_parsing.sox",
-        "src/test/scripts/funcs.sox",
-        "src/test/scripts/globals.sox",
-        "src/test/scripts/hello.sox",
-        "src/test/scripts/iterator.sox",
-        "src/test/scripts/locals.sox",
-        "src/test/scripts/loops.sox",
-        "src/test/scripts/main.sox",
-        "src/test/scripts/math_ops.sox",
-        "src/test/scripts/optional_semi.sox",
-        "src/test/scripts/scope_aliasing.sox",
-        "src/test/scripts/string_ops.sox",
-        "src/test/scripts/super.sox",
-        "src/test/scripts/switch.sox",
-        "src/test/scripts/syscall.sox",
-        "src/test/scripts/table.sox",
+    static const char* test_scripts_dir = "src/test/scripts";
+    
+    int file_count = 0;
+    static char** files = NULL;
+    
+    // Scan directory for .sox files using library function
+    files = l_scan_directory(test_scripts_dir, ".sox", &file_count);
+    
+    if (!files || file_count == 0) {
+        munit_log(MUNIT_LOG_WARNING, "No test scripts found, skipping script tests");
+        
+        static MunitTest empty_tests[] = {
+            {NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL}
+        };
+        
+        return (MunitSuite) {
+            .prefix = (char *)"scripts/",
+            .tests = empty_tests,
+            .suites = NULL,
+            .iterations = 1,
+            .options = MUNIT_SUITE_OPTION_NONE
+        };
+    }
+    
+    munit_logf(MUNIT_LOG_INFO, "Found %d .sox test scripts in %s", file_count, test_scripts_dir);    static MunitParameterEnum params[] = {
+        {"files", NULL},
         NULL,
     };
-
-    static MunitParameterEnum params[] = {
-        {"files", files},
-        NULL,
-    };
+    params[0].values = files;
 
     static MunitTest bytecode_suite_tests[] = {
         {

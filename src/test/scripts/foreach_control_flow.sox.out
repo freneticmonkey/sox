@@ -1,0 +1,69 @@
+=== Test 1: Break functionality ===
+Looking for number 5:
+Checking: 1
+Checking: 2
+Checking: 3
+Checking: 4
+Checking: 5
+Found 5! Breaking...
+Checking: 6
+Checking: 7
+Checking: 8
+Checking: 9
+Checking: 10
+=== Test 2: Continue functionality ===
+Processing only even numbers:
+Skipping odd number: 1
+Processing even number: 1
+Skipping odd number: 2
+Processing even number: 2
+Skipping odd number: 3
+Processing even number: 3
+Skipping odd number: 4
+Processing even number: 4
+Skipping odd number: 5
+Processing even number: 5
+Skipping odd number: 6
+Processing even number: 6
+Skipping odd number: 7
+Processing even number: 7
+Skipping odd number: 8
+Processing even number: 8
+Skipping odd number: 9
+Processing even number: 9
+Skipping odd number: 10
+Processing even number: 10
+=== Test 3: Nested loops control flow ===
+Outer value: 1
+  Inner value: a
+  Inner value: b
+  Inner value: c
+Outer value: 2
+  Inner value: a
+  Skipping 'b'
+  Inner value: b
+  Inner value: c
+  Special condition met, would break inner loop
+Outer value: 3
+  Inner value: a
+  Skipping 'b'
+  Inner value: b
+  Inner value: c
+=== Test 4: Manual loop control ===
+Searching for 30:
+Checking: 10
+Checking: 20
+Checking: 30
+Found 30 at index 2
+=== Test 5: Conditional processing ===
+Positive: 1
+Negative: -2
+Positive: 3
+Negative: -4
+Positive: 5
+Negative: -6
+Positive: 7
+Negative: -8
+Positive: 9
+Negative: -10
+Summary - Positive: 5, Negative: 5

@@ -1,0 +1,67 @@
+=== Test 1: Simple debugging scenario ===
+Debug: Array created with 3 elements
+Debug step 0: processing value 1
+Debug step 0: computed 2
+Debug step 1: processing value 2
+Debug step 1: computed 4
+Debug step 2: processing value 3
+Debug step 2: computed 6
+Debug: Foreach completed
+=== Test 2: Performance baseline ===
+Performance test: Created array with 20 elements
+Performance sample: processed element 0
+Performance sample: processed element 5
+Performance sample: processed element 10
+Performance sample: processed element 15
+Performance test: Processed 20 elements
+=== Test 3: Memory allocation patterns ===
+Memory test: Created 5 arrays
+Processing sub-array 0
+  Element 0 = 0
+  Element 1 = 1
+Processing sub-array 1
+  Element 0 = 10
+  Element 1 = 11
+Processing sub-array 2
+  Element 0 = 20
+  Element 1 = 21
+Processing sub-array 3
+  Element 0 = 30
+  Element 1 = 31
+Processing sub-array 4
+  Element 0 = 40
+  Element 1 = 41
+Memory test: Total elements processed = 10
+=== Test 4: Variable state debugging ===
+State debug: Iteration 0
+  Global counter before: 100
+  Current item: alpha
+  Local state: local_0
+  Global counter after: 101
+State debug: Iteration 1
+  Global counter before: 101
+  Current item: beta
+  Local state: local_1
+  Global counter after: 102
+State debug: Iteration 2
+  Global counter before: 102
+  Current item: gamma
+  Local state: local_2
+  Global counter after: 103
+Final global counter: 103
+=== Test 5: Performance stress test ===
+Stress test: Starting nested iteration
+Stress iteration 1: outer=1, inner=10
+Stress iteration 2: outer=1, inner=20
+Stress iteration 3: outer=2, inner=10
+Stress test completed: 6 total iterations
+=== Test 6: Debug control flow ===
+Control flow: Processing 5 at index 0
+  Debug: Normal processing of 5
+Control flow: Processing 10 at index 1
+  Debug: Skipping value 10
+Control flow: Processing 15 at index 2
+  Debug: Normal processing of 15
+Control flow: Processing 20 at index 3
+  Debug: Breaking at value 20
+Debug and performance tests completed

@@ -120,6 +120,7 @@ struct ir_instruction_t {
     ir_value_t* call_args; // Array of call arguments
     int call_arg_count;    // Number of call arguments
     const char* call_target; // Target function name (for external calls)
+    ir_function_t* call_function; // Direct IR function target (for internal calls)
 
     // String constant data (for IR_CONST_STRING)
     const char* string_data;  // String literal characters
@@ -163,6 +164,7 @@ struct ir_function_t {
     // Metadata
     int local_count;              // Number of local variables
     int upvalue_count;            // Number of upvalues
+    size_t code_offset;           // Starting offset (in instructions) within code buffer
 };
 
 // IR module (collection of functions)

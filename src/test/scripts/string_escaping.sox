@@ -1,0 +1,6 @@
+print "--- String Escaping Test ---"
+print "Line 1\nLine 2"
+print "Tab\tSeparated"
+// print "Quote: \"" // Unsupported by scanner
+print "Backslash: \\"
+print "--- End ---"

@@ -1,0 +1,39 @@
+=== Test 1: Variable scoping isolation ===
+Before foreach - i: 999, val: global
+Inside foreach - i: 0, val: first
+Modified inside foreach - i: 100, val: first_modified
+Inside foreach - i: 1, val: second
+Modified inside foreach - i: 101, val: second_modified
+After foreach - i: 999, val: global
+=== Test 2: Nested scope variable resolution ===
+Nested scope - outer_var: outer, inner_var: inner
+Nested scope - index: 0, value: 10
+Loop local: loop_10
+Nested scope - outer_var: outer, inner_var: inner
+Nested scope - index: 1, value: 20
+Loop local: loop_20
+After foreach in nested scope - inner_var: inner
+After nested scope - outer_var: outer
+=== Test 3: Function parameter vs foreach variable ===
+Function params - param1: arg1, param2: arg2
+Foreach shadows params - param1: 0, param2: arg1
+Foreach shadows params - param1: 1, param2: arg2
+After foreach - param1: arg1, param2: arg2
+=== Test 4: Variable resolution across multiple loops ===
+First loop - a: 0, b: 1
+First loop - a: 1, b: 2
+First loop - a: 2, b: 3
+Second loop - a: 0, b: 1
+Second loop - a: 1, b: 2
+Second loop - a: 2, b: 3
+Third loop - x: 0, y: 1
+Third loop - x: 1, y: 2
+Third loop - x: 2, y: 3
+=== Test 5: Complex variable resolution ===
+Index: 0, Multiplier: 2, Computed: 20
+Nested calculation: 1
+Index: 1, Multiplier: 3, Computed: 31
+Nested calculation: 4
+Index: 2, Multiplier: 4, Computed: 42
+Nested calculation: 9
+Variable resolution tests completed

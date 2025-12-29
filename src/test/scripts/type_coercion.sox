@@ -1,0 +1,16 @@
+print "--- Type Coercion Test ---"
+
+// Concatenation
+print "Number + String: " + 5
+print "String + Number: " + "5"
+print "Bool + String: " + true
+
+// Truthiness
+if (1) { print "1 is true"; } else { print "1 is false"; }
+if (0) { print "0 is true"; } else { print "0 is false"; }
+if ("") { print "empty string is true"; } else { print "empty string is false"; }
+if (nil) { print "nil is true"; } else { print "nil is false"; }
+// {} creates an empty Table (or Array depending on parsing), but is a valid object
+if ({}) { print "empty {} is true"; } else { print "empty {} is false"; }
+
+print "--- End ---"

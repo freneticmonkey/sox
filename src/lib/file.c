@@ -2,6 +2,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <direct.h>
+#else
+#include <dirent.h>
+#include <sys/types.h>
+#endif
+
 #include "lib/file.h"
 #include "lib/print.h"
 #include "lib/linker.h"
@@ -504,4 +512,141 @@ char* l_resolve_module_path(const char* module_path) {
     // TODO: Add search paths (module_paths array in VM)
 
     return NULL;  // Not found
+}
+
+static int _compare_strings(const void* a, const void* b) {
+    return strcmp(*(const char**)a, *(const char**)b);
+}
+
+#ifdef _WIN32
+char** l_scan_directory(const char* dir_path, const char* extension, int* count) {
+    *count = 0;
+    
+    char search_path[MAX_PATH];
+    snprintf(search_path, sizeof(search_path), "%s/*%s", dir_path, extension);
+    
+    WIN32_FIND_DATAA find_data;
+    HANDLE hFind = FindFirstFileA(search_path, &find_data);
+    
+    if (hFind == INVALID_HANDLE_VALUE) {
+        return NULL;
+    }
+    
+    // First pass: count files
+    int file_count = 0;
+    do {
+        if (!(find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            file_count++;
+        }
+    } while (FindNextFileA(hFind, &find_data));
+    
+    if (file_count == 0) {
+        FindClose(hFind);
+        return NULL;
+    }
+    
+    // Allocate array (+1 for NULL terminator)
+    char** files = (char**)malloc((file_count + 1) * sizeof(char*));
+    if (!files) {
+        FindClose(hFind);
+        return NULL;
+    }
+    
+    // Second pass: collect filenames
+    hFind = FindFirstFileA(search_path, &find_data);
+    int index = 0;
+    do {
+        if (!(find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            size_t path_len = strlen(dir_path) + strlen(find_data.cFileName) + 2;
+            files[index] = (char*)malloc(path_len);
+            if (files[index]) {
+                snprintf(files[index], path_len, "%s/%s", dir_path, find_data.cFileName);
+                index++;
+            }
+        }
+    } while (FindNextFileA(hFind, &find_data) && index < file_count);
+    
+    FindClose(hFind);
+    
+    // Sort alphabetically for consistent ordering
+    qsort(files, index, sizeof(char*), _compare_strings);
+    
+    files[index] = NULL;
+    *count = index;
+    
+    return files;
+}
+#else
+char** l_scan_directory(const char* dir_path, const char* extension, int* count) {
+    *count = 0;
+    
+    DIR* dir = opendir(dir_path);
+    if (!dir) {
+        return NULL;
+    }
+    
+    size_t ext_len = strlen(extension);
+    
+    // First pass: count matching files
+    int file_count = 0;
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_REG) {
+            size_t name_len = strlen(entry->d_name);
+            if (name_len >= ext_len && 
+                strcmp(entry->d_name + name_len - ext_len, extension) == 0) {
+                file_count++;
+            }
+        }
+    }
+    
+    if (file_count == 0) {
+        closedir(dir);
+        return NULL;
+    }
+    
+    // Allocate array (+1 for NULL terminator)
+    char** files = (char**)malloc((file_count + 1) * sizeof(char*));
+    if (!files) {
+        closedir(dir);
+        return NULL;
+    }
+    
+    // Second pass: collect filenames
+    rewinddir(dir);
+    int index = 0;
+    while ((entry = readdir(dir)) != NULL && index < file_count) {
+        if (entry->d_type == DT_REG) {
+            size_t name_len = strlen(entry->d_name);
+            if (name_len >= ext_len && 
+                strcmp(entry->d_name + name_len - ext_len, extension) == 0) {
+                size_t path_len = strlen(dir_path) + strlen(entry->d_name) + 2;
+                files[index] = (char*)malloc(path_len);
+                if (files[index]) {
+                    snprintf(files[index], path_len, "%s/%s", dir_path, entry->d_name);
+                    index++;
+                }
+            }
+        }
+    }
+    
+    closedir(dir);
+    
+    // Sort alphabetically for consistent ordering
+    qsort(files, index, sizeof(char*), _compare_strings);
+    
+    files[index] = NULL;
+    *count = index;
+    
+    return files;
+}
+#endif
+
+void l_free_file_list(char** files, int count) {
+    if (!files) return;
+    
+    for (int i = 0; i < count; i++) {
+        free(files[i]);
+    }
+    free(files);
 }

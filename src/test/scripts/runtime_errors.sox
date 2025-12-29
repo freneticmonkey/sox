@@ -1,0 +1,24 @@
+print "--- Runtime Error Test ---"
+print "This should print."
+
+// Uncommmenting lines below should cause runtime errors
+// But since we can't catch them, we test one by one.
+
+// 1. Division by zero
+// print 10 / 0
+
+// 2. Calling non-function
+// var not_func = 123
+// not_func()
+
+// 3. Undefined variable
+// print undefined_var
+
+// 4. Index out of bounds (if arrays checked)
+var a[] = {1, 2}
+print "Array created"
+// print a[5]
+
+// 5. Type error
+print "Type error coming up..."
+// print nil + 5
