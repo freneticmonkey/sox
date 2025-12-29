@@ -334,8 +334,9 @@ bool macho_write_executable(const char* output_path,
     strncpy(text_segment.segname, SEG_TEXT, 16);
     text_segment.vmaddr = text_vm_addr;
     text_segment.vmsize = round_up_to_page(text_size, page_size);
-    text_segment.fileoff = text_file_offset;
-    text_segment.filesize = text_size;
+    /* __TEXT segment starts at file offset 0 and includes headers + load commands */
+    text_segment.fileoff = 0;
+    text_segment.filesize = text_file_offset + text_size;
     text_segment.maxprot = VM_PROT_READ | VM_PROT_EXECUTE;
     text_segment.initprot = VM_PROT_READ | VM_PROT_EXECUTE;
     text_segment.nsects = text_section_count;
@@ -497,10 +498,11 @@ bool macho_write_executable(const char* output_path,
     entry_point_command_t main_cmd = {0};
     main_cmd.cmd = LC_MAIN;
     main_cmd.cmdsize = sizeof(entry_point_command_t);
-    /* Calculate entry point as file offset, not virtual offset
+    /* Calculate entry point as file offset from __TEXT segment start (file offset 0)
      * entry_point is virtual address, need to convert to file offset */
     uint64_t entry_virt_offset = context->entry_point - text_vm_addr;
-    main_cmd.entryoff = text_file_offset + entry_virt_offset;
+    /* Entry offset is relative to __TEXT segment start (fileoff=0), not section start */
+    main_cmd.entryoff = entry_virt_offset;
     main_cmd.stacksize = 0;  /* Use default */
 
     if (!write_struct(f, &main_cmd, sizeof(main_cmd))) {
