@@ -1,0 +1,24 @@
+// Phase 6.2 Integration Test: Runtime library integration
+// Tests that runtime library functions are properly linked
+
+fun testPrint() {
+    print("Testing runtime print");
+    return 1;
+}
+
+fun testArithmetic() {
+    var a = 10;
+    var b = 20;
+    var sum = a + b;
+    var product = a * b;
+    print(sum);      // Should print: 30
+    print(product);  // Should print: 200
+    return 2;
+}
+
+fun main() {
+    testPrint();
+    testArithmetic();
+    print("All runtime tests passed");
+    return 0;
+}

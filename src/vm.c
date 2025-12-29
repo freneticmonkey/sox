@@ -1,8 +1,10 @@
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "lib/debug.h"
+#include "lib/file.h"
 #include "lib/memory.h"
 #include "lib/native_api.h"
 #include "lib/print.h"
@@ -96,6 +98,9 @@ void _mark_roots() {
     // mark any globals
     l_mark_table(&vm.globals);
 
+    // mark any modules
+    l_mark_table(&vm.modules);
+
     // ensure that compiler owned memory is also tracked
     l_mark_compiler_roots();
 
@@ -117,9 +122,19 @@ void l_init_vm(vm_config_t *config) {
 
     l_init_table(&vm.globals);
     l_init_table(&vm.strings);
+    l_init_table(&vm.modules);
 
     vm.init_string = NULL;
     vm.init_string = l_new_string("init");
+
+    // Initialize exit handlers
+    vm.exit_handlers = NULL;
+    vm.exit_handler_count = 0;
+    vm.exit_handler_capacity = 0;
+    vm.cleanup_done = false;
+
+    // Register cleanup with atexit for safety
+    atexit(l_vm_cleanup);
 
     // native lib functions
     l_table_add_native();
@@ -128,8 +143,17 @@ void l_init_vm(vm_config_t *config) {
 void l_free_vm() {
     l_free_table(&vm.strings);
     l_free_table(&vm.globals);
+    l_free_table(&vm.modules);
 
     vm.init_string = NULL;
+
+    // Free exit handlers array
+    if (vm.exit_handlers != NULL) {
+        free(vm.exit_handlers);
+        vm.exit_handlers = NULL;
+    }
+    vm.exit_handler_count = 0;
+    vm.exit_handler_capacity = 0;
 
     l_unregister_mark_roots_cb(_mark_roots);
     l_register_garbage_collect_cb(_garbage_collect);
@@ -165,6 +189,55 @@ static obj_string_t* _value_to_string_inner(value_t value) {
         }
     }
     return l_copy_string(buffer, len);
+}
+
+void l_vm_register_exit_handler(value_t handler) {
+    // Grow array if needed
+    if (vm.exit_handler_count >= vm.exit_handler_capacity) {
+        int new_capacity = vm.exit_handler_capacity == 0 ? 8 : vm.exit_handler_capacity * 2;
+        vm.exit_handlers = realloc(vm.exit_handlers, sizeof(value_t) * new_capacity);
+        if (vm.exit_handlers == NULL) {
+            fprintf(stderr, "Failed to allocate memory for exit handlers\n");
+            return;
+        }
+        vm.exit_handler_capacity = new_capacity;
+    }
+
+    vm.exit_handlers[vm.exit_handler_count++] = handler;
+}
+
+void l_vm_cleanup() {
+    // Make cleanup idempotent - only run once
+    if (vm.cleanup_done) {
+        return;
+    }
+    vm.cleanup_done = true;
+
+    // Call user-registered exit handlers in reverse order (LIFO)
+    for (int i = vm.exit_handler_count - 1; i >= 0; i--) {
+        value_t handler = vm.exit_handlers[i];
+
+        if (IS_CLOSURE(handler) || IS_FUNCTION(handler)) {
+            // Reset stack to clean state before each handler
+            _reset_stack();
+
+            // Try to call the handler
+            // We need to be careful here - if the handler fails, we continue cleanup
+            l_push(handler);
+            if (_call_value(handler, 0)) {
+                // Run the handler - ignore errors, continue with next handler
+                l_run();
+            }
+        }
+    }
+
+    // Flush output streams
+    fflush(stdout);
+    fflush(stderr);
+
+    // Note: We don't call l_free_vm() here because that would be done
+    // by the normal shutdown sequence. This cleanup is just for flushing
+    // buffers and calling user handlers.
 }
 
 static InterpretResult _run() {
@@ -265,13 +338,31 @@ static InterpretResult _run() {
                 break;
             }
             case OP_GET_PROPERTY: {
-                if (!IS_INSTANCE(_peek(0))) {
-                    l_vm_runtime_error("Only instances have properties.");
+                value_t receiver = _peek(0);
+                obj_string_t* name = READ_STRING();
+
+                // Handle tables
+                if (IS_TABLE(receiver)) {
+                    obj_table_t* table = AS_TABLE(receiver);
+                    value_t value;
+                    if (l_table_get(&table->table, name, &value)) {
+                        l_pop(); // Table
+                        l_push(value);
+                        break;
+                    }
+                    // Property not found - return nil
+                    l_pop();
+                    l_push(NIL_VAL);
+                    break;
+                }
+
+                // Handle instances
+                if (!IS_INSTANCE(receiver)) {
+                    l_vm_runtime_error("Only instances and tables have properties.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
-                obj_instance_t* instance = AS_INSTANCE(_peek(0));
-                obj_string_t* name = READ_STRING();
+                obj_instance_t* instance = AS_INSTANCE(receiver);
 
                 value_t value;
                 if (l_table_get(&instance->fields, name, &value)) {
@@ -286,13 +377,27 @@ static InterpretResult _run() {
                 break;
             }
             case OP_SET_PROPERTY: {
-                if (!IS_INSTANCE(_peek(1))) {
-                    l_vm_runtime_error("Only instances have properties.");
+                value_t receiver = _peek(1);
+                obj_string_t* name = READ_STRING();
+
+                // Handle tables
+                if (IS_TABLE(receiver)) {
+                    obj_table_t* table = AS_TABLE(receiver);
+                    l_table_set(&table->table, name, _peek(0));
+                    value_t value = l_pop();
+                    l_pop();
+                    l_push(value);
+                    break;
+                }
+
+                // Handle instances
+                if (!IS_INSTANCE(receiver)) {
+                    l_vm_runtime_error("Only instances and tables have fields.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
-                obj_instance_t* instance = AS_INSTANCE(_peek(1));
-                l_table_set(&instance->fields, READ_STRING(), _peek(0));
+                obj_instance_t* instance = AS_INSTANCE(receiver);
+                l_table_set(&instance->fields, name, _peek(0));
                 value_t value = l_pop();
                 l_pop();
                 l_push(value);
@@ -544,6 +649,138 @@ static InterpretResult _run() {
                 _define_method(READ_STRING());
                 break;
 
+            case OP_TABLE_FIELD: {
+                // Stack: [table, value]
+                obj_string_t* key = READ_STRING();
+                value_t value = _peek(0);
+                obj_table_t* table = AS_TABLE(_peek(1));
+                l_table_set(&table->table, key, value);
+                l_pop();  // Pop value, leave table on stack
+                break;
+            }
+
+            case OP_IMPORT: {
+                obj_string_t* path = READ_STRING();
+
+                // Check cache first
+                value_t cached;
+                if (l_table_get(&vm.modules, path, &cached)) {
+                    // Check if it's the loading sentinel (circular dependency)
+                    if (IS_BOOL(cached) && AS_BOOL(cached)) {
+                        l_vm_runtime_error("Circular import detected: '%s'", path->chars);
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+                    // Module already loaded, use cached value
+                    l_push(cached);
+                    break;
+                }
+
+                // Mark as loading (for circular dependency detection)
+                l_push(OBJ_VAL(path));  // Protect from GC
+                l_table_set(&vm.modules, path, BOOL_VAL(true));
+                l_pop();
+
+                // Resolve the module file path
+                char* file_path = l_resolve_module_path(path->chars);
+                if (!file_path) {
+                    // Clean up loading sentinel
+                    l_table_delete(&vm.modules, path);
+                    l_vm_runtime_error("Module not found: '%s'", path->chars);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                // Read the module source file
+                char* source = l_read_file(file_path);
+                if (!source) {
+                    l_table_delete(&vm.modules, path);
+                    l_vm_runtime_error("Could not read module: '%s'", file_path);
+                    free(file_path);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                // Compile the module (use l_compile_module to allow return statements)
+                obj_function_t* module_fn = l_compile_module(source);
+                free(source);
+
+                if (!module_fn) {
+                    l_table_delete(&vm.modules, path);
+                    l_vm_runtime_error("Failed to compile module: '%s'", file_path);
+                    free(file_path);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                // Save current frame count to detect when module returns
+                int module_frame_depth = vm.frame_count;
+
+                // Create closure and call it
+                l_push(OBJ_VAL(module_fn));  // Protect from GC
+                obj_closure_t* closure = l_new_closure(module_fn);
+                l_pop();
+                l_push(OBJ_VAL(closure));
+
+                // Call the module (arg count = 0)
+                if (!_call(closure, 0)) {
+                    l_table_delete(&vm.modules, path);
+                    free(file_path);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                // Update frame pointer
+                frame = &vm.frames[vm.frame_count - 1];
+
+                free(file_path);
+
+                // Module will execute until OP_RETURN
+                // We need to cache the result after it returns
+                // Execute the module inline until it returns
+                while (vm.frame_count > module_frame_depth) {
+                    uint8_t instruction = READ_BYTE();
+
+                    switch (instruction) {
+                        case OP_RETURN: {
+                            value_t result = l_pop();
+                            _close_upvalues(frame->slots);
+                            vm.frame_count--;
+
+                            if (vm.frame_count == module_frame_depth) {
+                                // Module just returned - cache the result
+                                vm.stack_top = frame->slots;
+                                l_push(result);
+
+                                // Cache the module (replace loading sentinel)
+                                l_push(OBJ_VAL(path));  // Protect from GC
+                                l_table_set(&vm.modules, path, result);
+                                l_pop();
+
+                                // Update frame back to caller
+                                frame = &vm.frames[vm.frame_count - 1];
+                                goto module_loaded;  // Exit the inline execution
+                            } else {
+                                // Nested return within module
+                                vm.stack_top = frame->slots;
+                                l_push(result);
+                                frame = &vm.frames[vm.frame_count - 1];
+                            }
+                            break;
+                        }
+                        default:
+                            // Put instruction back and let main loop handle it
+                            frame->ip--;
+                            goto run_module_via_main_loop;
+                    }
+                }
+
+                run_module_via_main_loop:
+                // For complex modules, fall back to letting main loop execute
+                // The return value will be on stack, but won't be cached
+                // TODO: Improve this to handle all cases
+                break;
+
+                module_loaded:
+                // Module result is now cached and on stack
+                break;
+            }
+
             case OP_ARRAY_EMPTY: {
                 l_push(OBJ_VAL(l_new_array()));
                 break;
@@ -584,7 +821,7 @@ static InterpretResult _run() {
                 
                 // calculate the range values - nil values indicate the start or end of the array
                 int start_index = IS_NIL(start) ? 0 : (int)start.as.number;
-                int end_index = IS_NIL(end) ? array->values.count-1 : (int)end.as.number;
+                int end_index = IS_NIL(end) ? (int)(array->values.count-1) : (int)end.as.number;
                 
                 l_push(OBJ_VAL(l_copy_array(array, start_index, end_index)));
                 break;
@@ -864,8 +1101,22 @@ static bool _invoke_from_class(obj_class_t* klass, obj_string_t* name, int argCo
 static bool _invoke(obj_string_t* name, int argCount) {
     value_t receiver = _peek(argCount);
 
+    // Handle tables
+    if (IS_TABLE(receiver)) {
+        obj_table_t* table = AS_TABLE(receiver);
+        value_t value;
+        if (l_table_get(&table->table, name, &value)) {
+            // Replace table with the callable value on the stack
+            vm.stack_top[-argCount - 1] = value;
+            return _call_value(value, argCount);
+        }
+        l_vm_runtime_error("Undefined property '%s'.", name->chars);
+        return false;
+    }
+
+    // Handle instances
     if (!IS_INSTANCE(receiver)) {
-        l_vm_runtime_error("Only instances have methods.");
+        l_vm_runtime_error("Only instances and tables have methods.");
         return false;
     }
 

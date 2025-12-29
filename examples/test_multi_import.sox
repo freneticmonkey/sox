@@ -1,0 +1,28 @@
+// test_multi_import.sox - Test multi-import syntax with parentheses
+
+print("=== Testing Multi-Import Syntax ===")
+print("")
+
+// Multi-import on a single line
+print("1. Multi-import on single line:")
+print("   import (\"simple_module\" \"modules/math\")")
+print("")
+
+import ("simple_module" "modules/math")
+
+print("  simple_module.message = ")
+print(simple_module.message)
+
+print("  math.pi = ")
+print(math.pi)
+
+print("")
+print("2. Testing functions from both modules:")
+print("  simple_module.add(3, 7) = ")
+print(simple_module.add(3, 7))
+
+print("  math.square(5) = ")
+print(math.square(5))
+
+print("")
+print("=== Multi-Import Test Complete ===")

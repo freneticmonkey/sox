@@ -1,0 +1,17 @@
+// Phase 6.2 Integration Test: Multi-object linking - Module B
+// This file contains the main function and calls functions from Module A
+
+// External functions from Module A (will be resolved during linking)
+// fun multiply(a, b);
+// fun square(x);
+
+fun main() {
+    // When multi-module support is ready, these will call into module A
+    var result1 = 3 * 4;  // Simulates multiply(3, 4)
+    var result2 = 5 * 5;  // Simulates square(5)
+
+    print(result1);  // Should print: 12
+    print(result2);  // Should print: 25
+
+    return 0;
+}

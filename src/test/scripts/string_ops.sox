@@ -1,0 +1,31 @@
+// Test string operations
+print "Testing String Operations"
+
+// String concatenation
+var str1 = "Hello"
+var str2 = "World"
+var greeting = str1 + " " + str2
+print greeting
+
+// String comparison
+if str1 == "Hello" {
+    print "str1 equals Hello"
+}
+
+if str1 != "Goodbye" {
+    print "str1 does not equal Goodbye"
+}
+
+// Empty string
+var empty = ""
+print "empty string: '" + empty + "'"
+
+// Multiple concatenation
+var multi = "a" + "b" + "c" + "d"
+print multi
+
+// String in expressions
+var expr = ("Hello" + " ") + ("World" + "!")
+print expr
+
+print "String operations test complete"

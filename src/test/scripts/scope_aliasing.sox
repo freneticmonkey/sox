@@ -1,0 +1,49 @@
+// Test local variable aliasing across scopes (shadowing)
+print "Testing Scope Aliasing"
+
+var x = "global"
+print "global x: " + x
+
+fn test_function_scope() {
+    var x = "function"
+    print "function x: " + x
+
+    {
+        var x = "block"
+        print "block x: " + x
+    }
+
+    print "function x after block: " + x
+}
+
+test_function_scope()
+print "global x after function: " + x
+
+// Test nested blocks
+{
+    var y = "outer block"
+    print "outer y: " + y
+
+    {
+        var y = "inner block"
+        print "inner y: " + y
+    }
+
+    print "outer y after inner: " + y
+}
+
+// Test function parameter shadowing
+fn test_param_shadow(x) {
+    print "param x: " + x
+
+    {
+        var x = "shadowed param"
+        print "shadowed x: " + x
+    }
+
+    print "param x after shadow: " + x
+}
+
+test_param_shadow("parameter")
+
+print "Scope aliasing test complete"

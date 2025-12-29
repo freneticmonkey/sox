@@ -1,0 +1,9 @@
+// Test variable assignment and access
+var x = 10;
+print(x);
+
+var y = 20;
+print(y);
+
+var z = x;
+print(z);

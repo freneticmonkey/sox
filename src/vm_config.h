@@ -22,6 +22,16 @@ typedef struct {
     bool enable_wasm_output;
     bool enable_wat_output;
 
+    // Native code generation options
+    bool enable_native_output;
+    char* native_output_file;
+    char* native_target_arch;      // "x86_64", "arm64"
+    char* native_target_os;        // "linux", "macos", "windows"
+    bool native_emit_object;
+    bool native_debug_output;
+    int native_optimization_level;
+    bool use_custom_linker;        // Use custom linker instead of system linker
+
     vm_args_t args;
 } vm_config_t;
 

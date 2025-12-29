@@ -51,6 +51,13 @@ vm_config_t l_default_vmconfig() {
         .suppress_print = false,
         .enable_wasm_output = false,
         .enable_wat_output = false,
+        .enable_native_output = false,
+        .native_output_file = NULL,
+        .native_target_arch = "x86_64",
+        .native_target_os = "linux",
+        .native_emit_object = true,
+        .native_debug_output = false,
+        .native_optimization_level = 0,
         .args = l_default_args(),
     };
 }
@@ -61,6 +68,13 @@ void l_init_vmconfig(vm_config_t *config, int argc, const char *argv[]) {
     config->suppress_print = false;
     config->enable_wasm_output = false;
     config->enable_wat_output = false;
+    config->enable_native_output = false;
+    config->native_output_file = NULL;
+    config->native_target_arch = "x86_64";
+    config->native_target_os = "linux";
+    config->native_emit_object = true;
+    config->native_debug_output = false;
+    config->native_optimization_level = 0;
     config->args = l_parse_args(argc, argv);
 
     // check the args for flags

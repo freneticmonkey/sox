@@ -26,6 +26,7 @@ typedef struct {
     size_t   stack_top_count;
     table_t  globals;
     table_t  strings;
+    table_t  modules;
     obj_upvalue_t* open_upvalues;
     obj_string_t*  init_string;
 
@@ -36,6 +37,12 @@ typedef struct {
     // int    gray_count;
     // int    gray_capacity;
     // obj_t** gray_stack;
+
+    // exit handlers
+    value_t* exit_handlers;
+    int      exit_handler_count;
+    int      exit_handler_capacity;
+    bool     cleanup_done;
 
     vm_config_t *config;
 
@@ -52,6 +59,7 @@ extern vm_t vm;
 
 void l_init_vm(vm_config_t *config);
 void l_free_vm();
+void l_vm_cleanup();
 
 void    l_push(value_t value);
 value_t l_pop();
@@ -61,6 +69,7 @@ void l_set_entry_point(obj_closure_t * entry_point);
 InterpretResult l_run();
 
 void l_vm_define_native(const char* name, native_func_t function);
+void l_vm_register_exit_handler(value_t handler);
 
 void l_vm_runtime_error(const char* format, ...);
 

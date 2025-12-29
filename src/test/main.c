@@ -6,6 +6,13 @@
 #include "test/serialise_test.h"
 #include "test/vm_test.h"
 #include "test/wasm_test.h"
+#include "test/calling_convention_tests.h"
+#include "test/native_test.h"
+#include "test/linker_test.h"
+
+extern MunitSuite elf_executable_suite;
+extern MunitSuite custom_linker_integration_suite(void);
+extern MunitSuite macho_validation_suite(void);
 
 int main(int argc, char* argv[]) {
     printf("Starting sox unit tests...\n");
@@ -16,6 +23,12 @@ int main(int argc, char* argv[]) {
         l_scripts_test_setup(),
         l_serialise_test_setup(),
         *get_wasm_suite(),
+        l_calling_convention_test_setup(),
+        l_native_test_setup(),
+        l_linker_test_setup(),
+        elf_executable_suite,
+        custom_linker_integration_suite(),
+        macho_validation_suite(),
         NULL,
     };
 

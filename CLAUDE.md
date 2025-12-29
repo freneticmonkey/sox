@@ -1,230 +1,330 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+# CLAUDE.md - Sox Programming Language
 
 ## Project Overview
 
-Sox is a C implementation of an interpreter for the Lox language (from "Crafting Interpreters"), with additional language features and enhancements. The project includes:
+Sox is a bytecode-based virtual machine interpreter for a toy programming language, inspired by "Crafting Interpreters" (http://craftinginterpreters.com). Written in C with Go tooling support, Sox implements a dynamically-typed language with object-oriented features, closures, and modern language constructs.
 
-- A bytecode virtual machine interpreter
-- Comprehensive test suite using munit framework
-- Cross-platform build system (Windows, macOS, Linux, ARM64)
-- Native containers (arrays, tables) with iteration support
-- Language extensions like defer, switch statements, optional semicolons
+**Key Capabilities:**
+- Full bytecode VM with stack-based execution
+- Object-oriented programming (classes, inheritance, methods)
+- First-class functions and closures
+- Control flow (if/else, while, for, switch with break/continue)
+- Built-in data structures (tables, arrays/slices)
+- Bytecode serialization for caching
+- WebAssembly (WASM) code generation
+- REPL for interactive development
 
-## Development Commands
+## Architecture
 
-### Building the Project
-```bash
-# Build debug version (default)
-make build
+### Core Components
 
-# Build release version
-make build-release
+**Three-Stage Compilation Pipeline:**
+1. **Scanner** (`src/scanner.c`) - Lexical analysis and tokenization
+2. **Compiler** (`src/compiler.c`) - Parsing and bytecode generation
+3. **VM** (`src/vm.c`) - Stack-based bytecode execution
 
-# Generate build files and build debug
-make gen
+**Object System** (`src/object.c`):
+- Strings, Functions, Closures, Classes, Instances
+- Tables (hash maps), Arrays/Slices
+- Upvalues for closure variable capture
+- Bound methods with receiver binding
+
+**Value Representation** (`src/value.c`):
+- Tagged union: (type, value) pairs
+- Types: numbers (double), booleans, nil, objects
+- Type-safe macros: `IS_*`, `AS_*` patterns
+
+**Memory Management** (`src/lib/memory.c`):
+- Custom allocation tracking
+- String interning via hash tables
+- GC infrastructure (partially implemented)
+
+**Serialization** (`src/serialise.c`):
+- Binary bytecode format with version checking
+- Source filename and hash validation
+- Complete VM state persistence
+- Round-trip serialization/deserialization
+
+**WASM Generation** (`src/wasm_generator.c`, `src/wat_generator.c`):
+- Dual output: WAT text format and WASM binary
+- 22 fully functional opcodes
+- 11 partially implemented opcodes
+- Independent verification via wazero (Go runtime)
+
+### Directory Structure
+
 ```
+sox/
+├── src/                      # C source code
+│   ├── main.c               # Entry point, REPL, file execution
+│   ├── vm.{c,h}             # Virtual machine core
+│   ├── compiler.{c,h}       # Parser and bytecode compiler
+│   ├── scanner.{c,h}        # Lexical analyzer
+│   ├── chunk.{c,h}          # Bytecode chunk representation
+│   ├── object.{c,h}         # Object system
+│   ├── value.{c,h}          # Value representation
+│   ├── serialise.{c,h}      # Bytecode serialization
+│   ├── wasm_generator.{c,h} # WASM binary generation
+│   ├── wat_generator.{c,h}  # WAT text generation
+│   ├── vm_config.{c,h}      # Configuration and CLI
+│   ├── lib/                 # Utility libraries
+│   │   ├── memory.{c,h}     # Memory management
+│   │   ├── table.{c,h}      # Hash table implementation
+│   │   ├── debug.{c,h}      # Debug utilities
+│   │   ├── file.{c,h}       # File I/O
+│   │   ├── native_api.{c,h} # Native function API
+│   │   └── list.{c,h}       # List/array utilities
+│   └── test/                # Unit tests and test scripts
+│       ├── main.c           # Test runner
+│       ├── *_test.c         # Component tests
+│       └── scripts/         # 22 integration test scripts
+├── wasm_verify/             # Go-based WASM verification
+├── tools/                   # Build tools (Go)
+├── ext/                     # External dependencies
+│   ├── munit/               # Unit testing framework
+│   └── winstd/              # Windows POSIX compatibility
+├── docs/                    # Documentation
+├── plans/                   # Agent implementation plans
+├── Makefile                 # Build orchestration
+└── premake5.lua             # Build configuration
+```
+
+## Development Practices
+
+### Code Style
+
+**C Code Conventions:**
+- C11 standard compliance
+- Snake_case for functions and variables
+- PascalCase for types and structs
+- Descriptive naming (avoid abbreviations unless conventional)
+- Header guards: `#ifndef SOX_<MODULE>_H`
+
+**Memory Safety:**
+- Always check allocation results
+- Track allocations for debugging
+- Use safe string operations
+- Validate array bounds
+
+**Error Handling:**
+- Runtime errors via `runtimeError()` in VM
+- Compile-time errors via compiler error reporting
+- Clean error messages with line numbers
 
 ### Testing
+
+**Unit Tests** (`src/test/`):
+- munit framework for C unit testing
+- 54 total unit tests across components
+- Run via `make test` or `./bin/x64/Debug/sox_test`
+
+**Integration Tests** (`src/test/scripts/`):
+- 22 test scripts with expected output validation
+- Format: `test_name.sox` with `test_name.sox.out`
+- Validates language features end-to-end
+
+**WASM Verification** (`wasm_verify/`):
+- Independent Go-based verification using wazero
+- Validates generated WASM bytecode
+- Ensures cross-platform compatibility
+
+### Build System
+
+**Premake5 Configuration** (`premake5.lua`):
+- Generates platform-specific build files
+- Configurations: Debug, Release, Dist
+- Platforms: Windows (VS), macOS (Xcode), Linux (gmake)
+- Architectures: x86, x64, ARM64
+
+**Build Targets:**
 ```bash
-# Run all unit tests
-make test
+# Main build targets
+make install-deps       # Install dependencies
+make build-tools        # Build Go tools
+make build-debug        # Debug build
+make build-release      # Release build (optimized)
+make build              # Default (debug + tools)
+make test               # Run test suite
+make clean              # Clean all build artifacts
 
-# Build test executable only
-make build-test
+# Runtime library targets
+make build-runtime-static   # Build static runtime library
+make build-runtime-shared   # Build shared runtime library
+make build-runtime          # Build both static and shared
+make install-runtime        # Install runtime to /usr/local/lib
 
-# Run specific test executable
-make run-test
+# Security testing targets
+make test-asan             # Run tests with AddressSanitizer
+make test-ubsan            # Run tests with UndefinedBehaviorSanitizer
+make test-security         # Run all security tests
+make help-security         # Show security testing help
 ```
 
-### Running the Interpreter
-```bash
-# Start REPL
-make run
+**Build Outputs:**
 
-# Run a specific script
-make run SCRIPT=path/to/script.sox
+On macOS ARM64, builds use Xcode projects in the `projects/` directory:
+- **Main executable:** `./build/sox` (sox compiler/interpreter)
+- **Test executable:** `./build/test` (unit test runner)
+- **Runtime library (static):**
+  - Standard location: `./build/libsox_runtime.a`
+  - Architecture-specific: `./build/libsox_runtime_${THIS_ARCH}.a` (e.g., `libsox_runtime_arm64.a`)
+  - The build automatically creates both copies for custom linker compatibility
+- **Runtime library (shared):** `./build/libsox_runtime.dylib` (macOS) or `./build/libsox_runtime.so` (Linux)
 
-# Run interpreter directly
-./build/sox [script_path]
-```
+The build system uses premake5 to generate Xcode projects on macOS, then invokes xcodebuild. This is why you'll see references to `projects/` directory rather than direct gcc/clang invocations.
 
-### Build System Management
-```bash
-# Clean build artifacts
-make clean
+**Cross-Platform Support:**
+- Windows: Visual Studio 2022
+- macOS: Xcode (ARM64 target)
+- Linux: gmake
 
-# Show detected platform details
-make details
+### Git Workflow
 
-# Install dependencies
-make install-deps
+**Branch Strategy:**
+- Main branch: `main`
+- Feature branches: descriptive names
+- Clean commit history with meaningful messages
 
-# Build development tools
-make build-tools
-```
+**Commit Guidelines:**
+- Focus on the "why" rather than the "what"
+- Reference issues when applicable
+- Keep commits atomic and focused
 
-## Code Architecture
+## Common Development Tasks
 
-### Core VM Components
+### Adding a New Language Feature
 
-**Virtual Machine (`src/vm.h`, `src/vm.c`)**
-- Stack-based bytecode interpreter with call frames
-- Manages global/local variables, upvalues, and object lifecycle
-- Handles native function registration and runtime errors
+1. **Update Scanner** (`src/scanner.c`):
+   - Add new token types to `TokenType` enum
+   - Implement token recognition in `scanToken()`
 
-**Compiler (`src/compiler.h`, `src/compiler.c`)**
-- Single-pass compiler from source to bytecode
-- Handles parsing, code generation, and optimization
+2. **Update Compiler** (`src/compiler.c`):
+   - Add parsing logic for new syntax
+   - Generate appropriate bytecode
+   - Add to Pratt parser table if expression
 
-**Bytecode (`src/chunk.h`, `src/chunk.c`)**
-- Defines instruction set (OpCode enum) with 60+ operations
-- Manages constant pools and debugging information
-- Includes iterator operations and container manipulation
+3. **Update VM** (`src/vm.c`):
+   - Add new bytecode opcodes to `OpCode` enum
+   - Implement opcode execution in `run()`
+   - Update disassembler in `src/lib/debug.c`
 
-**Object System (`src/object.h`, `src/object.c`)**
-- Type hierarchy for all heap-allocated values
-- Supports functions, closures, classes, instances, strings
-- Native containers: tables (hash maps) and arrays with slicing
+4. **Add Tests**:
+   - Unit tests in `src/test/`
+   - Integration test script in `src/test/scripts/`
+   - Update expected output files
 
-### Value System
+5. **Update Serialization** (`src/serialise.c`):
+   - Handle new opcodes in serialization/deserialization
+   - Add round-trip tests
 
-**Value Types (`src/value.h`, `src/value.c`)**
-- Tagged union representing all Sox values: bool, nil, number, objects
-- Dynamic arrays for storing collections of values
-
-### Library Components
-
-**Core Libraries (`src/lib/`)**
-- `memory.h/c`: Custom memory management and allocation tracking
-- `table.h/c`: Hash table implementation for objects and globals
-- `iterator.h/c`: Iterator interface for containers
-- `debug.h/c`: Bytecode disassembly and debugging utilities
-- `file.h/c`: File I/O operations and script loading
-- `print.h/c`: Value printing and string formatting
-
-### Testing Infrastructure
-
-**Test Framework (`src/test/`)**
-- Uses munit for unit testing with multiple test suites
-- `scripts_test.c`: Validates interpreter against .sox script files
-- `bytecode_test.c`: Tests bytecode generation and execution
-- `vm_test.c`: Virtual machine component tests
-- `serialise_test.c`: Tests bytecode serialization features
-
-**Script Testing**
-- Each `.sox` file in `src/test/scripts/` has corresponding `.sox.out` file
-- Tests validate both execution success and output correctness
-
-### Build Configuration
-
-**Cross-Platform Support**
-- `premake5.lua`: Defines projects, dependencies, and platform-specific settings
-- `Makefile`: Platform detection and build orchestration
-- Supports Visual Studio (Windows), Xcode (macOS), and Make (Linux)
-
-### Language Features
-
-**Sox Language Extensions**
-- Defer statements for cleanup
-- Switch statements with case fallthrough
-- Optional semicolons and bracketless expressions
-- Native array/table containers with built-in methods
-- For-in iteration over containers (`foreach` loops)
-- Break/continue in loops
-
-## Foreach Loops
-
-The `foreach` statement provides a convenient way to iterate over arrays and tables. It automatically manages iteration with index and value variables.
-
-### Syntax
-
-```lox
-foreach var index, value in container {
-    // loop body
-}
-```
-
-### Examples
-
-**Iterating over an array of numbers:**
-```lox
-var numbers[] = {10, 20, 30}
-foreach var i, num in numbers {
-    print("Index: " + i + ", Value: " + num)
-}
-// Output:
-// Index: 0, Value: 10
-// Index: 1, Value: 20
-// Index: 2, Value: 30
-```
-
-**Iterating over mixed types:**
-```lox
-var mixed[] = {1, "hello", true, nil}
-foreach var i, val in mixed {
-    print(val)
-}
-// Output:
-// 1
-// hello
-// true
-// nil
-```
-
-**String concatenation in foreach:**
-All value types support automatic conversion to strings during concatenation:
-```lox
-var arr[] = {42, "text", true, nil}
-foreach var i, val in arr {
-    print("Item " + i + ": " + val)
-}
-// Output:
-// Item 0: 42
-// Item 1: text
-// Item 2: true
-// Item 3: nil
-```
-
-**Iterating over table entries:**
-```lox
-var person = {}
-person["name"] = "Alice"
-person["age"] = 30
-foreach var key, value in person {
-    print(key + " = " + value)
-}
-```
-
-### Implementation Details
-
-- **Iterator Variables:** The `index` variable contains the position/key, and `value` contains the element
-- **Scoping:** Index and value variables are scoped to the foreach loop
-- **Container Types:** Works with both arrays and tables
-- **String Conversion:** Values are automatically converted to strings when concatenated
-- **Control Flow:** Break and continue statements work within foreach loops
-
-## Working with the Codebase
-
-### Adding New Language Features
-1. Define new opcodes in `chunk.h` OpCode enum
-2. Implement compilation in `compiler.c`
-3. Add VM execution logic in `vm.c`
-4. Create test scripts in `src/test/scripts/`
-5. Add unit tests in appropriate test suite
-
-### Memory Management
-- All objects go through the memory allocation functions in `src/lib/memory.c`
-- Object lifecycle managed by VM's object list
-- Use `l_reallocate()` for all dynamic allocations
+6. **Update WASM Generation** (if applicable):
+   - Add WASM opcode mapping in `src/wasm_generator.c`
+   - Add WAT text output in `src/wat_generator.c`
+   - Update opcode matrix in `docs/wasm.md`
 
 ### Debugging
-- Use `l_disassemble_chunk()` to inspect generated bytecode
-- VM tracing available in debug builds
-- Memory tracking functions help identify leaks
 
-### Platform-Specific Development
-- Use `make details` to verify platform detection
-- Platform-specific code lives in `premake5.lua` filters
-- Build artifacts organized by platform in `projects/obj/`
+**Debug Build:**
+```bash
+make debug
+./bin/x64/Debug/sox script.sox
+```
+
+**Enable Debug Flags** (edit `src/lib/debug.h`):
+- `DEBUG_PRINT_CODE` - Print compiled bytecode
+- `DEBUG_TRACE_EXECUTION` - Trace VM execution
+- `DEBUG_STRESS_GC` - Stress test garbage collector
+- `DEBUG_LOG_GC` - Log GC operations
+
+**REPL Debugging:**
+```bash
+./bin/x64/Debug/sox
+> print("debug statement")
+```
+
+### Performance Optimization
+
+**Profiling:**
+- Use platform-specific profilers (Instruments on macOS, perf on Linux)
+- Focus on hot paths in `vm.c` execution loop
+- Monitor allocation patterns via memory tracking
+
+**Optimization Targets:**
+- Bytecode dispatch (computed goto if available)
+- String interning and hash table performance
+- Object allocation and GC efficiency
+
+## Documentation
+
+**Core Documentation:**
+- `README.md` - Project overview and feature list
+- `docs/wasm.md` - WASM support and opcode matrix
+- `docs/wasm_verification.md` - WASM verification process
+- `docs/containers.md` - Container type design
+- `.github/copilot-instructions.md` - Development workflow
+
+**Language Documentation:**
+- Syntax examples in test scripts (`src/test/scripts/`)
+- Feature demonstrations in README
+
+## Architectural Patterns
+
+### Type Checking Pattern
+```c
+if (IS_NUMBER(value)) {
+    double num = AS_NUMBER(value);
+    // ... use num
+}
+```
+
+### Error Reporting Pattern
+```c
+static void runtimeError(const char* format, ...) {
+    // Print error with stack trace
+    // Reset VM stack
+}
+```
+
+### Object Allocation Pattern
+```c
+ObjString* string = ALLOCATE_OBJ(ObjString, OBJ_STRING);
+string->length = length;
+string->chars = chars;
+string->hash = hash;
+return string;
+```
+
+### Bytecode Emission Pattern
+```c
+static void emitByte(uint8_t byte) {
+    writeChunk(currentChunk(), byte, parser.previous.line);
+}
+```
+
+## Known Limitations and Future Work
+
+**Current Limitations:**
+- GC infrastructure partially implemented
+- WASM generation incomplete (11 opcodes partial, 12 unsupported)
+- Limited standard library
+- No module system
+- No import/export mechanism
+
+**TODO Items** (see `README.md`):
+- Complete garbage collection implementation
+- Finish WASM opcode coverage
+- Add more native functions
+- Implement module system
+- Add standard library (file I/O, string manipulation, etc.)
+- Improve error messages and stack traces
+
+## Resources
+
+- **Crafting Interpreters**: http://craftinginterpreters.com
+- **Premake5 Docs**: https://premake.github.io/docs/
+- **munit Testing**: https://nemequ.github.io/munit/
+- **WebAssembly Spec**: https://webassembly.github.io/spec/
+
+## License
+
+MIT License - Copyright 2025 Scott Porter

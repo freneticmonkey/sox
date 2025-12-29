@@ -1,0 +1,119 @@
+// string_utils.sox - String manipulation utilities
+// Complete module with native implementations
+
+var greeting = "Hello from string_utils!"
+
+// Case conversion (native implementations)
+fn upper(s) {
+    return stringUpper(s)
+}
+
+fn lower(s) {
+    return stringLower(s)
+}
+
+// String repetition (pure Sox implementation)
+fn repeat(s, count) {
+    var result = ""
+    var i = 0
+    while (i < count) {
+        result = result + s
+        i = i + 1
+    }
+    return result
+}
+
+// Join array elements with separator
+fn join(arr, separator) {
+    if (len(arr) == 0) {
+        return ""
+    }
+
+    var result = ""
+    var i = 0
+    var arrLen = len(arr)
+
+    while (i < arrLen) {
+        if (i > 0) {
+            result = result + separator
+        }
+        // Use array indexing instead of pop/push
+        var elem = arr[i]
+        result = result + elem
+        i = i + 1
+    }
+
+    return result
+}
+
+// String trimming (native implementation)
+fn trim(s) {
+    return stringTrim(s)
+}
+
+// String splitting (native implementation)
+fn split(s, delimiter) {
+    return stringSplit(s, delimiter)
+}
+
+// Find substring position (native implementation)
+fn indexOf(s, search) {
+    return stringIndexOf(s, search)
+}
+
+// Extract substring (native implementation)
+fn substring(s, start, end) {
+    if (end == nil) {
+        return stringSubstring(s, start)
+    }
+    return stringSubstring(s, start, end)
+}
+
+// Replace first occurrence (native implementation)
+fn replace(s, old, new) {
+    return stringReplace(s, old, new)
+}
+
+// Check if string starts with prefix (native implementation)
+fn startsWith(s, prefix) {
+    return stringStartsWith(s, prefix)
+}
+
+// Check if string ends with suffix (native implementation)
+fn endsWith(s, suffix) {
+    return stringEndsWith(s, suffix)
+}
+
+// Check if string contains substring
+fn contains(s, search) {
+    return indexOf(s, search) >= 0
+}
+
+// Reverse a string
+fn reverse(s) {
+    var result = ""
+    var i = len(s) - 1
+    while (i >= 0) {
+        result = result + substring(s, i, i + 1)
+        i = i - 1
+    }
+    return result
+}
+
+// Export the module using table literal syntax
+return {
+    greeting: greeting,
+    upper: upper,
+    lower: lower,
+    repeat: repeat,
+    join: join,
+    trim: trim,
+    split: split,
+    indexOf: indexOf,
+    substring: substring,
+    replace: replace,
+    startsWith: startsWith,
+    endsWith: endsWith,
+    contains: contains,
+    reverse: reverse
+}

@@ -1,0 +1,15 @@
+// test_exit_simple.sox - Simple test for exit handler
+print("Starting test...")
+
+import "modules/sys"
+
+fn cleanup() {
+    print("Cleanup called!")
+}
+
+print("Registering handler...")
+sys.onExit(cleanup)
+print("Handler registered")
+
+print("Exiting...")
+sys.exit(0)

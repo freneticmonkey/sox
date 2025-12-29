@@ -1,0 +1,155 @@
+// math.sox - Complete math utilities module
+// Combines native implementations with pure Sox functions
+
+// Initialize random seed with current time
+// Multiply by 1000000 to get microseconds-like precision
+mathSrand(clock() * 1000000)
+
+// Module-level constants
+var pi = 3.14159265359
+var e = 2.71828182846
+var tau = 6.28318530718  // 2 * pi
+
+// Basic arithmetic (pure Sox implementations)
+fn square(x) {
+    return x * x
+}
+
+fn cube(x) {
+    return x * x * x
+}
+
+fn abs(x) {
+    if (x < 0) return 0 - x
+    return x
+}
+
+fn max(a, b) {
+    if (a > b) return a
+    return b
+}
+
+fn min(a, b) {
+    if (a < b) return a
+    return b
+}
+
+fn clamp(value, minVal, maxVal) {
+    if (value < minVal) return minVal
+    if (value > maxVal) return maxVal
+    return value
+}
+
+// Linear interpolation
+fn lerp(a, b, t) {
+    return a + (b - a) * t
+}
+
+// Sign function
+fn sign(x) {
+    if (x > 0) return 1
+    if (x < 0) return 0 - 1
+    return 0
+}
+
+// Advanced math (native implementations)
+fn sqrt(x) {
+    return mathSqrt(x)
+}
+
+fn pow(base, exponent) {
+    return mathPow(base, exponent)
+}
+
+fn floor(x) {
+    return mathFloor(x)
+}
+
+fn ceil(x) {
+    return mathCeil(x)
+}
+
+fn round(x) {
+    return mathRound(x)
+}
+
+// Trigonometric functions (native implementations)
+fn sin(x) {
+    return mathSin(x)
+}
+
+fn cos(x) {
+    return mathCos(x)
+}
+
+fn tan(x) {
+    return mathTan(x)
+}
+
+// Random functions (native implementations)
+fn random() {
+    return mathRandom()
+}
+
+fn randomInt(minVal, maxVal) {
+    return mathRandomInt(minVal, maxVal)
+}
+
+// Random range (float)
+fn randomRange(minVal, maxVal) {
+    return minVal + random() * (maxVal - minVal)
+}
+
+// Seed the random number generator
+fn srand(seed) {
+    return mathSrand(seed)
+}
+
+// Degree/radian conversion
+fn toRadians(degrees) {
+    return degrees * pi / 180
+}
+
+fn toDegrees(radians) {
+    return radians * 180 / pi
+}
+
+// Check if number is even/odd
+fn isEven(x) {
+    return floor(x) == x and floor(x / 2) * 2 == x
+}
+
+fn isOdd(x) {
+    return floor(x) == x and floor(x / 2) * 2 != x
+}
+
+// Export public API
+return {
+    pi: pi,
+    e: e,
+    tau: tau,
+    square: square,
+    cube: cube,
+    abs: abs,
+    max: max,
+    min: min,
+    clamp: clamp,
+    lerp: lerp,
+    sign: sign,
+    sqrt: sqrt,
+    pow: pow,
+    floor: floor,
+    ceil: ceil,
+    round: round,
+    sin: sin,
+    cos: cos,
+    tan: tan,
+    random: random,
+    randomInt: randomInt,
+    randomRange: randomRange,
+    srand: srand,
+    toRadians: toRadians,
+    toDegrees: toDegrees,
+    isEven: isEven,
+    isOdd: isOdd
+}

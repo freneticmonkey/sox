@@ -21,9 +21,9 @@ static const char* _token_type_strings[] = {
     // Literals.
     "IDENTIFIER", "STRING", "NUMBER",
     // Keywords.
-    "AND", "CLASS", "ELSE", "FALSE", 
-    "FOR", "FOREACH", "FUN", "IF", "NIL", "OR",
-    "PRINT", "RETURN", "SUPER", "THIS", 
+    "AND", "CLASS", "ELSE", "FALSE",
+    "FOR", "FOREACH", "FUN", "IF", "IMPORT", "NIL", "OR",
+    "PRINT", "RETURN", "SUPER", "THIS",
     "TRUE", "VAR", "WHILE", "DEFER", "IN", "INDEX", "VALUE",
 
     "SWITCH", "CASE", "DEFAULT", "BREAK", "CONTINUE",
@@ -195,11 +195,11 @@ static TokenType _identifier_type() {
                 }
             }
             break;
-        case 'i': 
+        case 'i':
             if (_scanner.current - _scanner.start > 1) {
                 switch (_scanner.start[1]) {
                     case 'f': return _check_keyword(2, 0, "", TOKEN_IF);
-                    // case 'm': return _check_keyword(2, 4, "port", TOKEN_IMPORT);
+                    case 'm': return _check_keyword(2, 4, "port", TOKEN_IMPORT);
                     case 'n': return _check_keyword(2, 0, "", TOKEN_IN);
                 }
             }
@@ -324,3 +324,16 @@ token_t l_scan_token() {
     return _error_token("Unexpected character.");
 }
 
+scanner_state_t l_save_scanner_state() {
+    scanner_state_t state;
+    state.start = _scanner.start;
+    state.current = _scanner.current;
+    state.line = _scanner.line;
+    return state;
+}
+
+void l_restore_scanner_state(scanner_state_t state) {
+    _scanner.start = state.start;
+    _scanner.current = state.current;
+    _scanner.line = state.line;
+}

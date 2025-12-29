@@ -1,0 +1,41 @@
+// Test local variables
+print "Testing Local Variables"
+
+fn test_locals() {
+    var local1 = 10
+    var local2 = 20
+    print local1
+    print local2
+
+    var sum = local1 + local2
+    print sum
+
+    // Test reassignment
+    local1 = 100
+    print local1
+}
+
+test_locals()
+
+fn test_nested_locals() {
+    var outer = "outer"
+    print outer
+
+    {
+        var inner = "inner"
+        print inner
+        print outer
+    }
+
+    print outer
+}
+
+test_nested_locals()
+
+// Test local variables in main scope
+{
+    var block_local = "block_local"
+    print block_local
+}
+
+print "Local variables test complete"

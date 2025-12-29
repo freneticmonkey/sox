@@ -1,0 +1,16 @@
+// circular_b.sox - Module B for circular dependency test
+
+print("Module B: Starting to load")
+
+// This will try to import module A (circular!)
+print("Module B: Importing module A...")
+import "circular_a"
+
+print("Module B: Successfully imported module A")
+
+var message_b = "Hello from Module B"
+
+return {
+    message: message_b,
+    a_ref: circular_a
+}

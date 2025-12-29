@@ -69,3 +69,12 @@ dkms.conf
 # WASM/WAT files
 *.wasm
 *.wat
+
+# Test binaries and temp files
+basic_native*
+test_keep_obj
+src/test/scripts/basic
+*.tmp.o
+*.log
+*.txt
+!CLAUDE.md

@@ -1,0 +1,33 @@
+// test_caching.sox - Test module caching functionality
+
+print("=== Testing Module Caching ===")
+print("")
+
+// First import - should load and compile the module
+print("1. First import of 'simple_module' - will load and compile")
+import "simple_module"
+
+print("  simple_module.value = ")
+print(simple_module.value)
+
+// Second import with alias - should use cached module (not recompile)
+print("")
+print("2. Second import with alias 'cached' - should use cache")
+import cached "simple_module"
+
+print("  cached.value = ")
+print(cached.value)
+
+// Third import with different alias - also should use cache
+print("")
+print("3. Third import with alias 'also_cached' - should use cache")
+import also_cached "simple_module"
+
+print("  also_cached.value = ")
+print(also_cached.value)
+
+print("")
+print("All three imports should reference the same cached module.")
+print("The module should only be compiled once.")
+print("")
+print("=== Caching Test Complete ===")

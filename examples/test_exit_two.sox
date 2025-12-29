@@ -1,0 +1,20 @@
+// test_exit_two.sox - Test two exit handlers
+print("Starting test...")
+
+import "modules/sys"
+
+fn cleanup1() {
+    print("Cleanup 1 called!")
+}
+
+fn cleanup2() {
+    print("Cleanup 2 called!")
+}
+
+print("Registering handlers...")
+sys.onExit(cleanup1)
+sys.onExit(cleanup2)
+print("Handlers registered")
+
+print("Exiting...")
+sys.exit(0)

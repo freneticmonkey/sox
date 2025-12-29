@@ -61,7 +61,8 @@ typedef enum FunctionType {
     TYPE_DEFER,
     TYPE_INITIALIZER,
     TYPE_METHOD,
-    TYPE_SCRIPT
+    TYPE_SCRIPT,
+    TYPE_MODULE
 } FunctionType;
 
 // bringing loop tracking across from Wren for break and continue functionality
@@ -140,6 +141,10 @@ _parser_t         _parser;
 compiler_t*       _current = NULL;
 class_compiler_t* _current_class;
 chunk_t*          _compiling_chunk;
+
+// Forward declarations
+static void _named_variable(token_t name, bool canAssign);
+static token_t _synthetic_token(const char* text);
 
 static chunk_t* _current_chunk() {
     return &_current->function->chunk;
@@ -391,6 +396,7 @@ static void _end_scope() {
 static void          _expression();
 static void          _statement();
 static void          _declaration();
+static void          _import_declaration();
 static parse_rule_t* _get_rule(TokenType type);
 static void          _parse_precedence(Precedence precedence);
 
@@ -632,7 +638,110 @@ static void _grouping(bool canAssign) {
     _consume(TOKEN_RIGHT_PAREN, "Expect ')' after expression.");
 }
 
+// Helper to parse table literal
+// Syntax: {key1: value1, key2: value2}
+// Keys can be identifiers or strings
+static void _table_literal(bool canAssign) {
+    // Call Table() to create a new table
+    _named_variable(_synthetic_token("Table"), false);  // Get Table function
+    _emit_bytes(OP_CALL, 0);  // Call Table() with 0 args
+
+    // Stack now has: [table]
+
+    // Handle empty table: {}
+    if (_check(TOKEN_RIGHT_BRACE)) {
+        _consume(TOKEN_RIGHT_BRACE, "Expect '}' after table literal.");
+        return;
+    }
+
+    // Parse key-value pairs
+    while (!_check(TOKEN_RIGHT_BRACE)) {
+        // Parse key (identifier or string)
+        obj_string_t* key_str;
+
+        if (_match(TOKEN_IDENTIFIER)) {
+            // Convert identifier to string constant
+            key_str = l_copy_string(_parser.previous.start, _parser.previous.length);
+        } else if (_match(TOKEN_STRING)) {
+            // Use string directly (strip quotes)
+            const char* str = _parser.previous.start + 1;  // Skip opening quote
+            int length = _parser.previous.length - 2;      // Remove quotes
+            key_str = l_copy_string(str, length);
+        } else {
+            _error("Expect property key (identifier or string) in table literal.");
+            return;
+        }
+
+        // Expect colon
+        _consume(TOKEN_COLON, "Expect ':' after table key.");
+
+        // Parse value expression
+        _expression();
+
+        // Stack: [table, value]
+
+        // Emit OP_TABLE_FIELD with key constant
+        uint8_t key_constant = _make_constant(OBJ_VAL(key_str));
+        _emit_bytes(OP_TABLE_FIELD, key_constant);
+
+        // Stack: [table] (OP_TABLE_FIELD pops value, leaves table)
+
+        // Check for comma or end of table
+        if (!_match(TOKEN_COMMA)) {
+            break;
+        }
+        // Allow trailing comma
+        if (_check(TOKEN_RIGHT_BRACE)) {
+            break;
+        }
+    }
+
+    _consume(TOKEN_RIGHT_BRACE, "Expect '}' after table literal.");
+
+    // Table is now on stack, ready to be used
+}
+
 static void _array_grouping(bool canAssign) {
+    // Check for empty braces
+    if (_check(TOKEN_RIGHT_BRACE)) {
+        // Empty could be array or table - default to empty table for now
+        _consume(TOKEN_RIGHT_BRACE, "Expect '}' after literal.");
+        // Create empty table
+        _named_variable(_synthetic_token("Table"), false);
+        _emit_bytes(OP_CALL, 0);
+        return;
+    }
+
+    // We need to lookahead to determine if this is table or array literal
+    // Try to parse as potential table key
+    bool is_table = false;
+
+    if (_check(TOKEN_IDENTIFIER) || _check(TOKEN_STRING)) {
+        // Save both parser and scanner state for lookahead
+        token_t saved_current = _parser.current;
+        token_t saved_previous = _parser.previous;
+        scanner_state_t saved_scanner = l_save_scanner_state();
+
+        // Lookahead: consume identifier/string and check for colon
+        _advance();  // Consume identifier/string
+
+        if (_check(TOKEN_COLON)) {
+            // It's a table literal!
+            is_table = true;
+        }
+
+        // Restore both parser and scanner state
+        _parser.current = saved_current;
+        _parser.previous = saved_previous;
+        l_restore_scanner_state(saved_scanner);
+    }
+
+    if (is_table) {
+        _table_literal(canAssign);
+        return;
+    }
+
+    // Otherwise, parse as array literal (original behavior)
     int length = 0;
 
     // e.g. var array[] = {1,2,3}
@@ -649,15 +758,15 @@ static void _array_grouping(bool canAssign) {
     if (_parser.current.type == TOKEN_COMMA) {
 
         while (_parser.current.type == TOKEN_COMMA) {
-            _optional_consume(TOKEN_COMMA, "unused"); 
+            _optional_consume(TOKEN_COMMA, "unused");
             _expression();
             length += 1;
         }
 
         // TODO: Add support for trailing commas by adding an or TOKEN_RIGHT_BRACE
     }
-    
-    
+
+
     _consume(TOKEN_RIGHT_BRACE, "Expect '}' after array values");
 
     _emit_constant(NUMBER_VAL(length));
@@ -1627,6 +1736,8 @@ static void _return_statement() {
         _error("Can't return from top-level code.");
     }
 
+    // Modules can return values (their exports)
+
     if (_match(TOKEN_SEMICOLON)) {
         _emit_return();
     } else {
@@ -1683,8 +1794,142 @@ static void _synchronize() {
     }
 }
 
+// Helper function to derive module name from path
+// "math" -> "math", "lib/math" -> "math", "./utils/helpers" -> "helpers"
+static char* _derive_module_name(const char* path, int length) {
+    // Find the last '/' in the path
+    const char* last_slash = NULL;
+    for (int i = length - 1; i >= 0; i--) {
+        if (path[i] == '/') {
+            last_slash = path + i + 1;
+            break;
+        }
+    }
+
+    const char* name_start = last_slash ? last_slash : path;
+    int name_length = (int)(length - (name_start - path));
+
+    // Remove .sox extension if present
+    if (name_length > 4 &&
+        name_start[name_length-4] == '.' &&
+        name_start[name_length-3] == 's' &&
+        name_start[name_length-2] == 'o' &&
+        name_start[name_length-1] == 'x') {
+        name_length -= 4;
+    }
+
+    // Create a copy of the name
+    char* result = ALLOCATE(char, name_length + 1);
+    memcpy(result, name_start, name_length);
+    result[name_length] = '\0';
+    return result;
+}
+
+// Helper function to process a single import specification
+// Handles both: "path" and alias "path"
+static void _import_single() {
+    char* module_name = NULL;
+    int name_length = 0;
+    bool name_allocated = false;
+    token_t name_token;
+
+    // Check if we have an alias (IDENTIFIER before STRING)
+    if (_check(TOKEN_IDENTIFIER)) {
+        // Alias syntax: import mymath "math"
+        _advance();
+        name_token = _parser.previous;
+        module_name = (char*)name_token.start;
+        name_length = name_token.length;
+        name_allocated = false;  // Token memory is managed by scanner
+    }
+
+    // Consume the module path string
+    _consume(TOKEN_STRING, "Expect module path string.");
+
+    // Get the path from the token (without quotes)
+    const char* path = _parser.previous.start + 1;  // Skip opening quote
+    int path_length = _parser.previous.length - 2;   // Remove quotes
+
+    // If no alias was provided, derive module name from path
+    if (module_name == NULL) {
+        module_name = _derive_module_name(path, path_length);
+        name_length = (int)strlen(module_name);
+        name_allocated = true;  // We allocated this, need to free it
+
+        // Create a token for the derived module name
+        name_token.start = module_name;
+        name_token.length = name_length;
+        name_token.line = _parser.previous.line;
+    }
+
+    // Create string constant for the path
+    value_t path_value = OBJ_VAL(l_copy_string(path, path_length));
+    uint8_t path_constant = _make_constant(path_value);
+
+    // Declare the variable
+    _declare_variable();
+    if (_current->scope_depth > 0) {
+        // Add as local variable
+        _add_local(name_token);
+    }
+
+    // Emit OP_IMPORT to load the module
+    _emit_bytes(OP_IMPORT, path_constant);
+
+    // Define the variable (pops value from stack and stores it)
+    if (_current->scope_depth == 0) {
+        // Global scope
+        uint8_t name_constant = _identifier_constant(&name_token);
+        _emit_bytes(OP_DEFINE_GLOBAL, name_constant);
+    } else {
+        // Local scope - mark as initialized
+        _mark_initialized();
+    }
+
+    // Free the temporary name string if we allocated it
+    if (name_allocated) {
+        FREE_ARRAY(char, module_name, name_length + 1);
+    }
+}
+
+static void _import_declaration() {
+    // Supports multiple syntaxes:
+    // 1. import "path"                    - single import, implicit name
+    // 2. import alias "path"              - single import, explicit alias
+    // 3. import ("path1" "path2")         - multi-import, implicit names
+    // 4. import (alias1 "path1" "path2")  - multi-import with mixed aliases
+    // 5. Multi-line with newlines as separators (like Go)
+
+    // Check if this is a multi-import (with parentheses)
+    if (_match(TOKEN_LEFT_PAREN)) {
+        // Multi-import: import ("math" "string" myutils "utils")
+
+        // Process imports until we hit the closing parenthesis
+        while (!_check(TOKEN_RIGHT_PAREN) && !_check(TOKEN_EOF)) {
+            _import_single();
+
+            // Optional semicolon or newline between imports
+            _match(TOKEN_SEMICOLON);
+        }
+
+        _consume(TOKEN_RIGHT_PAREN, "Expect ')' after import list.");
+
+        // Optional semicolon after the entire import statement
+        _match(TOKEN_SEMICOLON);
+    } else {
+        // Single import: import "path" or import alias "path"
+        _import_single();
+
+        // Semicolon is optional
+        _match(TOKEN_SEMICOLON);
+    }
+}
+
 static void _declaration() {
-    if ( _match(TOKEN_CLASS) ) {
+
+    if ( _match(TOKEN_IMPORT) ) {
+        _import_declaration();
+    } else if ( _match(TOKEN_CLASS) ) {
         _class_declaration();
     } else if (_match(TOKEN_DEFER)) {
         _defer_declaration();
@@ -1737,7 +1982,7 @@ obj_function_t* l_compile(const char* source) {
     _parser.had_error = false;
     _parser.panic_mode = false;
 
-    
+
 
     _advance();
 
@@ -1764,7 +2009,27 @@ obj_function_t* l_compile(const char* source) {
 
     obj_function_t* function = _end_compiler();
 
-    return _parser.had_error ? NULL : function;    
+    return _parser.had_error ? NULL : function;
+}
+
+obj_function_t* l_compile_module(const char* source) {
+    l_init_scanner(source);
+    compiler_t compiler;
+
+    l_init_compiler(&compiler, TYPE_MODULE);
+
+    _parser.had_error = false;
+    _parser.panic_mode = false;
+
+    _advance();
+
+    while (!_match(TOKEN_EOF)) {
+        _declaration();
+    }
+
+    obj_function_t* function = _end_compiler();
+
+    return _parser.had_error ? NULL : function;
 }
 
 void l_mark_compiler_roots() {

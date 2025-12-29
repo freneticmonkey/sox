@@ -25,8 +25,8 @@ filter "configurations:Release"
   optimize "On"
   defines { "NDEBUG" }
 
--- Architecture is x86_64 by default
-architecture "x86_64"
+-- Architecture is ARM64 by default
+architecture "ARM64"
 
 filter "system:windows"
   defines {
@@ -79,18 +79,22 @@ project "sox"
   }
 
   includedirs {
-    "src"
+    "src",
+    "ext/argtable3/src"
   }
 
   files {
     "src/**.h",
-    "src/**.c"
+    "src/**.c",
+    "ext/argtable3/src/argtable3.c",
+    "ext/argtable3/src/arg_*.c"
   }
 
-  -- ignore all testing files
+  -- ignore all testing files and old runtime implementation
   removefiles {
     "src/test/**",
-    "src/**_test.*"
+    "src/**_test.*",
+    "src/native/runtime.c"  -- Replaced by libsox_runtime
   }
 
   -- enable tracing for debug builds
@@ -102,7 +106,7 @@ project "sox"
       --  "ext/tracy"
     }
 
-  if (system == linux) then
+  filter "system:linux"
     libdirs {
       os.findlib("m"),
       os.findlib("c")
@@ -113,19 +117,18 @@ project "sox"
       "m",
       "pthread",
     }
-  end
 
-  if (system == macosx) then
+  filter {}
+
+  filter "system:macosx"
     links {
       "Cocoa.framework",
       "IOKit.framework",
       "c",
       --  "tracy",
     }
-  end
 
-  if (system == windows) then
-  
+  filter "system:windows"
     defines {
       "_CRT_SECURE_NO_WARNINGS"
     }
@@ -140,7 +143,7 @@ project "sox"
       "ext/winstd"
     }
 
-  end
+  filter {}
    --  filter "files:src/main.c"
    --    compileas "Objective-C"
 
@@ -155,7 +158,9 @@ project "test"
 
   links {
     "munit",
-    "wasm_verify"
+    "wasm_verify",
+    "sox_runtime",
+    "sox_runtime_shared"
   }
 
   libdirs {
@@ -164,6 +169,7 @@ project "test"
 
   sysincludedirs {
     "ext",
+    "ext/argtable3/src",
     "wasm_verify"
   }
 
@@ -175,21 +181,27 @@ project "test"
   files {
     "src/**.h",
     "src/**.c",
-
+    "ext/argtable3/src/argtable3.c",
+    "ext/argtable3/src/arg_*.c"
   }
 
-  -- ignore the sox main
+  -- ignore the sox main and simplified native runtime (duplicate symbols with runtime_api.c)
   removefiles {
-    "src/main.c"
+    "src/main.c",
+    "src/native/runtime.c"
   }
 
-  if (system == macosx) then
+  filter "system:macosx"
+    defines { "SOX_MACOS" }
     links {
       "c"
     }
-  end
+    linkoptions {
+      "-rpath", "@loader_path"
+    }
 
-  if (system == linux) then
+  filter "system:linux"
+    defines { "SOX_LINUX" }
     libdirs {
       os.findlib("m"),
       os.findlib("c")
@@ -199,9 +211,8 @@ project "test"
       "m",
       "pthread",
     }
-  end
 
-  if (system == windows) then
+  filter "system:windows"
     defines {
       "_CRT_SECURE_NO_WARNINGS"
     }
@@ -216,7 +227,8 @@ project "test"
     sysincludedirs {
       "ext/winstd"
     }
-  end
+
+  filter {}
 
 -- External Libraries
 
@@ -238,3 +250,66 @@ project "winstd"
 
   files { "ext/winstd/**" }
 end
+-- Static Runtime Library
+project "sox_runtime"
+  kind "StaticLib"
+  language "C"
+  targetdir("build")
+  
+  defines { "SOX_RUNTIME_BUILD" }
+  
+  includedirs {
+    "src",
+    "src/runtime_lib"
+  }
+  
+  files {
+    "src/runtime_lib/**.h",
+    "src/runtime_lib/**.c"
+  }
+  
+  filter "system:macosx"
+    defines { "SOX_RUNTIME_MACOS" }
+    buildoptions { "-fvisibility=hidden" }
+  
+  filter "system:linux"
+    defines { "SOX_RUNTIME_LINUX" }
+    buildoptions { "-fvisibility=hidden", "-fPIC" }
+  
+  filter "system:windows"
+    defines { "SOX_RUNTIME_WINDOWS" }
+  
+  filter {}
+
+-- Shared Runtime Library  
+project "sox_runtime_shared"
+  kind "SharedLib"
+  language "C"
+  targetdir("build")
+  
+  defines { "SOX_RUNTIME_BUILD", "SOX_RUNTIME_SHARED" }
+  
+  includedirs {
+    "src",
+    "src/runtime_lib"
+  }
+  
+  files {
+    "src/runtime_lib/**.h",
+    "src/runtime_lib/**.c"
+  }
+  
+  filter "system:macosx"
+    defines { "SOX_RUNTIME_MACOS" }
+    buildoptions { "-fvisibility=hidden" }
+    linkoptions { "-dynamiclib" }
+  
+  filter "system:linux"
+    defines { "SOX_RUNTIME_LINUX" }
+    buildoptions { "-fvisibility=hidden", "-fPIC" }
+    linkoptions { "-shared" }
+  
+  filter "system:windows"
+    defines { "SOX_RUNTIME_WINDOWS", "_WINDLL" }
+  
+  filter {}

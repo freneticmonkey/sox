@@ -1,0 +1,171 @@
+// test.sox - Testing and assertion utilities
+// Provides functions for unit testing and assertions
+
+import "modules/sys"
+
+// Test statistics
+var totalTests = 0
+var passedTests = 0
+var failedTests = 0
+
+// Basic assertion - checks if condition is true
+fn assert(condition, message) {
+    totalTests = totalTests + 1
+    if (condition) {
+        passedTests = passedTests + 1
+        print("  ✓ " + message)
+    } else {
+        failedTests = failedTests + 1
+        print("  ✗ FAIL: " + message)
+    }
+}
+
+// Assert equality
+fn assertEqual(actual, expected, message) {
+    totalTests = totalTests + 1
+    if (actual == expected) {
+        passedTests = passedTests + 1
+        print("  ✓ " + message)
+    } else {
+        failedTests = failedTests + 1
+        print("  ✗ FAIL: " + message)
+        print("    Expected: ")
+        print(expected)
+        print("    Got: ")
+        print(actual)
+    }
+}
+
+// Assert not equal
+fn assertNotEqual(actual, expected, message) {
+    totalTests = totalTests + 1
+    if (actual != expected) {
+        passedTests = passedTests + 1
+        print("  ✓ " + message)
+    } else {
+        failedTests = failedTests + 1
+        print("  ✗ FAIL: " + message)
+        print("    Expected not equal to: ")
+        print(expected)
+    }
+}
+
+// Assert nil
+fn assertNil(value, message) {
+    totalTests = totalTests + 1
+    if (value == nil) {
+        passedTests = passedTests + 1
+        print("  ✓ " + message)
+    } else {
+        failedTests = failedTests + 1
+        print("  ✗ FAIL: " + message)
+        print("    Expected nil, got: ")
+        print(value)
+    }
+}
+
+// Assert not nil
+fn assertNotNil(value, message) {
+    totalTests = totalTests + 1
+    if (value != nil) {
+        passedTests = passedTests + 1
+        print("  ✓ " + message)
+    } else {
+        failedTests = failedTests + 1
+        print("  ✗ FAIL: " + message)
+        print("    Expected non-nil value")
+    }
+}
+
+// Assert type
+fn assertType(value, expectedType, message) {
+    totalTests = totalTests + 1
+    var actualType = type(value)
+    if (actualType == expectedType) {
+        passedTests = passedTests + 1
+        print("  ✓ " + message)
+    } else {
+        failedTests = failedTests + 1
+        print("  ✗ FAIL: " + message)
+        print("    Expected type: " + expectedType)
+        print("    Got type: " + actualType)
+    }
+}
+
+// Assert true
+fn assertTrue(value, message) {
+    totalTests = totalTests + 1
+    if (value == true) {
+        passedTests = passedTests + 1
+        print("  ✓ " + message)
+    } else {
+        failedTests = failedTests + 1
+        print("  ✗ FAIL: " + message)
+        print("    Expected true, got: ")
+        print(value)
+    }
+}
+
+// Assert false
+fn assertFalse(value, message) {
+    totalTests = totalTests + 1
+    if (value == false) {
+        passedTests = passedTests + 1
+        print("  ✓ " + message)
+    } else {
+        failedTests = failedTests + 1
+        print("  ✗ FAIL: " + message)
+        print("    Expected false, got: ")
+        print(value)
+    }
+}
+
+// Reset test statistics
+fn reset() {
+    totalTests = 0
+    passedTests = 0
+    failedTests = 0
+}
+
+// Print test summary
+fn summary() {
+    print("")
+    print("=== Test Summary ===")
+    print("Total:  ")
+    print(totalTests)
+    print("Passed: ")
+    print(passedTests)
+    print("Failed: ")
+    print(failedTests)
+
+    if (failedTests == 0) {
+        print("")
+        print("✓ All tests passed!")
+        return 0
+    } else {
+        print("")
+        print("✗ Some tests failed")
+        return 1
+    }
+}
+
+// Run test suite and exit with appropriate code
+fn runAndExit() {
+    var exitCode = summary()
+    sys.exit(exitCode)
+}
+
+// Export public API
+return {
+    assert: assert,
+    assertEqual: assertEqual,
+    assertNotEqual: assertNotEqual,
+    assertNil: assertNil,
+    assertNotNil: assertNotNil,
+    assertType: assertType,
+    assertTrue: assertTrue,
+    assertFalse: assertFalse,
+    reset: reset,
+    summary: summary,
+    runAndExit: runAndExit
+}
