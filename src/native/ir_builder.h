@@ -20,6 +20,18 @@ typedef struct {
     ir_value_t* locals;
     int local_count;
     int local_capacity;
+
+    // Mapping of compiled obj_function_t -> ir_function_t
+    obj_function_t** function_keys;
+    ir_function_t** function_values;
+    int function_map_count;
+    int function_map_capacity;
+
+    // Global name -> function mapping for direct calls
+    obj_string_t** global_function_names;
+    ir_function_t** global_function_values;
+    int global_function_count;
+    int global_function_capacity;
 } ir_builder_t;
 
 // Create IR builder

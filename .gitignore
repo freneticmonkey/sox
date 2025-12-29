@@ -35,6 +35,7 @@ src/version.h
 # Executables
 *.exe
 *.out
+!src/test/scripts/**/*.out
 *.app
 *.i*86
 *.x86_64

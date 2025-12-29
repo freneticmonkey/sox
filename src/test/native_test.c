@@ -12,6 +12,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <limits.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 
 #ifdef SOX_MACOS
@@ -29,13 +31,37 @@
 static char* capture_native_output(const char* binary_path) {
     char cmd[1024];
 
-    // Set library path to include ./build for runtime library
+    // Set library path to include runtime library directory.
     const char* old_path = getenv(DYLD_LIBRARY_PATH);
+    const char* runtime_dir = "./build";
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        const char* suffixes[] = { "", "/build", "/../build", "/../../build", NULL };
+        for (int i = 0; suffixes[i]; i++) {
+            char candidate[PATH_MAX];
+            struct stat st;
+            snprintf(candidate, sizeof(candidate), "%s%s/libsox_runtime_shared.dylib", cwd, suffixes[i]);
+            if (stat(candidate, &st) == 0) {
+                static char resolved_dir[PATH_MAX];
+                snprintf(resolved_dir, sizeof(resolved_dir), "%s%s", cwd, suffixes[i]);
+                runtime_dir = resolved_dir;
+                break;
+            }
+            snprintf(candidate, sizeof(candidate), "%s%s/libsox_runtime.a", cwd, suffixes[i]);
+            if (stat(candidate, &st) == 0) {
+                static char resolved_dir[PATH_MAX];
+                snprintf(resolved_dir, sizeof(resolved_dir), "%s%s", cwd, suffixes[i]);
+                runtime_dir = resolved_dir;
+                break;
+            }
+        }
+    }
+
     char new_path[2048];
     if (old_path) {
-        snprintf(new_path, sizeof(new_path), "./build%s%s", LIBRARY_PATH_SEP, old_path);
+        snprintf(new_path, sizeof(new_path), "%s%s%s", runtime_dir, LIBRARY_PATH_SEP, old_path);
     } else {
-        snprintf(new_path, sizeof(new_path), "./build");
+        snprintf(new_path, sizeof(new_path), "%s", runtime_dir);
     }
     setenv(DYLD_LIBRARY_PATH, new_path, 1);
 

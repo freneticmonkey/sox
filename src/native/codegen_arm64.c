@@ -17,6 +17,9 @@ codegen_arm64_context_t* codegen_arm64_new(ir_module_t* module) {
     ctx->jump_patches = NULL;
     ctx->patch_count = 0;
     ctx->patch_capacity = 0;
+    ctx->call_patches = NULL;
+    ctx->call_patch_count = 0;
+    ctx->call_patch_capacity = 0;
     ctx->global_vars = NULL;
     ctx->global_count = 0;
     ctx->global_capacity = 0;
@@ -40,6 +43,9 @@ void codegen_arm64_free(codegen_arm64_context_t* ctx) {
     }
     if (ctx->jump_patches) {
         l_mem_free(ctx->jump_patches, sizeof(jump_patch_arm64_t) * ctx->patch_capacity);
+    }
+    if (ctx->call_patches) {
+        l_mem_free(ctx->call_patches, sizeof(call_patch_arm64_t) * ctx->call_patch_capacity);
     }
     if (ctx->global_vars) {
         l_mem_free(ctx->global_vars, sizeof(global_var_entry_t) * ctx->global_capacity);
@@ -89,6 +95,21 @@ static void add_jump_patch(codegen_arm64_context_t* ctx, size_t offset, int targ
     ctx->jump_patches[ctx->patch_count].offset = offset;
     ctx->jump_patches[ctx->patch_count].target_label = target_label;
     ctx->patch_count++;
+}
+
+static void add_call_patch(codegen_arm64_context_t* ctx, size_t offset, ir_function_t* target) {
+    if (ctx->call_patch_capacity < ctx->call_patch_count + 1) {
+        int old_capacity = ctx->call_patch_capacity;
+        ctx->call_patch_capacity = (old_capacity < 8) ? 8 : old_capacity * 2;
+        void* old_ptr = ctx->call_patches;
+        size_t old_size = sizeof(call_patch_arm64_t) * old_capacity;
+        size_t new_size = sizeof(call_patch_arm64_t) * ctx->call_patch_capacity;
+        ctx->call_patches = (call_patch_arm64_t*)l_mem_realloc(old_ptr, old_size, new_size);
+    }
+
+    ctx->call_patches[ctx->call_patch_count].offset = offset;
+    ctx->call_patches[ctx->call_patch_count].target = target;
+    ctx->call_patch_count++;
 }
 
 // Structure for register pairs
@@ -275,6 +296,127 @@ static void load_16byte_argument_x0x1(codegen_arm64_context_t* ctx, ir_value_t v
     }
 }
 
+static void move_value_to_reg(codegen_arm64_context_t* ctx, ir_value_t value,
+                              arm64_register_t dest) {
+    if (value.type == IR_VAL_REGISTER) {
+        arm64_register_t src = get_physical_register_arm64(ctx, value);
+        if (src != ARM64_NO_REG) {
+            if (src != dest) {
+                arm64_mov_reg_reg(ctx->asm_, dest, src);
+            }
+            return;
+        }
+
+        int spill_slot = regalloc_arm64_get_spill_slot(ctx->regalloc, value.as.reg);
+        if (spill_slot >= 0) {
+            load_value_from_spill(ctx, value.as.reg, spill_slot, IR_SIZE_8BYTE, dest, ARM64_NO_REG);
+            return;
+        }
+    } else if (value.type == IR_VAL_CONSTANT) {
+        value_t constant = value.as.constant;
+        if (IS_NUMBER(constant)) {
+            arm64_mov_reg_imm(ctx->asm_, dest, (uint64_t)AS_NUMBER(constant));
+            return;
+        }
+        if (IS_BOOL(constant)) {
+            arm64_mov_reg_imm(ctx->asm_, dest, AS_BOOL(constant) ? 1 : 0);
+            return;
+        }
+        if (IS_NIL(constant)) {
+            arm64_mov_reg_imm(ctx->asm_, dest, 0);
+            return;
+        }
+    }
+}
+
+static void move_value_to_pair(codegen_arm64_context_t* ctx, ir_value_t value,
+                               arm64_register_t dest_low, arm64_register_t dest_high) {
+    if (value.type != IR_VAL_REGISTER) {
+        return;
+    }
+
+    arm64_reg_pair_t src_pair = get_register_pair_arm64(ctx, value);
+    if (src_pair.is_spilled) {
+        load_value_from_spill(ctx, value.as.reg, src_pair.spill_offset, IR_SIZE_16BYTE,
+                              dest_low, dest_high);
+        return;
+    }
+
+    if (src_pair.low != ARM64_NO_REG && src_pair.low != dest_low) {
+        arm64_mov_reg_reg(ctx->asm_, dest_low, src_pair.low);
+    }
+    if (src_pair.is_pair && src_pair.high != ARM64_NO_REG && src_pair.high != dest_high) {
+        arm64_mov_reg_reg(ctx->asm_, dest_high, src_pair.high);
+    }
+}
+
+static void store_argument_on_stack_arm64(codegen_arm64_context_t* ctx, ir_value_t value, int offset) {
+    if (value.type == IR_VAL_REGISTER) {
+        arm64_reg_pair_t pair = get_register_pair_arm64(ctx, value);
+        if (pair.is_spilled) {
+            load_value_from_spill(ctx, value.as.reg, pair.spill_offset, IR_SIZE_16BYTE,
+                                  ARM64_X16, ARM64_X17);
+            arm64_stp(ctx->asm_, ARM64_X16, ARM64_X17, ARM64_SP, offset);
+        } else if (pair.low != ARM64_NO_REG && pair.is_pair) {
+            arm64_stp(ctx->asm_, pair.low, pair.high, ARM64_SP, offset);
+        }
+        return;
+    }
+
+    if (value.type == IR_VAL_CONSTANT) {
+        value_t constant = value.as.constant;
+        uint64_t low_val = *(uint64_t*)(&constant);
+        uint64_t high_val = *((uint64_t*)(&constant) + 1);
+        arm64_mov_reg_imm(ctx->asm_, ARM64_X16, low_val);
+        arm64_mov_reg_imm(ctx->asm_, ARM64_X17, high_val);
+        arm64_stp(ctx->asm_, ARM64_X16, ARM64_X17, ARM64_SP, offset);
+    }
+}
+
+static int marshal_arguments_arm64(codegen_arm64_context_t* ctx, ir_value_t* args, int arg_count) {
+    const arm64_register_t arg_regs[] = {
+        ARM64_X0, ARM64_X1, ARM64_X2, ARM64_X3,
+        ARM64_X4, ARM64_X5, ARM64_X6, ARM64_X7
+    };
+
+    int reg_arg_count = (arg_count > 4) ? 4 : arg_count;
+    int stack_arg_count = (arg_count > 4) ? (arg_count - 4) : 0;
+    int stack_arg_bytes = stack_arg_count * 16;
+    int temp_bytes = reg_arg_count * 16;
+    int stack_bytes = stack_arg_bytes + temp_bytes;
+
+    if (stack_bytes % 16 != 0) {
+        stack_bytes += 16 - (stack_bytes % 16);
+    }
+
+    if (stack_bytes > 0) {
+        if (stack_bytes < 4096) {
+            arm64_sub_reg_reg_imm(ctx->asm_, ARM64_SP, ARM64_SP, (uint16_t)stack_bytes);
+        } else {
+            arm64_mov_reg_imm(ctx->asm_, ARM64_X9, (uint64_t)stack_bytes);
+            arm64_sub_reg_reg_reg(ctx->asm_, ARM64_SP, ARM64_SP, ARM64_X9);
+        }
+    }
+
+    for (int i = 0; i < reg_arg_count; i++) {
+        int offset = stack_arg_bytes + (i * 16);
+        store_argument_on_stack_arm64(ctx, args[i], offset);
+    }
+
+    for (int i = 0; i < stack_arg_count; i++) {
+        int arg_index = i + 4;
+        int offset = i * 16;
+        store_argument_on_stack_arm64(ctx, args[arg_index], offset);
+    }
+
+    for (int i = 0; i < reg_arg_count; i++) {
+        int offset = stack_arg_bytes + (i * 16);
+        arm64_ldp(ctx->asm_, arg_regs[i * 2], arg_regs[i * 2 + 1], ARM64_SP, offset);
+    }
+
+    return stack_bytes;
+}
+
 static void emit_function_prologue_arm64(codegen_arm64_context_t* ctx) {
     // ARM64 function prologue (AArch64 calling convention)
     // stp x29, x30, [sp, #-16]!  ; Save FP and LR
@@ -308,6 +450,39 @@ static void emit_function_prologue_arm64(codegen_arm64_context_t* ctx) {
     }
 }
 
+static int get_local_slot_offset_arm64(codegen_arm64_context_t* ctx, int local_slot) {
+    int spill_offset = regalloc_arm64_get_spill_byte_offset(ctx->regalloc);
+    return -(spill_offset + (local_slot + 1) * 16);
+}
+
+static void spill_incoming_args_arm64(codegen_arm64_context_t* ctx) {
+    if (!ctx->current_function || ctx->current_function->arity <= 0) {
+        return;
+    }
+
+    const arm64_register_t arg_regs[] = {
+        ARM64_X0, ARM64_X1, ARM64_X2, ARM64_X3,
+        ARM64_X4, ARM64_X5, ARM64_X6, ARM64_X7
+    };
+
+    int arity = ctx->current_function->arity;
+    for (int i = 0; i < arity; i++) {
+        int local_slot = i + 1;
+        int local_offset = get_local_slot_offset_arm64(ctx, local_slot);
+
+        if (i < 4) {
+            arm64_register_t low = arg_regs[i * 2];
+            arm64_register_t high = arg_regs[i * 2 + 1];
+            arm64_stp(ctx->asm_, low, high, ARM64_FP, local_offset);
+        } else {
+            int stack_arg_index = i - 4;
+            int stack_offset = 16 + (stack_arg_index * 16);
+            arm64_ldp(ctx->asm_, ARM64_X9, ARM64_X10, ARM64_FP, stack_offset);
+            arm64_stp(ctx->asm_, ARM64_X9, ARM64_X10, ARM64_FP, local_offset);
+        }
+    }
+}
+
 static void emit_function_epilogue_arm64(codegen_arm64_context_t* ctx) {
     // ARM64 function epilogue
     int frame_size = regalloc_arm64_get_frame_size(ctx->regalloc);
@@ -318,8 +493,11 @@ static void emit_function_epilogue_arm64(codegen_arm64_context_t* ctx) {
         arm64_ldp(ctx->asm_, ARM64_X19, ARM64_X20, ARM64_SP, 0);
     }
 
-    // Set return value to 0 (success) for main()
-    arm64_mov_reg_imm(ctx->asm_, ARM64_X0, 0);
+    // For entrypoint script, return 0 so the process exits cleanly.
+    if (ctx->module && ctx->module->function_count > 0 &&
+        ctx->current_function == ctx->module->functions[0]) {
+        arm64_mov_reg_imm(ctx->asm_, ARM64_X0, 0);
+    }
 
     // Deallocate stack frame
     arm64_mov_reg_reg(ctx->asm_, ARM64_SP, ARM64_FP);
@@ -353,6 +531,14 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
                         // Load high register (remaining 8 bytes: the double value)
                         uint64_t high_val = *((uint64_t*)(&v) + 1);
                         arm64_mov_reg_imm(ctx->asm_, pair.high, high_val);
+                    } else if (pair.is_spilled) {
+                        value_t v = instr->operand1.as.constant;
+                        uint64_t low_val = *(uint64_t*)(&v);
+                        uint64_t high_val = *((uint64_t*)(&v) + 1);
+                        arm64_mov_reg_imm(ctx->asm_, ARM64_X16, low_val);
+                        arm64_mov_reg_imm(ctx->asm_, ARM64_X17, high_val);
+                        store_value_to_spill(ctx, instr->dest.as.reg, pair.spill_offset,
+                                             IR_SIZE_16BYTE, ARM64_X16, ARM64_X17);
                     }
                 } else {
                     // Load 8-byte scalar value
@@ -383,6 +569,14 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
                         // Load high register (remaining 8 bytes: the boolean value)
                         uint64_t high_val = *((uint64_t*)(&v) + 1);
                         arm64_mov_reg_imm(ctx->asm_, pair.high, high_val);
+                    } else if (pair.is_spilled) {
+                        value_t v = instr->operand1.as.constant;
+                        uint64_t low_val = *(uint64_t*)(&v);
+                        uint64_t high_val = *((uint64_t*)(&v) + 1);
+                        arm64_mov_reg_imm(ctx->asm_, ARM64_X16, low_val);
+                        arm64_mov_reg_imm(ctx->asm_, ARM64_X17, high_val);
+                        store_value_to_spill(ctx, instr->dest.as.reg, pair.spill_offset,
+                                             IR_SIZE_16BYTE, ARM64_X16, ARM64_X17);
                     }
                 } else {
                     arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
@@ -411,6 +605,14 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
                         // Load high register (remaining 8 bytes: unused for nil)
                         uint64_t high_val = *((uint64_t*)(&v) + 1);
                         arm64_mov_reg_imm(ctx->asm_, pair.high, high_val);
+                    } else if (pair.is_spilled) {
+                        value_t v = NIL_VAL;
+                        uint64_t low_val = *(uint64_t*)(&v);
+                        uint64_t high_val = *((uint64_t*)(&v) + 1);
+                        arm64_mov_reg_imm(ctx->asm_, ARM64_X16, low_val);
+                        arm64_mov_reg_imm(ctx->asm_, ARM64_X17, high_val);
+                        store_value_to_spill(ctx, instr->dest.as.reg, pair.spill_offset,
+                                             IR_SIZE_16BYTE, ARM64_X16, ARM64_X17);
                     }
                 } else {
                     arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
@@ -484,7 +686,7 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
 
                 // Calculate offset from FP: -(spill_offset + (slot + 1) * 8)
                 int spill_offset = regalloc_arm64_get_spill_byte_offset(ctx->regalloc);
-                int stack_offset = -(spill_offset + (local_slot + 1) * 8);
+                int stack_offset = -(spill_offset + (local_slot + 1) * 16);
 
                 if (instr->dest.size == IR_SIZE_16BYTE) {
                     // Load 16-byte value into register pair
@@ -519,7 +721,7 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
 
                 // Calculate offset from FP: -(spill_offset + (slot + 1) * 8)
                 int spill_offset = regalloc_arm64_get_spill_byte_offset(ctx->regalloc);
-                int stack_offset = -(spill_offset + (local_slot + 1) * 8);
+                int stack_offset = -(spill_offset + (local_slot + 1) * 16);
 
                 if (instr->operand1.size == IR_SIZE_16BYTE) {
                     // Store 16-byte value from register pair
@@ -556,7 +758,7 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
                 int global_index = get_or_allocate_global_index(ctx, var_name_val);
                 int spill_offset = regalloc_arm64_get_spill_byte_offset(ctx->regalloc);
                 int stack_offset = -(spill_offset +
-                                   (ctx->current_function->local_count + 1) * 8 + global_index * 16);
+                                   (ctx->current_function->local_count + 1) * 16 + global_index * 16);
 
                 if (instr->dest.size == IR_SIZE_16BYTE) {
                     arm64_reg_pair_t dest_pair = get_register_pair_arm64(ctx, instr->dest);
@@ -579,7 +781,7 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
                 int global_index = get_or_allocate_global_index(ctx, var_name_val);
                 int spill_offset = regalloc_arm64_get_spill_byte_offset(ctx->regalloc);
                 int stack_offset = -(spill_offset +
-                                   (ctx->current_function->local_count + 1) * 8 + global_index * 16);
+                                   (ctx->current_function->local_count + 1) * 16 + global_index * 16);
 
                 if (instr->operand1.size == IR_SIZE_16BYTE) {
                     arm64_reg_pair_t src_pair = get_register_pair_arm64(ctx, instr->operand1);
@@ -1096,8 +1298,50 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
         }
 
         case IR_CALL: {
-            // Simplified call - would need proper ABI handling
-            arm64_bl(ctx->asm_, 0); // Would need to be relocated
+            int stack_bytes = 0;
+            if (instr->call_args && instr->call_arg_count > 0) {
+                stack_bytes = marshal_arguments_arm64(ctx, instr->call_args, instr->call_arg_count);
+            }
+
+            size_t call_offset = arm64_get_offset(ctx->asm_);
+            arm64_bl(ctx->asm_, 0);
+
+            if (instr->call_function) {
+                add_call_patch(ctx, call_offset, instr->call_function);
+            } else if (instr->call_target) {
+                arm64_add_relocation(ctx->asm_, call_offset, ARM64_RELOC_CALL26, instr->call_target, 0);
+            }
+
+            if (stack_bytes > 0) {
+                if (stack_bytes < 4096) {
+                    arm64_add_reg_reg_imm(ctx->asm_, ARM64_SP, ARM64_SP, (uint16_t)stack_bytes);
+                } else {
+                    arm64_mov_reg_imm(ctx->asm_, ARM64_X9, (uint64_t)stack_bytes);
+                    arm64_add_reg_reg_reg(ctx->asm_, ARM64_SP, ARM64_SP, ARM64_X9);
+                }
+            }
+
+            if (instr->dest.type == IR_VAL_REGISTER) {
+                if (instr->dest.size == IR_SIZE_16BYTE) {
+                    arm64_reg_pair_t dest_pair = get_register_pair_arm64(ctx, instr->dest);
+                    if (dest_pair.is_spilled) {
+                        store_value_to_spill(ctx, instr->dest.as.reg, dest_pair.spill_offset,
+                                            IR_SIZE_16BYTE, ARM64_X0, ARM64_X1);
+                    } else if (dest_pair.low != ARM64_NO_REG && dest_pair.is_pair) {
+                        if (dest_pair.low != ARM64_X0) {
+                            arm64_mov_reg_reg(ctx->asm_, dest_pair.low, ARM64_X0);
+                        }
+                        if (dest_pair.high != ARM64_X1) {
+                            arm64_mov_reg_reg(ctx->asm_, dest_pair.high, ARM64_X1);
+                        }
+                    }
+                } else {
+                    arm64_register_t dest = get_physical_register_arm64(ctx, instr->dest);
+                    if (dest != ARM64_NO_REG && dest != ARM64_X0) {
+                        arm64_mov_reg_reg(ctx->asm_, dest, ARM64_X0);
+                    }
+                }
+            }
             break;
         }
 
@@ -1177,6 +1421,14 @@ static void emit_instruction_arm64(codegen_arm64_context_t* ctx, ir_instruction_
 
 bool codegen_arm64_generate_function(codegen_arm64_context_t* ctx, ir_function_t* func) {
     ctx->current_function = func;
+    func->code_offset = arm64_get_offset(ctx->asm_) * 4;
+    ctx->patch_count = 0;
+    ctx->label_count = 0;
+    if (ctx->label_offsets) {
+        for (int i = 0; i < ctx->label_capacity; i++) {
+            ctx->label_offsets[i] = -1;
+        }
+    }
 
     // Perform register allocation
     ctx->regalloc = regalloc_arm64_new(func);
@@ -1189,6 +1441,7 @@ bool codegen_arm64_generate_function(codegen_arm64_context_t* ctx, ir_function_t
 
     // Emit function prologue
     emit_function_prologue_arm64(ctx);
+    spill_incoming_args_arm64(ctx);
 
     // Generate code for each basic block
     for (int i = 0; i < func->block_count; i++) {
@@ -1247,6 +1500,21 @@ bool codegen_arm64_generate(codegen_arm64_context_t* ctx) {
             return false;
         }
     }
+
+    for (int i = 0; i < ctx->call_patch_count; i++) {
+        call_patch_arm64_t* patch = &ctx->call_patches[i];
+        if (!patch->target) {
+            continue;
+        }
+        uint32_t* code = ctx->asm_->code.code;
+        uint32_t instr = code[patch->offset];
+        int32_t target_offset = (int32_t)patch->target->code_offset;
+        int32_t current_offset = (int32_t)(patch->offset * 4);
+        int32_t rel = target_offset - current_offset;
+        uint32_t imm26 = (rel >> 2) & 0x3FFFFFF;
+        code[patch->offset] = (instr & 0xFC000000) | imm26;
+    }
+
     return true;
 }
 

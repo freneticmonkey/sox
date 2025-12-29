@@ -1,5 +1,6 @@
 #include "ir_builder.h"
 #include "../lib/memory.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +16,14 @@ ir_builder_t* ir_builder_new(void) {
     builder->locals = NULL;
     builder->local_count = 0;
     builder->local_capacity = 0;
+    builder->function_keys = NULL;
+    builder->function_values = NULL;
+    builder->function_map_count = 0;
+    builder->function_map_capacity = 0;
+    builder->global_function_names = NULL;
+    builder->global_function_values = NULL;
+    builder->global_function_count = 0;
+    builder->global_function_capacity = 0;
     return builder;
 }
 
@@ -26,6 +35,22 @@ void ir_builder_free(ir_builder_t* builder) {
     }
     if (builder->locals) {
         l_mem_free(builder->locals, sizeof(ir_value_t) * builder->local_capacity);
+    }
+    if (builder->function_keys) {
+        l_mem_free(builder->function_keys,
+                   sizeof(obj_function_t*) * builder->function_map_capacity);
+    }
+    if (builder->function_values) {
+        l_mem_free(builder->function_values,
+                   sizeof(ir_function_t*) * builder->function_map_capacity);
+    }
+    if (builder->global_function_names) {
+        l_mem_free(builder->global_function_names,
+                   sizeof(obj_string_t*) * builder->global_function_capacity);
+    }
+    if (builder->global_function_values) {
+        l_mem_free(builder->global_function_values,
+                   sizeof(ir_function_t*) * builder->global_function_capacity);
     }
 
     l_mem_free(builder, sizeof(ir_builder_t));
@@ -83,6 +108,84 @@ ir_instruction_t* ir_builder_emit_binary(ir_builder_t* builder, ir_op_t op,
     return instr;
 }
 
+static ir_function_t* ir_builder_lookup_function(ir_builder_t* builder, obj_function_t* function) {
+    for (int i = 0; i < builder->function_map_count; i++) {
+        if (builder->function_keys[i] == function) {
+            return builder->function_values[i];
+        }
+    }
+    return NULL;
+}
+
+static void ir_builder_record_function(ir_builder_t* builder, obj_function_t* function,
+                                       ir_function_t* ir_func) {
+    if (builder->function_map_capacity < builder->function_map_count + 1) {
+        int old_capacity = builder->function_map_capacity;
+        builder->function_map_capacity = (old_capacity < 4) ? 4 : old_capacity * 2;
+        builder->function_keys = (obj_function_t**)l_mem_realloc(
+            builder->function_keys,
+            sizeof(obj_function_t*) * old_capacity,
+            sizeof(obj_function_t*) * builder->function_map_capacity
+        );
+        builder->function_values = (ir_function_t**)l_mem_realloc(
+            builder->function_values,
+            sizeof(ir_function_t*) * old_capacity,
+            sizeof(ir_function_t*) * builder->function_map_capacity
+        );
+    }
+
+    builder->function_keys[builder->function_map_count] = function;
+    builder->function_values[builder->function_map_count] = ir_func;
+    builder->function_map_count++;
+}
+
+static void ir_builder_record_global_function(ir_builder_t* builder, obj_string_t* name,
+                                              ir_function_t* func) {
+    if (!name || !func) return;
+    if (builder->global_function_capacity < builder->global_function_count + 1) {
+        int old_capacity = builder->global_function_capacity;
+        builder->global_function_capacity = (old_capacity < 4) ? 4 : old_capacity * 2;
+        builder->global_function_names = (obj_string_t**)l_mem_realloc(
+            builder->global_function_names,
+            sizeof(obj_string_t*) * old_capacity,
+            sizeof(obj_string_t*) * builder->global_function_capacity
+        );
+        builder->global_function_values = (ir_function_t**)l_mem_realloc(
+            builder->global_function_values,
+            sizeof(ir_function_t*) * old_capacity,
+            sizeof(ir_function_t*) * builder->global_function_capacity
+        );
+    }
+
+    builder->global_function_names[builder->global_function_count] = name;
+    builder->global_function_values[builder->global_function_count] = func;
+    builder->global_function_count++;
+}
+
+static ir_function_t* ir_builder_lookup_global_function(ir_builder_t* builder, obj_string_t* name) {
+    if (!name) return NULL;
+    for (int i = 0; i < builder->global_function_count; i++) {
+        if (builder->global_function_names[i] == name) {
+            return builder->global_function_values[i];
+        }
+    }
+    return NULL;
+}
+
+static void sanitize_symbol(const char* input, char* output, size_t output_len) {
+    if (!input || output_len == 0) return;
+    size_t write_index = 0;
+    for (size_t i = 0; input[i] != '\0' && write_index < output_len - 1; i++) {
+        char c = input[i];
+        if (isalnum((unsigned char)c) || c == '_') {
+            output[write_index++] = c;
+        } else {
+            output[write_index++] = '_';
+        }
+    }
+    output[write_index] = '\0';
+}
+
 static void ir_builder_ensure_locals(ir_builder_t* builder, int count) {
     if (builder->local_capacity < count) {
         int old_capacity = builder->local_capacity;
@@ -97,10 +200,17 @@ static void ir_builder_ensure_locals(ir_builder_t* builder, int count) {
 }
 
 // Translate bytecode to IR
-ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* function) {
-    const char* func_name = function->name ? function->name->chars : "<script>";
-    ir_function_t* ir_func = ir_function_new(func_name, function->arity);
+static ir_function_t* ir_builder_create_function(obj_function_t* function) {
+    const char* base_name = function->name ? function->name->chars : "<script>";
+    char sanitized[96];
+    sanitize_symbol(base_name, sanitized, sizeof(sanitized));
+    char name_buffer[160];
+    snprintf(name_buffer, sizeof(name_buffer), "%s_fn_%p", sanitized, (void*)function);
+    return ir_function_new(name_buffer, function->arity);
+}
 
+static void ir_builder_build_function_body(ir_builder_t* builder, obj_function_t* function,
+                                          ir_function_t* ir_func) {
     builder->current_function = ir_func;
     builder->current_block = ir_function_new_block(ir_func);
     builder->stack_count = 0;
@@ -156,6 +266,17 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
             case OP_CLASS:
                 scan_ip++; // These have 1-byte operands
                 break;
+            case OP_CLOSURE: {
+                uint8_t constant_idx = chunk->code[scan_ip++];
+                if (constant_idx < chunk->constants.count) {
+                    value_t constant = chunk->constants.values[constant_idx];
+                    if (IS_OBJ(constant) && AS_OBJ(constant)->type == OBJ_FUNCTION) {
+                        obj_function_t* func_obj = AS_FUNCTION(constant);
+                        scan_ip += func_obj->upvalue_count * 2;
+                    }
+                }
+                break;
+            }
             case OP_CALL:
                 scan_ip++; // CALL has arg count
                 break;
@@ -278,9 +399,21 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
 
             case OP_GET_GLOBAL: {
                 uint8_t constant_idx = chunk->code[ip++];
+                value_t name_value = chunk->constants.values[constant_idx];
+                obj_string_t* name_str = NULL;
+                if (IS_OBJ(name_value) && AS_OBJ(name_value)->type == OBJ_STRING) {
+                    name_str = AS_STRING(name_value);
+                }
+                if (name_str) {
+                    ir_function_t* target = ir_builder_lookup_global_function(builder, name_str);
+                    if (target) {
+                        ir_builder_push(builder, ir_value_function(target));
+                        break;
+                    }
+                }
                 int reg = ir_function_alloc_register(ir_func);
                 ir_value_t dest = ir_value_register(reg);
-                ir_value_t name = ir_value_constant(chunk->constants.values[constant_idx]);
+                ir_value_t name = ir_value_constant(name_value);
                 ir_builder_emit_unary(builder, IR_LOAD_GLOBAL, dest, name);
                 ir_builder_push(builder, dest);
                 break;
@@ -290,7 +423,11 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
             case OP_SET_GLOBAL: {
                 uint8_t constant_idx = chunk->code[ip++];
                 ir_value_t value = ir_builder_pop(builder);
-                ir_value_t name = ir_value_constant(chunk->constants.values[constant_idx]);
+                value_t name_value = chunk->constants.values[constant_idx];
+                ir_value_t name = ir_value_constant(name_value);
+                if (value.type == IR_VAL_FUNCTION && IS_OBJ(name_value) && AS_OBJ(name_value)->type == OBJ_STRING) {
+                    ir_builder_record_global_function(builder, AS_STRING(name_value), value.as.func);
+                }
                 ir_builder_emit_binary(builder, IR_STORE_GLOBAL, name, value, (ir_value_t){0});
                 break;
             }
@@ -482,6 +619,35 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
                 break;
             }
 
+            case OP_CLOSURE: {
+                uint8_t constant_idx = chunk->code[ip++];
+                value_t constant = chunk->constants.values[constant_idx];
+                obj_function_t* func_obj = NULL;
+                if (IS_OBJ(constant) && AS_OBJ(constant)->type == OBJ_FUNCTION) {
+                    func_obj = AS_FUNCTION(constant);
+                }
+
+                if (func_obj && func_obj->upvalue_count == 0) {
+                    ir_function_t* target = ir_builder_lookup_function(builder, func_obj);
+                    if (target) {
+                        ir_builder_push(builder, ir_value_function(target));
+                    } else {
+                        int reg = ir_function_alloc_register(ir_func);
+                        ir_builder_push(builder, ir_value_register(reg));
+                    }
+                } else {
+                    int reg = ir_function_alloc_register(ir_func);
+                    ir_builder_push(builder, ir_value_register(reg));
+                }
+
+                if (func_obj) {
+                    for (int i = 0; i < func_obj->upvalue_count; i++) {
+                        ip += 2;
+                    }
+                }
+                break;
+            }
+
             case OP_CALL: {
                 uint8_t arg_count = chunk->code[ip++];
                 int reg = ir_function_alloc_register(ir_func);
@@ -492,6 +658,11 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
                 ir_instruction_t* call = ir_builder_emit(builder, IR_CALL);
                 call->dest = dest;
                 call->operand1 = func; // Function to call
+
+                if (func.type == IR_VAL_FUNCTION && func.as.func) {
+                    call->call_target = func.as.func->name;
+                    call->call_function = func.as.func;
+                }
 
                 // Capture arguments from stack
                 if (arg_count > 0) {
@@ -543,6 +714,47 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
     // Clean up
     l_mem_free(offset_to_label, sizeof(int) * chunk->count);
 
+}
+
+ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* function) {
+    ir_function_t* ir_func = ir_builder_create_function(function);
+    ir_builder_build_function_body(builder, function, ir_func);
+    return ir_func;
+}
+
+static ir_function_t* ir_builder_build_function_recursive(ir_builder_t* builder, obj_function_t* function) {
+    ir_function_t* existing = ir_builder_lookup_function(builder, function);
+    if (existing) {
+        if (existing->block_count == 0) {
+            ir_builder_build_function_body(builder, function, existing);
+        }
+        return existing;
+    }
+
+    ir_function_t* ir_func = ir_builder_create_function(function);
+    ir_module_add_function(builder->module, ir_func);
+    ir_builder_record_function(builder, function, ir_func);
+
+    value_array_t* constants = &function->chunk.constants;
+    for (size_t i = 0; i < constants->count; i++) {
+        value_t constant = constants->values[i];
+        if (!IS_OBJ(constant)) {
+            continue;
+        }
+
+        obj_function_t* nested = NULL;
+        if (AS_OBJ(constant)->type == OBJ_FUNCTION) {
+            nested = AS_FUNCTION(constant);
+        } else if (AS_OBJ(constant)->type == OBJ_CLOSURE) {
+            nested = ((obj_closure_t*)AS_OBJ(constant))->function;
+        }
+
+        if (nested) {
+            ir_builder_build_function_recursive(builder, nested);
+        }
+    }
+
+    ir_builder_build_function_body(builder, function, ir_func);
     return ir_func;
 }
 
@@ -551,11 +763,7 @@ ir_module_t* ir_builder_build_module(obj_closure_t* entry_closure) {
     ir_module_t* module = ir_module_new();
     builder->module = module;
 
-    // Build IR for entry function
-    ir_function_t* entry_func = ir_builder_build_function(builder, entry_closure->function);
-    ir_module_add_function(module, entry_func);
-
-    // TODO: Recursively build IR for closures referenced in the code
+    ir_builder_build_function_recursive(builder, entry_closure->function);
 
     ir_builder_free(builder);
     return module;

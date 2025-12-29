@@ -56,6 +56,7 @@ ir_function_t* ir_function_new(const char* name, int arity) {
     func->next_label = 0;
     func->local_count = 0;
     func->upvalue_count = 0;
+    func->code_offset = 0;
     return func;
 }
 
@@ -179,6 +180,7 @@ ir_instruction_t* ir_instruction_new(ir_op_t op) {
     instr->call_args = NULL;
     instr->call_arg_count = 0;
     instr->call_target = NULL;
+    instr->call_function = NULL;
     instr->line = 0;
     instr->next = NULL;
     return instr;

@@ -11,6 +11,12 @@ typedef struct {
     int target_label;
 } jump_patch_arm64_t;
 
+// Patch location for direct calls (ARM64)
+typedef struct {
+    size_t offset;
+    ir_function_t* target;
+} call_patch_arm64_t;
+
 // Global variable mapping entry
 typedef struct {
     value_t name;  // Variable name (as value_t constant)
@@ -44,6 +50,11 @@ typedef struct {
     jump_patch_arm64_t* jump_patches;
     int patch_count;
     int patch_capacity;
+
+    // Patch locations for direct calls
+    call_patch_arm64_t* call_patches;
+    int call_patch_count;
+    int call_patch_capacity;
 
     // Global variable tracking
     global_var_entry_t* global_vars;

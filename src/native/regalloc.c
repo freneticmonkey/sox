@@ -112,6 +112,13 @@ static void compute_live_ranges(regalloc_context_t* ctx) {
             if (instr->operand3.type == IR_VAL_REGISTER) {
                 add_live_range(ctx, instr->operand3.as.reg, pos);
             }
+            if (instr->call_args && instr->call_arg_count > 0) {
+                for (int i = 0; i < instr->call_arg_count; i++) {
+                    if (instr->call_args[i].type == IR_VAL_REGISTER) {
+                        add_live_range(ctx, instr->call_args[i].as.reg, pos);
+                    }
+                }
+            }
 
             // Record definition of destination
             if (instr->dest.type == IR_VAL_REGISTER) {

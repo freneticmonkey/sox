@@ -18,6 +18,9 @@ codegen_context_t* codegen_new(ir_module_t* module) {
     ctx->jump_patches = NULL;
     ctx->patch_count = 0;
     ctx->patch_capacity = 0;
+    ctx->call_patches = NULL;
+    ctx->call_patch_count = 0;
+    ctx->call_patch_capacity = 0;
     ctx->relocations = NULL;
     ctx->relocation_count = 0;
     ctx->relocation_capacity = 0;
@@ -40,6 +43,9 @@ void codegen_free(codegen_context_t* ctx) {
     }
     if (ctx->jump_patches) {
         l_mem_free(ctx->jump_patches, sizeof(jump_patch_t) * ctx->patch_capacity);
+    }
+    if (ctx->call_patches) {
+        l_mem_free(ctx->call_patches, sizeof(call_patch_t) * ctx->call_patch_capacity);
     }
     if (ctx->relocations) {
         l_mem_free(ctx->relocations, sizeof(codegen_relocation_t) * ctx->relocation_capacity);
@@ -81,6 +87,21 @@ static void add_jump_patch(codegen_context_t* ctx, size_t offset, int target_lab
     ctx->jump_patches[ctx->patch_count].offset = offset;
     ctx->jump_patches[ctx->patch_count].target_label = target_label;
     ctx->patch_count++;
+}
+
+static void add_call_patch(codegen_context_t* ctx, size_t offset, ir_function_t* target) {
+    if (ctx->call_patch_capacity < ctx->call_patch_count + 1) {
+        int old_capacity = ctx->call_patch_capacity;
+        ctx->call_patch_capacity = (old_capacity < 8) ? 8 : old_capacity * 2;
+        void* old_ptr = ctx->call_patches;
+        size_t old_size = sizeof(call_patch_t) * old_capacity;
+        size_t new_size = sizeof(call_patch_t) * ctx->call_patch_capacity;
+        ctx->call_patches = (call_patch_t*)l_mem_realloc(old_ptr, old_size, new_size);
+    }
+
+    ctx->call_patches[ctx->call_patch_count].offset = offset;
+    ctx->call_patches[ctx->call_patch_count].target = target;
+    ctx->call_patch_count++;
 }
 
 static void add_relocation(codegen_context_t* ctx, size_t offset, const char* symbol,
@@ -474,8 +495,10 @@ static void emit_instruction(codegen_context_t* ctx, ir_instruction_t* instr) {
             size_t call_offset = x64_get_offset(ctx->asm_);
             x64_call_rel32(ctx->asm_, 0); // Placeholder - will be relocated by linker
 
-            // 4. Record relocation if we have a target symbol
-            if (instr->call_target) {
+            // 4. Record relocation or direct call patch
+            if (instr->call_function) {
+                add_call_patch(ctx, call_offset, instr->call_function);
+            } else if (instr->call_target) {
                 // For PLT32 relocations, addend is -4 (size of offset field)
                 add_relocation(ctx, call_offset + 1, instr->call_target, R_X86_64_PLT32, -4);
             }
@@ -537,6 +560,14 @@ static void emit_instruction(codegen_context_t* ctx, ir_instruction_t* instr) {
 
 bool codegen_generate_function(codegen_context_t* ctx, ir_function_t* func) {
     ctx->current_function = func;
+    func->code_offset = x64_get_offset(ctx->asm_);
+    ctx->patch_count = 0;
+    ctx->label_count = 0;
+    if (ctx->label_offsets) {
+        for (int i = 0; i < ctx->label_capacity; i++) {
+            ctx->label_offsets[i] = -1;
+        }
+    }
 
     // Perform register allocation
     ctx->regalloc = regalloc_new(func);
@@ -595,6 +626,21 @@ bool codegen_generate(codegen_context_t* ctx) {
             return false;
         }
     }
+
+    for (int i = 0; i < ctx->call_patch_count; i++) {
+        call_patch_t* patch = &ctx->call_patches[i];
+        if (!patch->target) {
+            continue;
+        }
+        int64_t call_site = (int64_t)patch->offset;
+        int64_t target = (int64_t)patch->target->code_offset;
+        int64_t rel = target - (call_site + 5);
+        ctx->asm_->code.code[call_site + 1] = rel & 0xFF;
+        ctx->asm_->code.code[call_site + 2] = (rel >> 8) & 0xFF;
+        ctx->asm_->code.code[call_site + 3] = (rel >> 16) & 0xFF;
+        ctx->asm_->code.code[call_site + 4] = (rel >> 24) & 0xFF;
+    }
+
     return true;
 }
 
