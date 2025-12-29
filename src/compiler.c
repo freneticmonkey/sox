@@ -143,7 +143,7 @@ class_compiler_t* _current_class;
 chunk_t*          _compiling_chunk;
 
 // Forward declarations
-static void _named_variable(token_t name, bool canAssign);
+static int _named_variable(token_t * name, bool canAssign);
 static token_t _synthetic_token(const char* text);
 
 static chunk_t* _current_chunk() {
@@ -643,7 +643,8 @@ static void _grouping(bool canAssign) {
 // Keys can be identifiers or strings
 static void _table_literal(bool canAssign) {
     // Call Table() to create a new table
-    _named_variable(_synthetic_token("Table"), false);  // Get Table function
+    token_t tableToken = _synthetic_token("Table");
+    _named_variable(&tableToken, false);  // Get Table function
     _emit_bytes(OP_CALL, 0);  // Call Table() with 0 args
 
     // Stack now has: [table]
@@ -707,7 +708,8 @@ static void _array_grouping(bool canAssign) {
         // Empty could be array or table - default to empty table for now
         _consume(TOKEN_RIGHT_BRACE, "Expect '}' after literal.");
         // Create empty table
-        _named_variable(_synthetic_token("Table"), false);
+        token_t tableToken = _synthetic_token("Table");
+        _named_variable(&tableToken, false);
         _emit_bytes(OP_CALL, 0);
         return;
     }
