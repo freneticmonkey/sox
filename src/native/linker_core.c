@@ -59,12 +59,6 @@ linker_context_t* linker_context_new(void) {
         return NULL;
     }
 
-    /* Set default options */
-    context->options.base_address = 0;  /* Platform-specific default */
-    context->options.verbose = false;
-    context->options.keep_debug_info = false;
-    context->options.output_filename = NULL;
-
     return context;
 }
 
@@ -125,12 +119,6 @@ bool linker_context_add_object(linker_context_t* context, linker_object_t* objec
 
     /* Add object to array */
     context->objects[context->object_count++] = object;
-
-    if (context->options.verbose) {
-        printf("Added object file: %s (format: %s)\n",
-            object->filename ? object->filename : "<unknown>",
-            platform_format_name(object->format));
-    }
 
     return true;
 }

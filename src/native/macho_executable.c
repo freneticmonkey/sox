@@ -180,6 +180,24 @@ uint32_t macho_calculate_load_commands_size(linker_context_t* context) {
     size_t dyld_path_len = strlen(DYLD_PATH) + 1;
     size += align_to(dyld_path_len, 8);
 
+    /* LC_SYMTAB */
+    size += sizeof(symtab_command_t);
+
+    /* LC_DYSYMTAB */
+    size += sizeof(dysymtab_command_t);
+
+    /* LC_UUID */
+    size += sizeof(uuid_command_t);
+
+    /* LC_BUILD_VERSION */
+    size += sizeof(build_version_command_t);
+
+    /* LC_SEGMENT_64 for __LINKEDIT (no section headers) */
+    size += sizeof(segment_command_64_t);
+
+    /* LC_SEGMENT_64 for __PAGEZERO (no section headers) */
+    size += sizeof(segment_command_64_t);
+
     return size;
 }
 
@@ -215,11 +233,6 @@ bool macho_set_entry_point(linker_context_t* context) {
     /* Set entry point to _main's final address */
     context->entry_point = main_sym->final_address;
 
-    if (context->options.verbose) {
-        printf("Entry point set to _main at 0x%llx\n",
-               (unsigned long long)context->entry_point);
-    }
-
     return true;
 }
 
@@ -244,12 +257,22 @@ bool macho_write_executable(const char* output_path,
     uint32_t text_section_count = macho_get_segment_section_count(context, SEG_TEXT);
     uint32_t data_section_count = macho_get_segment_section_count(context, SEG_DATA);
     uint64_t text_size = macho_calculate_segment_size(context, SEG_TEXT);
-    uint64_t data_size = macho_calculate_segment_size(context, SEG_DATA);
+    uint64_t data_vmsize = macho_calculate_segment_size(context, SEG_DATA);
+
+    /* Calculate DATA segment file size (exclude BSS which has no file content) */
+    uint64_t data_filesize = 0;
+    for (int i = 0; i < context->merged_section_count; i++) {
+        if (context->merged_sections[i].type == SECTION_TYPE_DATA) {
+            data_filesize += context->merged_sections[i].size;
+            break;
+        }
+    }
 
     /* Calculate file offsets */
     uint64_t header_size = sizeof(mach_header_64_t);
     uint64_t text_file_offset = round_up_to_page(header_size + load_cmds_size, page_size);
     uint64_t data_file_offset = text_file_offset + round_up_to_page(text_size, page_size);
+    uint64_t linkedit_file_offset = data_file_offset + round_up_to_page(data_filesize, page_size);
 
     /* Calculate virtual addresses */
     uint64_t base_addr = context->base_address;
@@ -258,6 +281,7 @@ bool macho_write_executable(const char* output_path,
     }
     uint64_t text_vm_addr = base_addr;
     uint64_t data_vm_addr = text_vm_addr + round_up_to_page(text_size, page_size);
+    uint64_t linkedit_vm_addr = data_vm_addr + round_up_to_page(data_vmsize, page_size);
 
     /* Create Mach-O header */
     mach_header_64_t header = {0};
@@ -265,7 +289,7 @@ bool macho_write_executable(const char* output_path,
     header.cputype = CPU_TYPE_ARM64;
     header.cpusubtype = CPU_SUBTYPE_ARM64_ALL;
     header.filetype = MH_EXECUTE;
-    header.ncmds = 4;  /* __TEXT, __DATA, LC_MAIN, LC_LOAD_DYLINKER */
+    header.ncmds = 10;  /* __PAGEZERO, __TEXT, __DATA, __LINKEDIT, LC_MAIN, LC_LOAD_DYLINKER, LC_SYMTAB, LC_DYSYMTAB, LC_UUID, LC_BUILD_VERSION */
     header.sizeofcmds = load_cmds_size;
     header.flags = MH_NOUNDEFS | MH_PIE;
     header.reserved = 0;
@@ -279,6 +303,25 @@ bool macho_write_executable(const char* output_path,
 
     /* Write Mach-O header */
     if (!write_struct(f, &header, sizeof(header))) {
+        fclose(f);
+        return false;
+    }
+
+    /* Create and write LC_SEGMENT_64 for __PAGEZERO */
+    segment_command_64_t pagezero_segment = {0};
+    pagezero_segment.cmd = LC_SEGMENT_64;
+    pagezero_segment.cmdsize = sizeof(segment_command_64_t);  /* No section headers */
+    strncpy(pagezero_segment.segname, "__PAGEZERO", 16);
+    pagezero_segment.vmaddr = 0x0;
+    pagezero_segment.vmsize = 0x100000000ULL;  /* 4GB on 64-bit */
+    pagezero_segment.fileoff = 0;
+    pagezero_segment.filesize = 0;
+    pagezero_segment.maxprot = VM_PROT_NONE;
+    pagezero_segment.initprot = VM_PROT_NONE;
+    pagezero_segment.nsects = 0;  /* No section headers */
+    pagezero_segment.flags = 0;
+
+    if (!write_struct(f, &pagezero_segment, sizeof(pagezero_segment))) {
         fclose(f);
         return false;
     }
@@ -364,9 +407,9 @@ bool macho_write_executable(const char* output_path,
                            data_section_count * sizeof(section_64_t);
     strncpy(data_segment.segname, SEG_DATA, 16);
     data_segment.vmaddr = data_vm_addr;
-    data_segment.vmsize = round_up_to_page(data_size, page_size);
+    data_segment.vmsize = round_up_to_page(data_vmsize, page_size);
     data_segment.fileoff = data_file_offset;
-    data_segment.filesize = data_size;
+    data_segment.filesize = data_filesize;  /* Exclude BSS from file size */
     data_segment.maxprot = VM_PROT_READ | VM_PROT_WRITE;
     data_segment.initprot = VM_PROT_READ | VM_PROT_WRITE;
     data_segment.nsects = data_section_count;
@@ -431,11 +474,33 @@ bool macho_write_executable(const char* output_path,
         }
     }
 
+    /* Create and write LC_SEGMENT_64 for __LINKEDIT */
+    segment_command_64_t linkedit_segment = {0};
+    linkedit_segment.cmd = LC_SEGMENT_64;
+    linkedit_segment.cmdsize = sizeof(segment_command_64_t);  /* No section headers */
+    strncpy(linkedit_segment.segname, "__LINKEDIT", 16);
+    linkedit_segment.vmaddr = linkedit_vm_addr;
+    linkedit_segment.vmsize = round_up_to_page(0, page_size);  /* Empty for now */
+    linkedit_segment.fileoff = linkedit_file_offset;
+    linkedit_segment.filesize = 0;  /* Empty for now */
+    linkedit_segment.maxprot = VM_PROT_READ;
+    linkedit_segment.initprot = VM_PROT_READ;
+    linkedit_segment.nsects = 0;  /* No section headers */
+    linkedit_segment.flags = 0;
+
+    if (!write_struct(f, &linkedit_segment, sizeof(linkedit_segment))) {
+        fclose(f);
+        return false;
+    }
+
     /* Create and write LC_MAIN */
     entry_point_command_t main_cmd = {0};
     main_cmd.cmd = LC_MAIN;
     main_cmd.cmdsize = sizeof(entry_point_command_t);
-    main_cmd.entryoff = context->entry_point - text_vm_addr;
+    /* Calculate entry point as file offset, not virtual offset
+     * entry_point is virtual address, need to convert to file offset */
+    uint64_t entry_virt_offset = context->entry_point - text_vm_addr;
+    main_cmd.entryoff = text_file_offset + entry_virt_offset;
     main_cmd.stacksize = 0;  /* Use default */
 
     if (!write_struct(f, &main_cmd, sizeof(main_cmd))) {
@@ -465,6 +530,80 @@ bool macho_write_executable(const char* output_path,
     /* Write padding to align dylinker command */
     size_t dyld_padding = align_to(dyld_path_len, 8) - dyld_path_len;
     if (!write_padding(f, dyld_padding)) {
+        fclose(f);
+        return false;
+    }
+
+    /* Create and write LC_SYMTAB (empty symbol table for now) */
+    symtab_command_t symtab_cmd = {0};
+    symtab_cmd.cmd = LC_SYMTAB;
+    symtab_cmd.cmdsize = sizeof(symtab_command_t);
+    symtab_cmd.symoff = 0;     /* No symbol table data */
+    symtab_cmd.nsyms = 0;
+    symtab_cmd.stroff = 0;
+    symtab_cmd.strsize = 0;
+
+    if (!write_struct(f, &symtab_cmd, sizeof(symtab_cmd))) {
+        fclose(f);
+        return false;
+    }
+
+    /* Create and write LC_DYSYMTAB (empty dynamic symbol table) */
+    dysymtab_command_t dysymtab_cmd = {0};
+    dysymtab_cmd.cmd = LC_DYSYMTAB;
+    dysymtab_cmd.cmdsize = sizeof(dysymtab_command_t);
+    dysymtab_cmd.ilocalsym = 0;
+    dysymtab_cmd.nlocalsym = 0;
+    dysymtab_cmd.iextdefsym = 0;
+    dysymtab_cmd.nextdefsym = 0;
+    dysymtab_cmd.iundefsym = 0;
+    dysymtab_cmd.nundefsym = 0;
+    dysymtab_cmd.tocoff = 0;
+    dysymtab_cmd.ntoc = 0;
+    dysymtab_cmd.modtaboff = 0;
+    dysymtab_cmd.nmodtab = 0;
+    dysymtab_cmd.extrefsymoff = 0;
+    dysymtab_cmd.nextrefsyms = 0;
+    dysymtab_cmd.indirectsymoff = 0;
+    dysymtab_cmd.nindirectsyms = 0;
+    dysymtab_cmd.extreloff = 0;
+    dysymtab_cmd.nextrel = 0;
+    dysymtab_cmd.locreloff = 0;
+    dysymtab_cmd.nlocrel = 0;
+
+    if (!write_struct(f, &dysymtab_cmd, sizeof(dysymtab_cmd))) {
+        fclose(f);
+        return false;
+    }
+
+    /* Create and write LC_UUID */
+    uuid_command_t uuid_cmd = {0};
+    uuid_cmd.cmd = LC_UUID;
+    uuid_cmd.cmdsize = sizeof(uuid_command_t);
+    /* Generate a simple UUID from the entry point and text size */
+    for (int i = 0; i < 16; i++) {
+        if (i < 8) {
+            uuid_cmd.uuid[i] = (context->entry_point >> (i * 8)) & 0xFF;
+        } else {
+            uuid_cmd.uuid[i] = (text_size >> ((i - 8) * 8)) & 0xFF;
+        }
+    }
+
+    if (!write_struct(f, &uuid_cmd, sizeof(uuid_cmd))) {
+        fclose(f);
+        return false;
+    }
+
+    /* Create and write LC_BUILD_VERSION */
+    build_version_command_t build_cmd = {0};
+    build_cmd.cmd = LC_BUILD_VERSION;
+    build_cmd.cmdsize = sizeof(build_version_command_t);
+    build_cmd.platform = 1;     /* 1 = macOS */
+    build_cmd.minos = 0x000b0000;   /* macOS 11.0.0 minimum */
+    build_cmd.sdk = 0x000e0000;     /* macOS 14.0.0 SDK */
+    build_cmd.ntools = 0;       /* No tool entries */
+
+    if (!write_struct(f, &build_cmd, sizeof(build_cmd))) {
         fclose(f);
         return false;
     }
@@ -557,20 +696,6 @@ bool macho_write_executable(const char* output_path,
     if (chmod(output_path, 0755) != 0) {
         fprintf(stderr, "Mach-O warning: Failed to set executable permissions\n");
         /* Not a fatal error, continue */
-    }
-
-    if (context->options.verbose) {
-        printf("Mach-O executable written to: %s\n", output_path);
-        printf("  Base address: 0x%llx\n", (unsigned long long)base_addr);
-        printf("  Entry point: 0x%llx\n", (unsigned long long)context->entry_point);
-        printf("  __TEXT: 0x%llx - 0x%llx (%llu bytes)\n",
-               (unsigned long long)text_vm_addr,
-               (unsigned long long)(text_vm_addr + text_size),
-               (unsigned long long)text_size);
-        printf("  __DATA: 0x%llx - 0x%llx (%llu bytes)\n",
-               (unsigned long long)data_vm_addr,
-               (unsigned long long)(data_vm_addr + data_size),
-               (unsigned long long)data_size);
     }
 
     return true;

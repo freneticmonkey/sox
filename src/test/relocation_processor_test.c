@@ -464,6 +464,7 @@ static MunitResult test_undefined_symbol_error(const MunitParameter params[], vo
     symbol->name = strdup("undefined_func");
     symbol->is_defined = false;
     symbol->section_index = -1;
+    symbol->defining_object = 0;  /* Symbol is from this object (index 0) */
 
     /* Add relocation referencing undefined symbol */
     add_relocation(obj, 0x10, RELOC_X64_PC32, 0, 0);

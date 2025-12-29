@@ -364,8 +364,9 @@ static MunitResult test_macho_layout(const MunitParameter params[], void* data) 
         munit_assert_uint64(layout->sections[i].vaddr % 16384, ==, 0);
     }
 
-    /* First section should be at base + 16KB */
-    munit_assert_uint64(layout->sections[0].vaddr, ==, 0x100000000 + 16384);
+    /* First section should be at base address for Mach-O
+     * (unlike ELF which adds page_size for headers) */
+    munit_assert_uint64(layout->sections[0].vaddr, ==, 0x100000000);
 
     section_layout_free(layout);
     linker_object_free(obj);

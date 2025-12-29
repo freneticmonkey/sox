@@ -192,6 +192,7 @@ project "test"
   }
 
   filter "system:macosx"
+    defines { "SOX_MACOS" }
     links {
       "c"
     }
@@ -200,6 +201,7 @@ project "test"
     }
 
   filter "system:linux"
+    defines { "SOX_LINUX" }
     libdirs {
       os.findlib("m"),
       os.findlib("c")

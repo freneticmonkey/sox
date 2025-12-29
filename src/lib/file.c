@@ -335,7 +335,6 @@ int _generate_native(vm_config_t *config, const char* path, const char* source) 
     } else {
         fprintf(stderr, "Error: Linking failed. Keeping object file: %s\n", object_file);
     }
-
     return link_result;
 }
 

@@ -7,14 +7,15 @@
 #include <sys/stat.h>
 #include <sys/utsname.h>
 
-// TODO: Custom linker headers will be added when integration is complete
-// #include "../native/linker_core.h"
-// #include "../native/object_reader.h"
-// #include "../native/symbol_resolver.h"
-// #include "../native/section_layout.h"
-// #include "../native/relocation_processor.h"
-// #include "../native/elf_executable.h"
-// #include "../native/macho_executable.h"
+// Custom linker headers
+#include "../native/linker_core.h"
+#include "../native/object_reader.h"
+#include "../native/symbol_resolver.h"
+#include "../native/section_layout.h"
+#include "../native/relocation_processor.h"
+#include "../native/elf_executable.h"
+#include "../native/macho_executable.h"
+#include "../native/archive_reader.h"
 
 #define MAX_LINKERS 5
 #define MAX_CMD_LEN 1024
@@ -468,29 +469,276 @@ bool linker_is_simple_link_job(const linker_options_t* options) {
 // This orchestrates all 5 phases of the custom linker
 int linker_link_custom(const linker_options_t* options) {
     if (options->verbose_linking || options->verbose) {
-        fprintf(stderr, "[CUSTOM LINKER] Custom linker requested\n");
+        fprintf(stderr, "[CUSTOM LINKER] Starting custom linking process\n");
+        fprintf(stderr, "[CUSTOM LINKER] Input: %s\n", options->input_file);
         fprintf(stderr, "[CUSTOM LINKER] Output: %s\n", options->output_file);
+        fprintf(stderr, "[CUSTOM LINKER] Target: %s-%s\n", options->target_os, options->target_arch);
     }
 
-    // TODO: Custom linker integration pending
-    // The custom linker phases (1-5) are implemented but the integration layer
-    // that orchestrates them with linker_context_t is not yet complete.
-    // Each phase uses specialized types (symbol_resolver_t, section_layout_t, etc.)
-    // that need proper initialization from the linker_context_t.
-    //
-    // For now, fall back to system linker until the integration is completed.
+    // Phase 1: Create linker context and read object file
+    if (options->verbose_linking || options->verbose) {
+        fprintf(stderr, "[CUSTOM LINKER] Phase 1: Reading object file...\n");
+    }
 
-    fprintf(stderr, "Warning: Custom linker integration not yet complete\n");
-    fprintf(stderr, "Falling back to system linker...\n\n");
-
-    // Get preferred system linker
-    linker_info_t linker = linker_get_preferred(options->target_os, options->target_arch);
-    if (!linker.available) {
-        fprintf(stderr, "Error: No system linker available for fallback\n");
+    linker_context_t* context = linker_context_new();
+    if (!context) {
+        fprintf(stderr, "Error: Failed to create linker context\n");
         return 1;
     }
 
-    return linker_invoke(linker, options);
+    // Set target format
+    if (strcmp(options->target_os, "linux") == 0) {
+        context->target_format = PLATFORM_FORMAT_ELF;
+    } else if (strcmp(options->target_os, "macos") == 0) {
+        context->target_format = PLATFORM_FORMAT_MACH_O;
+    } else {
+        fprintf(stderr, "Error: Unsupported target OS: %s\n", options->target_os);
+        linker_context_free(context);
+        return 1;
+    }
+
+    linker_object_t* obj = linker_read_object(options->input_file);
+    if (!obj) {
+        fprintf(stderr, "Error: Failed to read object file: %s\n", options->input_file);
+        linker_context_free(context);
+        return 1;
+    }
+
+    if (!linker_context_add_object(context, obj)) {
+        fprintf(stderr, "Error: Failed to add object to context\n");
+        linker_object_free(obj);
+        linker_context_free(context);
+        return 1;
+    }
+
+    // Phase 1.5: Extract runtime library if needed
+    if (options->link_runtime) {
+        if (options->verbose_linking || options->verbose) {
+            fprintf(stderr, "[CUSTOM LINKER] Phase 1.5: Extracting runtime library...\n");
+        }
+
+        // Search for runtime library in common locations
+        // Try architecture-specific archives first (lipo-extracted), then universal binaries
+        const char* candidates[] = {
+            "./build/libsox_runtime_arm64.a",   /* ARM64-specific (macOS) */
+            "./build/libsox_runtime_aarch64.a", /* ARM64-specific (Linux) */
+            "./build/libsox_runtime_x86_64.a",  /* x86_64-specific */
+            "./build/libsox_runtime.a",
+            "./build/x64/Debug/libsox_runtime.a",
+            "./build/x64/Release/libsox_runtime.a",
+            "./bin/x64/Debug/libsox_runtime.a",
+            "./bin/x64/Release/libsox_runtime.a",
+            NULL
+        };
+
+        const char* runtime_path = NULL;
+        struct stat st;
+        for (int i = 0; candidates[i] != NULL; i++) {
+            if (stat(candidates[i], &st) == 0) {
+                runtime_path = candidates[i];
+                if (options->verbose_linking || options->verbose) {
+                    fprintf(stderr, "[CUSTOM LINKER] Found runtime library: %s\n", runtime_path);
+                }
+                break;
+            }
+        }
+
+        if (!runtime_path) {
+            fprintf(stderr, "Error: Runtime library not found (searched standard locations)\n");
+            linker_context_free(context);
+            return 1;
+        }
+
+        // Extract runtime objects from archive
+        if (!archive_extract_objects(runtime_path, context, options->verbose_linking || options->verbose)) {
+            fprintf(stderr, "Error: Failed to extract runtime library objects\n");
+            linker_context_free(context);
+            return 1;
+        }
+    }
+
+    // Phase 2: Symbol resolution
+    if (options->verbose_linking || options->verbose) {
+        fprintf(stderr, "[CUSTOM LINKER] Phase 2: Resolving symbols...\n");
+    }
+
+    symbol_resolver_t* resolver = symbol_resolver_new();
+    if (!resolver) {
+        fprintf(stderr, "Error: Failed to create symbol resolver\n");
+        linker_context_free(context);
+        return 1;
+    }
+
+    // Add all objects to the symbol resolver
+    for (int i = 0; i < context->object_count; i++) {
+        symbol_resolver_add_object(resolver, context->objects[i], i);
+    }
+
+    if (!symbol_resolver_resolve(resolver)) {
+        fprintf(stderr, "Error: Symbol resolution failed\n");
+        int error_count;
+        linker_error_t* errors = symbol_resolver_get_errors(resolver, &error_count);
+        for (int i = 0; i < error_count; i++) {
+            fprintf(stderr, "  %s: %s\n",
+                    linker_error_type_name(errors[i].type),
+                    errors[i].message ? errors[i].message : "Unknown error");
+        }
+        symbol_resolver_free(resolver);
+        linker_context_free(context);
+        return 1;
+    }
+
+    // Phase 3: Section layout
+    if (options->verbose_linking || options->verbose) {
+        fprintf(stderr, "[CUSTOM LINKER] Phase 3: Computing section layout...\n");
+    }
+
+    uint64_t base_address = get_default_base_address(context->target_format);
+    section_layout_t* layout = section_layout_new(base_address, context->target_format);
+    if (!layout) {
+        fprintf(stderr, "Error: Failed to create section layout\n");
+        symbol_resolver_free(resolver);
+        linker_context_free(context);
+        return 1;
+    }
+
+    // Add all objects to the layout
+    for (int i = 0; i < context->object_count; i++) {
+        section_layout_add_object(layout, context->objects[i], i);
+    }
+
+    section_layout_compute(layout);
+
+    // Compute final symbol addresses based on layout
+    if (!symbol_resolver_compute_addresses(resolver, layout)) {
+        fprintf(stderr, "Error: Failed to compute symbol addresses\n");
+        section_layout_free(layout);
+        symbol_resolver_free(resolver);
+        linker_context_free(context);
+        return 1;
+    }
+
+    // Phase 4: Process relocations
+    if (options->verbose_linking || options->verbose) {
+        fprintf(stderr, "[CUSTOM LINKER] Phase 4: Processing relocations...\n");
+    }
+
+    relocation_processor_t* reloc_proc = relocation_processor_new(context, layout, resolver);
+    if (!reloc_proc) {
+        fprintf(stderr, "Error: Failed to create relocation processor\n");
+        section_layout_free(layout);
+        symbol_resolver_free(resolver);
+        linker_context_free(context);
+        return 1;
+    }
+
+    if (!relocation_processor_process_all(reloc_proc)) {
+        fprintf(stderr, "Error: Relocation processing failed\n");
+        int error_count;
+        relocation_error_t* errors = relocation_processor_get_errors(reloc_proc, &error_count);
+        for (int i = 0; i < error_count; i++) {
+            fprintf(stderr, "  %s: %s\n",
+                    relocation_error_type_name(errors[i].type),
+                    errors[i].message ? errors[i].message : "Unknown error");
+        }
+        relocation_processor_free(reloc_proc);
+        section_layout_free(layout);
+        symbol_resolver_free(resolver);
+        linker_context_free(context);
+        return 1;
+    }
+
+    // Phase 5: Generate executable
+    if (options->verbose_linking || options->verbose) {
+        fprintf(stderr, "[CUSTOM LINKER] Phase 5: Generating executable...\n");
+    }
+
+    // Convert merged_section_t to linker_section_t for executable generation
+    context->merged_sections = (linker_section_t*)malloc(layout->section_count * sizeof(linker_section_t));
+    if (!context->merged_sections) {
+        fprintf(stderr, "Error: Failed to allocate merged sections\n");
+        relocation_processor_free(reloc_proc);
+        section_layout_free(layout);
+        symbol_resolver_free(resolver);
+        linker_context_free(context);
+        return 1;
+    }
+
+    context->merged_section_count = layout->section_count;
+    for (int i = 0; i < layout->section_count; i++) {
+        merged_section_t* src = &layout->sections[i];
+        linker_section_t* dst = &context->merged_sections[i];
+
+        dst->name = src->name ? strdup(src->name) : NULL;
+        dst->type = src->type;
+        dst->data = src->data;
+        dst->size = src->size;
+        dst->alignment = src->alignment;
+        dst->vaddr = src->vaddr;
+        dst->flags = src->flags;
+        dst->object_index = 0;  // Merged from multiple objects
+
+        // Transfer ownership: prevent double-free when both layout and context are freed
+        src->data = NULL;
+        src->name = NULL;
+    }
+
+    context->base_address = layout->base_address;
+    context->total_size = layout->total_size;
+
+    // Find entry point symbol
+    // Note: Mach-O reader strips underscore prefix, so we search for "main" not "_main"
+    // ELF uses "_start" or "main" depending on the runtime
+    linker_symbol_t* entry_sym = symbol_resolver_lookup(resolver, "main");
+    if (!entry_sym && context->target_format == PLATFORM_FORMAT_ELF) {
+        entry_sym = symbol_resolver_lookup(resolver, "_start");
+        if (!entry_sym) {
+            entry_sym = symbol_resolver_lookup(resolver, "main");
+        }
+    }
+    if (entry_sym && entry_sym->is_defined) {
+        context->entry_point = entry_sym->final_address;
+        if (options->verbose_linking || options->verbose) {
+            fprintf(stderr, "[CUSTOM LINKER] Entry point: _main at 0x%llx\n",
+                    (unsigned long long)context->entry_point);
+        }
+    } else {
+        if (!entry_sym) {
+            fprintf(stderr, "Warning: Entry point symbol '_main' not found\n");
+        } else {
+            fprintf(stderr, "Warning: Entry point symbol '_main' found but not defined (is_defined=%d, final_address=0x%llx)\n",
+                    entry_sym->is_defined, (unsigned long long)entry_sym->final_address);
+        }
+        if (options->verbose_linking || options->verbose) {
+            fprintf(stderr, "[CUSTOM LINKER] Using default entry point: 0x%llx\n",
+                    (unsigned long long)context->base_address);
+        }
+        /* Default to start of __text section */
+        context->entry_point = context->base_address;
+    }
+
+    bool success = false;
+    if (context->target_format == PLATFORM_FORMAT_ELF) {
+        success = elf_write_executable(options->output_file, context);
+    } else if (context->target_format == PLATFORM_FORMAT_MACH_O) {
+        success = macho_write_executable(options->output_file, context);
+    }
+
+    // Clean up
+    relocation_processor_free(reloc_proc);
+    section_layout_free(layout);
+    symbol_resolver_free(resolver);
+    linker_context_free(context);
+
+    if (success) {
+        if (options->verbose_linking || options->verbose) {
+            fprintf(stderr, "[CUSTOM LINKER] Successfully linked: %s\n", options->output_file);
+        }
+        return 0;
+    }
+
+    fprintf(stderr, "Error: Failed to generate executable\n");
+    return 1;
 }
 
 // Main linking entry point - Phase 6.1 API

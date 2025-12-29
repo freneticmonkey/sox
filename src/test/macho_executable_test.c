@@ -136,17 +136,29 @@ static MunitResult test_macho_calculate_load_commands_size(const MunitParameter 
 
     uint32_t size = macho_calculate_load_commands_size(context);
 
-    /* Expected size:
+    /* Expected size (updated to match actual implementation):
      * - LC_SEGMENT_64 (__TEXT): sizeof(segment_command_64_t) + 1 * sizeof(section_64_t)
      * - LC_SEGMENT_64 (__DATA): sizeof(segment_command_64_t) + 1 * sizeof(section_64_t)
      * - LC_MAIN: sizeof(entry_point_command_t)
      * - LC_LOAD_DYLINKER: sizeof(dylinker_command_t) + aligned path length
+     * - LC_SYMTAB: sizeof(symtab_command_t)
+     * - LC_DYSYMTAB: sizeof(dysymtab_command_t)
+     * - LC_UUID: sizeof(uuid_command_t)
+     * - LC_BUILD_VERSION: sizeof(build_version_command_t)
+     * - LC_SEGMENT_64 (__LINKEDIT): sizeof(segment_command_64_t)
+     * - LC_SEGMENT_64 (__PAGEZERO): sizeof(segment_command_64_t)
      */
     uint32_t expected_size = 0;
     expected_size += sizeof(segment_command_64_t) + sizeof(section_64_t);  /* __TEXT */
     expected_size += sizeof(segment_command_64_t) + sizeof(section_64_t);  /* __DATA */
     expected_size += sizeof(entry_point_command_t);  /* LC_MAIN */
     expected_size += sizeof(dylinker_command_t) + align_to(strlen(DYLD_PATH) + 1, 8);
+    expected_size += sizeof(symtab_command_t);  /* LC_SYMTAB */
+    expected_size += sizeof(dysymtab_command_t);  /* LC_DYSYMTAB */
+    expected_size += sizeof(uuid_command_t);  /* LC_UUID */
+    expected_size += sizeof(build_version_command_t);  /* LC_BUILD_VERSION */
+    expected_size += sizeof(segment_command_64_t);  /* __LINKEDIT */
+    expected_size += sizeof(segment_command_64_t);  /* __PAGEZERO */
 
     munit_assert_uint32(size, ==, expected_size);
 

@@ -106,8 +106,19 @@ relocation_type_t macho_map_relocation_type(uint32_t macho_type) {
             return RELOC_ARM64_ADR_PREL_PG_HI21;
         case ARM64_RELOC_GOT_LOAD_PAGEOFF12:
             return RELOC_ARM64_ADD_ABS_LO12_NC;
+        case ARM64_RELOC_TLVP_LOAD_PAGE21:
+            /* Thread-local variable page distance - map to page-relative */
+            return RELOC_ARM64_ADR_PREL_PG_HI21;
+        case ARM64_RELOC_TLVP_LOAD_PAGEOFF12:
+            /* Thread-local variable page offset - map to page offset */
+            return RELOC_ARM64_ADD_ABS_LO12_NC;
         case ARM64_RELOC_ADDEND:
             /* ADDEND is a modifier, not a standalone relocation */
+            return RELOC_NONE;
+        case ARM64_RELOC_SUBTRACTOR:
+            /* SUBTRACTOR is used in pairs with UNSIGNED for complex address calculations */
+            /* For now, we don't support this - requires special handling */
+            fprintf(stderr, "Warning: Unsupported Mach-O SUBTRACTOR relocation\n");
             return RELOC_NONE;
         default:
             fprintf(stderr, "Warning: Unknown Mach-O relocation type: %u\n", macho_type);
@@ -325,6 +336,15 @@ static bool parse_section_relocations(linker_object_t* obj, const uint8_t* data,
             continue;
         }
 
+        /* Map relocation type to unified type */
+        relocation_type_t unified_type = macho_map_relocation_type(type);
+
+        /* Skip unsupported relocation types (mapped to RELOC_NONE) */
+        if (unified_type == RELOC_NONE) {
+            /* Skip this relocation - it's not supported or is a modifier type */
+            continue;
+        }
+
         /* Add relocation to linker object */
         linker_relocation_t* link_reloc = linker_object_add_relocation(obj);
         if (!link_reloc) {
@@ -333,17 +353,22 @@ static bool parse_section_relocations(linker_object_t* obj, const uint8_t* data,
         }
 
         link_reloc->offset = (uint64_t)reloc->r_address;
-        link_reloc->type = macho_map_relocation_type(type);
+        link_reloc->type = unified_type;
         link_reloc->section_index = section_index;
         link_reloc->addend = 0;  /* TODO: Extract from ADDEND relocation if present */
         link_reloc->object_index = -1;  /* Will be set by caller */
 
         /* Set symbol index */
         if (external) {
+            /* External relocation - symbolnum is symbol table index */
             link_reloc->symbol_index = (int)symbolnum;
         } else {
-            /* Section-relative relocation - symbolnum is section number (1-based) */
-            link_reloc->symbol_index = -1;  /* No symbol, section-relative */
+            /* Section-relative relocation - symbolnum is section number (1-based in Mach-O)
+             * Encode as negative: -(section_num + 2)
+             * This allows: -2 = section 0, -3 = section 1, etc.
+             * And -1 remains as "invalid" marker */
+            int target_section = (int)symbolnum - 1;  /* Convert to 0-based */
+            link_reloc->symbol_index = -(target_section + 2);
         }
     }
 
