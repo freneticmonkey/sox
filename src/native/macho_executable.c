@@ -175,10 +175,9 @@ uint32_t macho_calculate_load_commands_size(linker_context_t* context) {
     size += sizeof(entry_point_command_t);
 
     /* LC_LOAD_DYLINKER */
-    size += sizeof(dylinker_command_t);
-    /* Add space for dylinker path string (aligned to 8 bytes) */
     size_t dyld_path_len = strlen(DYLD_PATH) + 1;
-    size += align_to(dyld_path_len, 8);
+    size_t dyld_cmd_size = sizeof(dylinker_command_t) + dyld_path_len;
+    size += align_to(dyld_cmd_size, 8);
 
     /* LC_SYMTAB */
     size += sizeof(symtab_command_t);
@@ -288,16 +287,30 @@ bool macho_write_executable(const char* output_path,
         context->entry_point += text_file_offset;
     }
 
-    uint64_t data_file_offset = text_file_offset + round_up_to_page(text_size, page_size);
-    uint64_t linkedit_file_offset = data_file_offset + round_up_to_page(data_filesize, page_size);
-
     /* Calculate virtual addresses */
     uint64_t base_addr = context->base_address;
     if (base_addr == 0) {
         base_addr = get_default_base_address(PLATFORM_FORMAT_MACH_O);
     }
     uint64_t text_vm_addr = base_addr;
-    uint64_t data_vm_addr = text_vm_addr + round_up_to_page(text_size, page_size);
+
+    /* Compute actual __TEXT segment filesize from adjusted section addresses */
+    uint64_t text_filesize = 0;
+    for (int i = 0; i < context->merged_section_count; i++) {
+        if (context->merged_sections[i].type == SECTION_TYPE_TEXT ||
+            context->merged_sections[i].type == SECTION_TYPE_RODATA) {
+            uint64_t end = (context->merged_sections[i].vaddr - text_vm_addr) +
+                           context->merged_sections[i].size;
+            if (end > text_filesize) {
+                text_filesize = end;
+            }
+        }
+    }
+
+    uint64_t data_file_offset = round_up_to_page(text_filesize, page_size);
+    uint64_t linkedit_file_offset = data_file_offset + round_up_to_page(data_filesize, page_size);
+
+    uint64_t data_vm_addr = text_vm_addr + data_file_offset;
     uint64_t linkedit_vm_addr = data_vm_addr + round_up_to_page(data_vmsize, page_size);
 
     /* Create Mach-O header */
@@ -350,10 +363,10 @@ bool macho_write_executable(const char* output_path,
                            text_section_count * sizeof(section_64_t);
     strncpy(text_segment.segname, SEG_TEXT, 16);
     text_segment.vmaddr = text_vm_addr;
-    text_segment.vmsize = round_up_to_page(text_size, page_size);
+    text_segment.vmsize = round_up_to_page(text_filesize, page_size);
     /* __TEXT segment starts at file offset 0 and includes headers + load commands */
     text_segment.fileoff = 0;
-    text_segment.filesize = text_file_offset + text_size;
+    text_segment.filesize = text_filesize;
     text_segment.maxprot = VM_PROT_READ | VM_PROT_EXECUTE;
     text_segment.initprot = VM_PROT_READ | VM_PROT_EXECUTE;
     text_segment.nsects = text_section_count;
@@ -372,9 +385,9 @@ bool macho_write_executable(const char* output_path,
             strncpy(text_sect.sectname, SECT_TEXT, 16);
             strncpy(text_sect.segname, SEG_TEXT, 16);
             /* Use vaddr from merged section (already adjusted for headers) */
-            text_sect.addr = context->merged_sections[i].vaddr + current_offset;
+            text_sect.addr = context->merged_sections[i].vaddr;
             text_sect.size = context->merged_sections[i].size;
-            text_sect.offset = (uint32_t)(text_file_offset + current_offset);
+            text_sect.offset = (uint32_t)(text_sect.addr - text_vm_addr);
             text_sect.align = 4;  /* 2^4 = 16 bytes for ARM64 */
             text_sect.reloff = 0;
             text_sect.nreloc = 0;
@@ -401,9 +414,9 @@ bool macho_write_executable(const char* output_path,
             strncpy(const_sect.sectname, SECT_CONST, 16);
             strncpy(const_sect.segname, SEG_TEXT, 16);
             /* Use vaddr from merged section (already adjusted for headers) */
-            const_sect.addr = context->merged_sections[i].vaddr + current_offset;
+            const_sect.addr = context->merged_sections[i].vaddr;
             const_sect.size = context->merged_sections[i].size;
-            const_sect.offset = (uint32_t)(text_file_offset + current_offset);
+            const_sect.offset = (uint32_t)(const_sect.addr - text_vm_addr);
             const_sect.align = 3;  /* 2^3 = 8 bytes */
             const_sect.reloff = 0;
             const_sect.nreloc = 0;
@@ -481,7 +494,7 @@ bool macho_write_executable(const char* output_path,
             bss_sect.align = 3;  /* 2^3 = 8 bytes */
             bss_sect.reloff = 0;
             bss_sect.nreloc = 0;
-            bss_sect.flags = S_REGULAR;
+            bss_sect.flags = S_ZEROFILL;
             bss_sect.reserved1 = 0;
             bss_sect.reserved2 = 0;
             bss_sect.reserved3 = 0;
@@ -533,7 +546,8 @@ bool macho_write_executable(const char* output_path,
     dylinker_command_t dyld_cmd = {0};
     dyld_cmd.cmd = LC_LOAD_DYLINKER;
     size_t dyld_path_len = strlen(DYLD_PATH) + 1;
-    dyld_cmd.cmdsize = (uint32_t)(sizeof(dylinker_command_t) + align_to(dyld_path_len, 8));
+    size_t dyld_cmd_size = sizeof(dylinker_command_t) + dyld_path_len;
+    dyld_cmd.cmdsize = (uint32_t)align_to(dyld_cmd_size, 8);
     dyld_cmd.name_offset = sizeof(dylinker_command_t);
 
     if (!write_struct(f, &dyld_cmd, sizeof(dyld_cmd))) {
@@ -549,7 +563,7 @@ bool macho_write_executable(const char* output_path,
     }
 
     /* Write padding to align dylinker command */
-    size_t dyld_padding = align_to(dyld_path_len, 8) - dyld_path_len;
+    size_t dyld_padding = dyld_cmd.cmdsize - sizeof(dylinker_command_t) - dyld_path_len;
     if (!write_padding(f, dyld_padding)) {
         fclose(f);
         return false;
@@ -655,17 +669,28 @@ bool macho_write_executable(const char* output_path,
     }
 
     /* Align to 8-byte boundary before __const section */
-    current_pos = text_file_offset;
+    uint64_t const_offset = 0;
     for (int i = 0; i < context->merged_section_count; i++) {
-        if (context->merged_sections[i].type == SECTION_TYPE_TEXT) {
-            current_pos += context->merged_sections[i].size;
+        if (context->merged_sections[i].type == SECTION_TYPE_RODATA) {
+            const_offset = (context->merged_sections[i].vaddr - text_vm_addr);
             break;
         }
     }
-    uint64_t aligned_pos = align_to(current_pos, 8);
-    if (!write_padding(f, aligned_pos - current_pos)) {
-        fclose(f);
-        return false;
+
+    if (const_offset > 0) {
+        current_pos = text_file_offset;
+        for (int i = 0; i < context->merged_section_count; i++) {
+            if (context->merged_sections[i].type == SECTION_TYPE_TEXT) {
+                current_pos += context->merged_sections[i].size;
+                break;
+            }
+        }
+        if (const_offset > current_pos) {
+            if (!write_padding(f, const_offset - current_pos)) {
+                fclose(f);
+                return false;
+            }
+        }
     }
 
     /* Write __const section data (rodata) */
@@ -685,8 +710,8 @@ bool macho_write_executable(const char* output_path,
     }
 
     /* Pad to page boundary before __DATA segment */
-    current_pos = text_file_offset + text_size;
-    aligned_pos = round_up_to_page(current_pos, page_size);
+    current_pos = text_filesize;
+    uint64_t aligned_pos = round_up_to_page(current_pos, page_size);
     if (!write_padding(f, aligned_pos - current_pos)) {
         fclose(f);
         return false;

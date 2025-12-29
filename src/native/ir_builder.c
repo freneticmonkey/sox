@@ -723,19 +723,38 @@ ir_function_t* ir_builder_build_function(ir_builder_t* builder, obj_function_t* 
 }
 
 static ir_function_t* ir_builder_build_function_recursive(ir_builder_t* builder, obj_function_t* function) {
-    ir_function_t* existing = ir_builder_lookup_function(builder, function);
-    if (existing) {
-        if (existing->block_count == 0) {
-            ir_builder_build_function_body(builder, function, existing);
-        }
-        return existing;
+    ir_function_t* ir_func = ir_builder_lookup_function(builder, function);
+    if (!ir_func) {
+        ir_func = ir_builder_create_function(function);
+        ir_module_add_function(builder->module, ir_func);
+        ir_builder_record_function(builder, function, ir_func);
     }
 
-    ir_function_t* ir_func = ir_builder_create_function(function);
-    ir_module_add_function(builder->module, ir_func);
-    ir_builder_record_function(builder, function, ir_func);
-
     value_array_t* constants = &function->chunk.constants;
+    for (size_t i = 0; i < constants->count; i++) {
+        value_t constant = constants->values[i];
+        if (!IS_OBJ(constant)) {
+            continue;
+        }
+
+        obj_function_t* nested = NULL;
+        if (AS_OBJ(constant)->type == OBJ_FUNCTION) {
+            nested = AS_FUNCTION(constant);
+        } else if (AS_OBJ(constant)->type == OBJ_CLOSURE) {
+            nested = ((obj_closure_t*)AS_OBJ(constant))->function;
+        }
+
+        if (nested && !ir_builder_lookup_function(builder, nested)) {
+            ir_function_t* nested_ir = ir_builder_create_function(nested);
+            ir_module_add_function(builder->module, nested_ir);
+            ir_builder_record_function(builder, nested, nested_ir);
+        }
+    }
+
+    if (ir_func->block_count == 0) {
+        ir_builder_build_function_body(builder, function, ir_func);
+    }
+
     for (size_t i = 0; i < constants->count; i++) {
         value_t constant = constants->values[i];
         if (!IS_OBJ(constant)) {
@@ -754,7 +773,6 @@ static ir_function_t* ir_builder_build_function_recursive(ir_builder_t* builder,
         }
     }
 
-    ir_builder_build_function_body(builder, function, ir_func);
     return ir_func;
 }
 

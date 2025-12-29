@@ -64,6 +64,8 @@
 #define VM_PROT_WRITE 0x02          /* Write permission */
 #define VM_PROT_EXECUTE 0x04        /* Execute permission */
 
+#define S_ZEROFILL 0x1              /* Zero-filled section (no file content) */
+
 /* Segment names */
 #define SEG_TEXT "__TEXT"           /* Text segment name */
 #define SEG_DATA "__DATA"           /* Data segment name */
