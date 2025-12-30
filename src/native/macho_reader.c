@@ -43,6 +43,12 @@ static section_type_t map_section_type(const char* sectname, const char* segname
         return SECTION_TYPE_TEXT;
     } else if (strcmp(sectname, "__data") == 0 && strcmp(segname, "__DATA") == 0) {
         return SECTION_TYPE_DATA;
+    } else if (strcmp(sectname, "__thread_vars") == 0 && strcmp(segname, "__DATA") == 0) {
+        return SECTION_TYPE_TLV;
+    } else if (strcmp(sectname, "__thread_data") == 0 && strcmp(segname, "__DATA") == 0) {
+        return SECTION_TYPE_TDATA;
+    } else if (strcmp(sectname, "__thread_bss") == 0 && strcmp(segname, "__DATA") == 0) {
+        return SECTION_TYPE_TBSS;
     } else if (strcmp(sectname, "__bss") == 0 && strcmp(segname, "__DATA") == 0) {
         return SECTION_TYPE_BSS;
     } else if (strcmp(sectname, "__rodata") == 0 ||
@@ -107,11 +113,9 @@ relocation_type_t macho_map_relocation_type(uint32_t macho_type) {
         case ARM64_RELOC_GOT_LOAD_PAGEOFF12:
             return RELOC_ARM64_ADD_ABS_LO12_NC;
         case ARM64_RELOC_TLVP_LOAD_PAGE21:
-            /* Thread-local variable page distance - map to page-relative */
-            return RELOC_ARM64_ADR_PREL_PG_HI21;
+            return RELOC_ARM64_TLVP_LOAD_PAGE21;
         case ARM64_RELOC_TLVP_LOAD_PAGEOFF12:
-            /* Thread-local variable page offset - map to page offset */
-            return RELOC_ARM64_ADD_ABS_LO12_NC;
+            return RELOC_ARM64_TLVP_LOAD_PAGEOFF12;
         case ARM64_RELOC_ADDEND:
             /* ADDEND is a modifier, not a standalone relocation */
             return RELOC_NONE;

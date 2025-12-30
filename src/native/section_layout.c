@@ -104,6 +104,12 @@ const char* get_platform_section_name(platform_format_t format,
                 return "__DATA,__bss";
             case SECTION_TYPE_RODATA:
                 return "__TEXT,__const";
+            case SECTION_TYPE_TLV:
+                return "__DATA,__thread_vars";
+            case SECTION_TYPE_TDATA:
+                return "__DATA,__thread_data";
+            case SECTION_TYPE_TBSS:
+                return "__DATA,__thread_bss";
             default:
                 return "__TEXT,__unknown";
         }
@@ -118,6 +124,11 @@ const char* get_platform_section_name(platform_format_t format,
                 return ".bss";
             case SECTION_TYPE_RODATA:
                 return ".rodata";
+            case SECTION_TYPE_TLV:
+            case SECTION_TYPE_TDATA:
+                return ".tdata";
+            case SECTION_TYPE_TBSS:
+                return ".tbss";
             default:
                 return ".unknown";
         }
@@ -400,17 +411,20 @@ static int compare_sections_for_layout(const void* a, const void* b) {
     const merged_section_t* sec_a = (const merged_section_t*)a;
     const merged_section_t* sec_b = (const merged_section_t*)b;
 
-    /* Order: text (0), rodata (3), data (1), bss (2) */
+    /* Order: text, rodata, data, tlv, tdata, tbss, bss, unknown */
     static const int order[] = {
-        [SECTION_TYPE_UNKNOWN] = 4,
+        [SECTION_TYPE_UNKNOWN] = 7,
         [SECTION_TYPE_TEXT] = 0,
         [SECTION_TYPE_DATA] = 2,
-        [SECTION_TYPE_BSS] = 3,
-        [SECTION_TYPE_RODATA] = 1
+        [SECTION_TYPE_BSS] = 6,
+        [SECTION_TYPE_RODATA] = 1,
+        [SECTION_TYPE_TLV] = 3,
+        [SECTION_TYPE_TDATA] = 4,
+        [SECTION_TYPE_TBSS] = 5
     };
 
-    int order_a = (sec_a->type < 5) ? order[sec_a->type] : 4;
-    int order_b = (sec_b->type < 5) ? order[sec_b->type] : 4;
+    int order_a = (sec_a->type < (int)(sizeof(order) / sizeof(order[0]))) ? order[sec_a->type] : 7;
+    int order_b = (sec_b->type < (int)(sizeof(order) / sizeof(order[0]))) ? order[sec_b->type] : 7;
 
     return order_a - order_b;
 }
@@ -420,7 +434,7 @@ void section_layout_compute(section_layout_t* layout) {
         return;
     }
 
-    /* Sort sections: .text, .rodata, .data, .bss */
+    /* Sort sections: .text, .rodata, .data, .tlv, .tdata, .tbss, .bss */
     qsort(layout->sections, layout->section_count,
           sizeof(merged_section_t), compare_sections_for_layout);
 

@@ -135,6 +135,11 @@ bool relocation_processor_process_one(relocation_processor_t* proc,
         proc->relocations_skipped++;
         return true;
     }
+    if (reloc->type == RELOC_ARM64_TLVP_LOAD_PAGE21 ||
+        reloc->type == RELOC_ARM64_TLVP_LOAD_PAGEOFF12) {
+        proc->relocations_skipped++;
+        return true;
+    }
 
     /* Get the object */
     if (object_index < 0 || object_index >= proc->context->object_count) {

@@ -49,6 +49,291 @@ static bool write_padding(FILE* f, size_t count) {
     return success;
 }
 
+typedef struct {
+    nlist_64_t* symbols;
+    char** names;
+    int count;
+    int capacity;
+    char* strtab;
+    size_t strsize;
+    size_t strcap;
+} macho_symtab_t;
+
+typedef struct {
+    relocation_info_t* relocs;
+    int count;
+    int capacity;
+} macho_extrel_t;
+
+typedef struct {
+    uint8_t text;
+    uint8_t rodata;
+    uint8_t data;
+    uint8_t tlv;
+    uint8_t tdata;
+    uint8_t tbss;
+    uint8_t bss;
+} macho_section_index_map_t;
+
+static void macho_symtab_init(macho_symtab_t* table) {
+    table->symbols = NULL;
+    table->names = NULL;
+    table->count = 0;
+    table->capacity = 0;
+    table->strtab = (char*)malloc(1);
+    table->strsize = 1;
+    table->strcap = 1;
+    if (table->strtab) {
+        table->strtab[0] = '\0';
+    }
+}
+
+static void macho_symtab_free(macho_symtab_t* table) {
+    if (!table) {
+        return;
+    }
+    if (table->names) {
+        for (int i = 0; i < table->count; i++) {
+            free(table->names[i]);
+        }
+        free(table->names);
+    }
+    free(table->symbols);
+    free(table->strtab);
+}
+
+static bool macho_symtab_has_name(macho_symtab_t* table, const char* name) {
+    for (int i = 0; i < table->count; i++) {
+        if (strcmp(table->names[i], name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static int macho_symtab_get_index(macho_symtab_t* table, const char* name) {
+    for (int i = 0; i < table->count; i++) {
+        if (strcmp(table->names[i], name) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static bool macho_symtab_add_undef(macho_symtab_t* table, const char* name) {
+    if (!table || !name || name[0] == '\0') {
+        return false;
+    }
+
+    const char* base = name;
+    size_t base_len = strlen(base);
+    size_t full_len = base_len + (base[0] == '_' ? 0 : 1);
+    char* full_name = (char*)malloc(full_len + 1);
+    if (!full_name) {
+        return false;
+    }
+
+    if (base[0] == '_') {
+        memcpy(full_name, base, base_len + 1);
+    } else {
+        full_name[0] = '_';
+        memcpy(full_name + 1, base, base_len + 1);
+    }
+
+    if (macho_symtab_has_name(table, full_name)) {
+        free(full_name);
+        return true;
+    }
+
+    if (table->capacity < table->count + 1) {
+        int old_capacity = table->capacity;
+        int new_capacity = old_capacity < 16 ? 16 : old_capacity * 2;
+        nlist_64_t* new_syms = realloc(table->symbols, new_capacity * sizeof(nlist_64_t));
+        char** new_names = realloc(table->names, new_capacity * sizeof(char*));
+        if (!new_syms || !new_names) {
+            free(new_syms);
+            free(new_names);
+            free(full_name);
+            return false;
+        }
+        table->symbols = new_syms;
+        table->names = new_names;
+        table->capacity = new_capacity;
+    }
+
+    size_t needed = table->strsize + full_len + 1;
+    if (needed > table->strcap) {
+        size_t new_cap = table->strcap < 64 ? 64 : table->strcap * 2;
+        while (new_cap < needed) {
+            new_cap *= 2;
+        }
+        char* new_strtab = realloc(table->strtab, new_cap);
+        if (!new_strtab) {
+            free(full_name);
+            return false;
+        }
+        table->strtab = new_strtab;
+        table->strcap = new_cap;
+    }
+
+    uint32_t strx = (uint32_t)table->strsize;
+    memcpy(table->strtab + table->strsize, full_name, full_len + 1);
+    table->strsize += full_len + 1;
+
+    nlist_64_t* sym = &table->symbols[table->count];
+    sym->n_strx = strx;
+    sym->n_type = N_UNDF | N_EXT;
+    sym->n_sect = 0;
+    sym->n_desc = 0;
+    sym->n_value = 0;
+
+    table->names[table->count] = full_name;
+    table->count++;
+    return true;
+}
+
+static bool macho_symtab_add_defined(macho_symtab_t* table,
+                                     const char* name,
+                                     uint8_t n_sect,
+                                     uint64_t value) {
+    if (!table || !name || name[0] == '\0') {
+        return false;
+    }
+
+    const char* base = name;
+    size_t base_len = strlen(base);
+    size_t full_len = base_len + (base[0] == '_' ? 0 : 1);
+    char* full_name = (char*)malloc(full_len + 1);
+    if (!full_name) {
+        return false;
+    }
+
+    if (base[0] == '_') {
+        memcpy(full_name, base, base_len + 1);
+    } else {
+        full_name[0] = '_';
+        memcpy(full_name + 1, base, base_len + 1);
+    }
+
+    if (macho_symtab_has_name(table, full_name)) {
+        free(full_name);
+        return true;
+    }
+
+    if (table->capacity < table->count + 1) {
+        int old_capacity = table->capacity;
+        int new_capacity = old_capacity < 16 ? 16 : old_capacity * 2;
+        nlist_64_t* new_syms = realloc(table->symbols, new_capacity * sizeof(nlist_64_t));
+        char** new_names = realloc(table->names, new_capacity * sizeof(char*));
+        if (!new_syms || !new_names) {
+            free(new_syms);
+            free(new_names);
+            free(full_name);
+            return false;
+        }
+        table->symbols = new_syms;
+        table->names = new_names;
+        table->capacity = new_capacity;
+    }
+
+    size_t needed = table->strsize + full_len + 1;
+    if (needed > table->strcap) {
+        size_t new_cap = table->strcap < 64 ? 64 : table->strcap * 2;
+        while (new_cap < needed) {
+            new_cap *= 2;
+        }
+        char* new_strtab = realloc(table->strtab, new_cap);
+        if (!new_strtab) {
+            free(full_name);
+            return false;
+        }
+        table->strtab = new_strtab;
+        table->strcap = new_cap;
+    }
+
+    uint32_t strx = (uint32_t)table->strsize;
+    memcpy(table->strtab + table->strsize, full_name, full_len + 1);
+    table->strsize += full_len + 1;
+
+    nlist_64_t* sym = &table->symbols[table->count];
+    sym->n_strx = strx;
+    sym->n_type = N_SECT | N_EXT;
+    sym->n_sect = n_sect;
+    sym->n_desc = 0;
+    sym->n_value = value;
+
+    table->names[table->count] = full_name;
+    table->count++;
+    return true;
+}
+
+static void macho_extrel_init(macho_extrel_t* table) {
+    table->relocs = NULL;
+    table->count = 0;
+    table->capacity = 0;
+}
+
+static void macho_extrel_free(macho_extrel_t* table) {
+    free(table->relocs);
+}
+
+static bool macho_extrel_add(macho_extrel_t* table, relocation_info_t reloc) {
+    if (table->capacity < table->count + 1) {
+        int old_capacity = table->capacity;
+        int new_capacity = old_capacity < 32 ? 32 : old_capacity * 2;
+        relocation_info_t* new_relocs = realloc(table->relocs, new_capacity * sizeof(relocation_info_t));
+        if (!new_relocs) {
+            return false;
+        }
+        table->relocs = new_relocs;
+        table->capacity = new_capacity;
+    }
+    table->relocs[table->count++] = reloc;
+    return true;
+}
+
+static linker_section_t* macho_find_merged_section(linker_context_t* context,
+                                                   section_type_t type) {
+    if (!context) {
+        return NULL;
+    }
+    for (int i = 0; i < context->merged_section_count; i++) {
+        if (context->merged_sections[i].type == type) {
+            return &context->merged_sections[i];
+        }
+    }
+    return NULL;
+}
+
+static macho_section_index_map_t macho_compute_section_indices(linker_context_t* context) {
+    macho_section_index_map_t map = {0};
+    uint8_t index = 1;
+
+    if (macho_find_merged_section(context, SECTION_TYPE_TEXT)) {
+        map.text = index++;
+    }
+    if (macho_find_merged_section(context, SECTION_TYPE_RODATA)) {
+        map.rodata = index++;
+    }
+    if (macho_find_merged_section(context, SECTION_TYPE_DATA)) {
+        map.data = index++;
+    }
+    if (macho_find_merged_section(context, SECTION_TYPE_TLV)) {
+        map.tlv = index++;
+    }
+    if (macho_find_merged_section(context, SECTION_TYPE_TDATA)) {
+        map.tdata = index++;
+    }
+    if (macho_find_merged_section(context, SECTION_TYPE_TBSS)) {
+        map.tbss = index++;
+    }
+    if (macho_find_merged_section(context, SECTION_TYPE_BSS)) {
+        map.bss = index++;
+    }
+
+    return map;
+}
+
 /**
  * Get section count for a segment
  */
@@ -82,6 +367,27 @@ uint32_t macho_get_segment_section_count(linker_context_t* context,
         /* Check for __data section */
         for (int i = 0; i < context->merged_section_count; i++) {
             if (context->merged_sections[i].type == SECTION_TYPE_DATA) {
+                count++;
+                break;
+            }
+        }
+        /* Check for __thread_vars section */
+        for (int i = 0; i < context->merged_section_count; i++) {
+            if (context->merged_sections[i].type == SECTION_TYPE_TLV) {
+                count++;
+                break;
+            }
+        }
+        /* Check for __thread_data section */
+        for (int i = 0; i < context->merged_section_count; i++) {
+            if (context->merged_sections[i].type == SECTION_TYPE_TDATA) {
+                count++;
+                break;
+            }
+        }
+        /* Check for __thread_bss section */
+        for (int i = 0; i < context->merged_section_count; i++) {
+            if (context->merged_sections[i].type == SECTION_TYPE_TBSS) {
                 count++;
                 break;
             }
@@ -137,6 +443,30 @@ uint64_t macho_calculate_segment_size(linker_context_t* context,
                 break;
             }
         }
+        /* Add __thread_vars section size */
+        for (int i = 0; i < context->merged_section_count; i++) {
+            if (context->merged_sections[i].type == SECTION_TYPE_TLV) {
+                size = align_to(size, 8);
+                size += context->merged_sections[i].size;
+                break;
+            }
+        }
+        /* Add __thread_data section size */
+        for (int i = 0; i < context->merged_section_count; i++) {
+            if (context->merged_sections[i].type == SECTION_TYPE_TDATA) {
+                size = align_to(size, 8);
+                size += context->merged_sections[i].size;
+                break;
+            }
+        }
+        /* Add __thread_bss section size */
+        for (int i = 0; i < context->merged_section_count; i++) {
+            if (context->merged_sections[i].type == SECTION_TYPE_TBSS) {
+                size = align_to(size, 8);
+                size += context->merged_sections[i].size;
+                break;
+            }
+        }
         /* Add __bss section size */
         for (int i = 0; i < context->merged_section_count; i++) {
             if (context->merged_sections[i].type == SECTION_TYPE_BSS) {
@@ -178,6 +508,11 @@ uint32_t macho_calculate_load_commands_size(linker_context_t* context) {
     size_t dyld_path_len = strlen(DYLD_PATH) + 1;
     size_t dyld_cmd_size = sizeof(dylinker_command_t) + dyld_path_len;
     size += align_to(dyld_cmd_size, 8);
+
+    /* LC_LOAD_DYLIB */
+    size_t lib_path_len = strlen(LIBSYSTEM_PATH) + 1;
+    size_t lib_cmd_size = sizeof(dylib_command_t) + lib_path_len;
+    size += align_to(lib_cmd_size, 8);
 
     /* LC_SYMTAB */
     size += sizeof(symtab_command_t);
@@ -258,18 +593,267 @@ bool macho_write_executable(const char* output_path,
     uint64_t text_size = macho_calculate_segment_size(context, SEG_TEXT);
     uint64_t data_vmsize = macho_calculate_segment_size(context, SEG_DATA);
 
-    /* Calculate DATA segment file size (exclude BSS which has no file content) */
+    /* Calculate DATA segment file size (exclude BSS/thread BSS which have no file content) */
     uint64_t data_filesize = 0;
-    for (int i = 0; i < context->merged_section_count; i++) {
-        if (context->merged_sections[i].type == SECTION_TYPE_DATA) {
-            data_filesize += context->merged_sections[i].size;
-            break;
+    uint64_t data_file_cursor = 0;
+    linker_section_t* data_section = macho_find_merged_section(context, SECTION_TYPE_DATA);
+    linker_section_t* tlv_section = macho_find_merged_section(context, SECTION_TYPE_TLV);
+    linker_section_t* tdata_section = macho_find_merged_section(context, SECTION_TYPE_TDATA);
+
+    if (data_section) {
+        data_file_cursor = align_to(data_file_cursor, 8);
+        data_file_cursor += data_section->size;
+    }
+    if (tlv_section) {
+        data_file_cursor = align_to(data_file_cursor, 8);
+        data_file_cursor += tlv_section->size;
+    }
+    if (tdata_section) {
+        data_file_cursor = align_to(data_file_cursor, 8);
+        data_file_cursor += tdata_section->size;
+    }
+    data_filesize = data_file_cursor;
+
+    uint64_t header_size = sizeof(mach_header_64_t);
+    uint64_t text_file_offset = round_up_to_page(header_size + load_cmds_size, page_size);
+    macho_section_index_map_t section_indices = macho_compute_section_indices(context);
+
+    macho_symtab_t symtab;
+    macho_symtab_init(&symtab);
+
+    for (int obj_idx = 0; obj_idx < context->object_count; obj_idx++) {
+        linker_object_t* obj = context->objects[obj_idx];
+        if (!obj) {
+            continue;
+        }
+        for (int sym_idx = 0; sym_idx < obj->symbol_count; sym_idx++) {
+            linker_symbol_t* symbol = &obj->symbols[sym_idx];
+            if (symbol->binding == SYMBOL_BINDING_LOCAL) {
+                continue;
+            }
+            if (symbol->name == NULL || symbol->name[0] == '\0') {
+                continue;
+            }
+            if (!symbol->is_defined || symbol->defining_object == -1) {
+                continue;
+            }
+            if (symbol->section_index < 0 || symbol->section_index >= obj->section_count) {
+                continue;
+            }
+
+            section_type_t type = obj->sections[symbol->section_index].type;
+            uint8_t n_sect = 0;
+            switch (type) {
+                case SECTION_TYPE_TEXT:   n_sect = section_indices.text; break;
+                case SECTION_TYPE_RODATA: n_sect = section_indices.rodata; break;
+                case SECTION_TYPE_DATA:   n_sect = section_indices.data; break;
+                case SECTION_TYPE_TLV:    n_sect = section_indices.tlv; break;
+                case SECTION_TYPE_TDATA:  n_sect = section_indices.tdata; break;
+                case SECTION_TYPE_TBSS:   n_sect = section_indices.tbss; break;
+                case SECTION_TYPE_BSS:    n_sect = section_indices.bss; break;
+                default:                  n_sect = 0; break;
+            }
+
+            if (n_sect == 0) {
+                continue;
+            }
+
+            uint64_t value = symbol->final_address;
+            if (type == SECTION_TYPE_TEXT || type == SECTION_TYPE_RODATA) {
+                value += text_file_offset;
+            }
+
+            if (!macho_symtab_add_defined(&symtab, symbol->name, n_sect, value)) {
+                fprintf(stderr, "Mach-O error: Failed to record defined symbol\n");
+                macho_symtab_free(&symtab);
+                return false;
+            }
         }
     }
 
+    for (int obj_idx = 0; obj_idx < context->object_count; obj_idx++) {
+        linker_object_t* obj = context->objects[obj_idx];
+        if (!obj) {
+            continue;
+        }
+        for (int sym_idx = 0; sym_idx < obj->symbol_count; sym_idx++) {
+            linker_symbol_t* symbol = &obj->symbols[sym_idx];
+            if (symbol->binding == SYMBOL_BINDING_LOCAL) {
+                continue;
+            }
+            if (symbol->name == NULL || symbol->name[0] == '\0') {
+                continue;
+            }
+            if (symbol->defining_object != -1) {
+                continue;
+            }
+            if (!macho_symtab_add_undef(&symtab, symbol->name)) {
+                fprintf(stderr, "Mach-O error: Failed to record undefined symbol\n");
+                macho_symtab_free(&symtab);
+                return false;
+            }
+        }
+    }
+    int defined_count = 0;
+    int undef_count = 0;
+
+    macho_extrel_t extrel;
+    macho_extrel_init(&extrel);
+
+    for (int obj_idx = 0; obj_idx < context->object_count; obj_idx++) {
+        linker_object_t* obj = context->objects[obj_idx];
+        if (!obj) {
+            continue;
+        }
+        for (int reloc_idx = 0; reloc_idx < obj->relocation_count; reloc_idx++) {
+            linker_relocation_t* reloc = &obj->relocations[reloc_idx];
+            if (reloc->symbol_index < 0 || reloc->symbol_index >= obj->symbol_count) {
+                continue;
+            }
+            linker_symbol_t* symbol = &obj->symbols[reloc->symbol_index];
+            if (symbol->binding == SYMBOL_BINDING_LOCAL) {
+                continue;
+            }
+            if (symbol->name == NULL || symbol->name[0] == '\0') {
+                continue;
+            }
+            if (symbol->defining_object != -1) {
+                continue;
+            }
+            if (reloc->section_index < 0 || reloc->section_index >= obj->section_count) {
+                continue;
+            }
+            linker_section_t* obj_section = &obj->sections[reloc->section_index];
+            linker_section_t* merged = NULL;
+            for (int i = 0; i < context->merged_section_count; i++) {
+                if (context->merged_sections[i].type == obj_section->type) {
+                    merged = &context->merged_sections[i];
+                    break;
+                }
+            }
+            if (!merged || !obj->section_base_addrs) {
+                continue;
+            }
+
+            const char* base_name = symbol->name ? symbol->name : "";
+            size_t base_len = strlen(base_name);
+            size_t full_len = base_len + (base_name[0] == '_' ? 0 : 1);
+            char* full_name = (char*)malloc(full_len + 1);
+            if (!full_name) {
+                macho_symtab_free(&symtab);
+                macho_extrel_free(&extrel);
+                return false;
+            }
+            if (base_name[0] == '_') {
+                memcpy(full_name, base_name, base_len + 1);
+            } else {
+                full_name[0] = '_';
+                memcpy(full_name + 1, base_name, base_len + 1);
+            }
+            int sym_index = macho_symtab_get_index(&symtab, full_name);
+            if (sym_index < 0 && symbol->is_defined &&
+                symbol->section_index >= 0 &&
+                symbol->section_index < obj->section_count) {
+                section_type_t type = obj->sections[symbol->section_index].type;
+                uint8_t n_sect = 0;
+                switch (type) {
+                    case SECTION_TYPE_TEXT:   n_sect = section_indices.text; break;
+                    case SECTION_TYPE_RODATA: n_sect = section_indices.rodata; break;
+                    case SECTION_TYPE_DATA:   n_sect = section_indices.data; break;
+                    case SECTION_TYPE_TLV:    n_sect = section_indices.tlv; break;
+                    case SECTION_TYPE_TDATA:  n_sect = section_indices.tdata; break;
+                    case SECTION_TYPE_TBSS:   n_sect = section_indices.tbss; break;
+                    case SECTION_TYPE_BSS:    n_sect = section_indices.bss; break;
+                    default:                  n_sect = 0; break;
+                }
+                if (n_sect != 0) {
+                    uint64_t value = symbol->final_address;
+                    if (type == SECTION_TYPE_TEXT || type == SECTION_TYPE_RODATA) {
+                        value += text_file_offset;
+                    }
+                    if (macho_symtab_add_defined(&symtab, symbol->name, n_sect, value)) {
+                        sym_index = macho_symtab_get_index(&symtab, full_name);
+                    }
+                }
+            }
+            free(full_name);
+            if (sym_index < 0) {
+                continue;
+            }
+
+            uint64_t section_base = obj->section_base_addrs[reloc->section_index];
+            uint64_t section_offset = section_base - merged->vaddr;
+            uint64_t reloc_offset = section_offset + reloc->offset;
+
+            uint32_t macho_type = 0;
+            bool is_pcrel = false;
+            uint32_t length = 2;
+            switch (reloc->type) {
+                case RELOC_ARM64_ABS64:
+                    macho_type = 0;
+                    is_pcrel = false;
+                    length = 3;
+                    break;
+                case RELOC_ARM64_CALL26:
+                case RELOC_ARM64_JUMP26:
+                    macho_type = 2;
+                    is_pcrel = true;
+                    length = 2;
+                    break;
+                case RELOC_ARM64_ADR_PREL_PG_HI21:
+                    macho_type = 3;
+                    is_pcrel = true;
+                    length = 2;
+                    break;
+                case RELOC_ARM64_ADD_ABS_LO12_NC:
+                    macho_type = 4;
+                    is_pcrel = false;
+                    length = 2;
+                    break;
+                case RELOC_ARM64_TLVP_LOAD_PAGE21:
+                    macho_type = 8;
+                    is_pcrel = true;
+                    length = 2;
+                    break;
+                case RELOC_ARM64_TLVP_LOAD_PAGEOFF12:
+                    macho_type = 9;
+                    is_pcrel = false;
+                    length = 2;
+                    break;
+                default:
+                    continue;
+            }
+
+            relocation_info_t info;
+            info.r_address = (int32_t)reloc_offset;
+            info.r_info = (sym_index & 0x00ffffff) |
+                          ((is_pcrel ? 1u : 0u) << 24) |
+                          ((length & 0x3u) << 25) |
+                          (1u << 27) |
+                          ((macho_type & 0xfu) << 28);
+
+            if (!macho_extrel_add(&extrel, info)) {
+                macho_symtab_free(&symtab);
+                macho_extrel_free(&extrel);
+                return false;
+            }
+        }
+    }
+
+    for (int i = 0; i < symtab.count; i++) {
+        if ((symtab.symbols[i].n_type & N_SECT) == N_SECT) {
+            defined_count++;
+        } else {
+            undef_count++;
+        }
+    }
+
+    uint64_t extrel_size = (uint64_t)extrel.count * sizeof(relocation_info_t);
+    uint64_t symtab_size = (uint64_t)symtab.count * sizeof(nlist_64_t);
+    uint64_t strtab_size = (uint64_t)symtab.strsize;
+    uint64_t linkedit_size = align_to(extrel_size + symtab_size + strtab_size, 8);
+
     /* Calculate file offsets */
-    uint64_t header_size = sizeof(mach_header_64_t);
-    uint64_t text_file_offset = round_up_to_page(header_size + load_cmds_size, page_size);
 
     /* Fix section virtual addresses to account for __TEXT segment headers
      * The __TEXT segment starts at base_address in VM, but the actual code sections
@@ -319,9 +903,9 @@ bool macho_write_executable(const char* output_path,
     header.cputype = CPU_TYPE_ARM64;
     header.cpusubtype = CPU_SUBTYPE_ARM64_ALL;
     header.filetype = MH_EXECUTE;
-    header.ncmds = 10;  /* __PAGEZERO, __TEXT, __DATA, __LINKEDIT, LC_MAIN, LC_LOAD_DYLINKER, LC_SYMTAB, LC_DYSYMTAB, LC_UUID, LC_BUILD_VERSION */
+    header.ncmds = 11;  /* __PAGEZERO, __TEXT, __DATA, __LINKEDIT, LC_MAIN, LC_LOAD_DYLINKER, LC_LOAD_DYLIB, LC_SYMTAB, LC_DYSYMTAB, LC_UUID, LC_BUILD_VERSION */
     header.sizeofcmds = load_cmds_size;
-    header.flags = MH_NOUNDEFS | MH_PIE;
+    header.flags = MH_DYLDLINK | MH_TWOLEVEL;
     header.reserved = 0;
 
     /* Open output file */
@@ -454,15 +1038,18 @@ bool macho_write_executable(const char* output_path,
     }
 
     /* Write __data section header */
-    current_offset = 0;
+    uint64_t data_vm_offset = 0;
+    uint64_t data_file_cursor_hdr = 0;
     for (int i = 0; i < context->merged_section_count; i++) {
         if (context->merged_sections[i].type == SECTION_TYPE_DATA) {
+            data_vm_offset = align_to(data_vm_offset, 8);
+            data_file_cursor_hdr = align_to(data_file_cursor_hdr, 8);
             section_64_t data_sect = {0};
             strncpy(data_sect.sectname, SECT_DATA, 16);
             strncpy(data_sect.segname, SEG_DATA, 16);
-            data_sect.addr = data_vm_addr + current_offset;
+            data_sect.addr = data_vm_addr + data_vm_offset;
             data_sect.size = context->merged_sections[i].size;
-            data_sect.offset = (uint32_t)(data_file_offset + current_offset);
+            data_sect.offset = (uint32_t)(data_file_offset + data_file_cursor_hdr);
             data_sect.align = 3;  /* 2^3 = 8 bytes */
             data_sect.reloff = 0;
             data_sect.nreloc = 0;
@@ -476,7 +1063,96 @@ bool macho_write_executable(const char* output_path,
                 return false;
             }
 
-            current_offset += context->merged_sections[i].size;
+            data_vm_offset += context->merged_sections[i].size;
+            data_file_cursor_hdr += context->merged_sections[i].size;
+            break;
+        }
+    }
+
+    /* Write __thread_vars section header */
+    for (int i = 0; i < context->merged_section_count; i++) {
+        if (context->merged_sections[i].type == SECTION_TYPE_TLV) {
+            data_vm_offset = align_to(data_vm_offset, 8);
+            data_file_cursor_hdr = align_to(data_file_cursor_hdr, 8);
+            section_64_t tlv_sect = {0};
+            strncpy(tlv_sect.sectname, SECT_TLV, 16);
+            strncpy(tlv_sect.segname, SEG_DATA, 16);
+            tlv_sect.addr = data_vm_addr + data_vm_offset;
+            tlv_sect.size = context->merged_sections[i].size;
+            tlv_sect.offset = (uint32_t)(data_file_offset + data_file_cursor_hdr);
+            tlv_sect.align = 3;  /* 2^3 = 8 bytes */
+            tlv_sect.reloff = 0;
+            tlv_sect.nreloc = 0;
+            tlv_sect.flags = S_THREAD_LOCAL_VARIABLES;
+            tlv_sect.reserved1 = 0;
+            tlv_sect.reserved2 = 0;
+            tlv_sect.reserved3 = 0;
+
+            if (!write_struct(f, &tlv_sect, sizeof(tlv_sect))) {
+                fclose(f);
+                return false;
+            }
+
+            data_vm_offset += context->merged_sections[i].size;
+            data_file_cursor_hdr += context->merged_sections[i].size;
+            break;
+        }
+    }
+
+    /* Write __thread_data section header */
+    for (int i = 0; i < context->merged_section_count; i++) {
+        if (context->merged_sections[i].type == SECTION_TYPE_TDATA) {
+            data_vm_offset = align_to(data_vm_offset, 8);
+            data_file_cursor_hdr = align_to(data_file_cursor_hdr, 8);
+            section_64_t tdata_sect = {0};
+            strncpy(tdata_sect.sectname, SECT_TDATA, 16);
+            strncpy(tdata_sect.segname, SEG_DATA, 16);
+            tdata_sect.addr = data_vm_addr + data_vm_offset;
+            tdata_sect.size = context->merged_sections[i].size;
+            tdata_sect.offset = (uint32_t)(data_file_offset + data_file_cursor_hdr);
+            tdata_sect.align = 3;  /* 2^3 = 8 bytes */
+            tdata_sect.reloff = 0;
+            tdata_sect.nreloc = 0;
+            tdata_sect.flags = S_THREAD_LOCAL_REGULAR;
+            tdata_sect.reserved1 = 0;
+            tdata_sect.reserved2 = 0;
+            tdata_sect.reserved3 = 0;
+
+            if (!write_struct(f, &tdata_sect, sizeof(tdata_sect))) {
+                fclose(f);
+                return false;
+            }
+
+            data_vm_offset += context->merged_sections[i].size;
+            data_file_cursor_hdr += context->merged_sections[i].size;
+            break;
+        }
+    }
+
+    /* Write __thread_bss section header */
+    for (int i = 0; i < context->merged_section_count; i++) {
+        if (context->merged_sections[i].type == SECTION_TYPE_TBSS) {
+            data_vm_offset = align_to(data_vm_offset, 8);
+            section_64_t tbss_sect = {0};
+            strncpy(tbss_sect.sectname, SECT_TBSS, 16);
+            strncpy(tbss_sect.segname, SEG_DATA, 16);
+            tbss_sect.addr = data_vm_addr + data_vm_offset;
+            tbss_sect.size = context->merged_sections[i].size;
+            tbss_sect.offset = 0;  /* Thread BSS has no file content */
+            tbss_sect.align = 3;  /* 2^3 = 8 bytes */
+            tbss_sect.reloff = 0;
+            tbss_sect.nreloc = 0;
+            tbss_sect.flags = S_THREAD_LOCAL_ZEROFILL;
+            tbss_sect.reserved1 = 0;
+            tbss_sect.reserved2 = 0;
+            tbss_sect.reserved3 = 0;
+
+            if (!write_struct(f, &tbss_sect, sizeof(tbss_sect))) {
+                fclose(f);
+                return false;
+            }
+
+            data_vm_offset += context->merged_sections[i].size;
             break;
         }
     }
@@ -484,11 +1160,11 @@ bool macho_write_executable(const char* output_path,
     /* Write __bss section header */
     for (int i = 0; i < context->merged_section_count; i++) {
         if (context->merged_sections[i].type == SECTION_TYPE_BSS) {
-            current_offset = align_to(current_offset, 8);
+            data_vm_offset = align_to(data_vm_offset, 8);
             section_64_t bss_sect = {0};
             strncpy(bss_sect.sectname, SECT_BSS, 16);
             strncpy(bss_sect.segname, SEG_DATA, 16);
-            bss_sect.addr = data_vm_addr + current_offset;
+            bss_sect.addr = data_vm_addr + data_vm_offset;
             bss_sect.size = context->merged_sections[i].size;
             bss_sect.offset = 0;  /* BSS has no file content */
             bss_sect.align = 3;  /* 2^3 = 8 bytes */
@@ -513,9 +1189,9 @@ bool macho_write_executable(const char* output_path,
     linkedit_segment.cmdsize = sizeof(segment_command_64_t);  /* No section headers */
     strncpy(linkedit_segment.segname, "__LINKEDIT", 16);
     linkedit_segment.vmaddr = linkedit_vm_addr;
-    linkedit_segment.vmsize = round_up_to_page(0, page_size);  /* Empty for now */
+    linkedit_segment.vmsize = round_up_to_page(linkedit_size, page_size);
     linkedit_segment.fileoff = linkedit_file_offset;
-    linkedit_segment.filesize = 0;  /* Empty for now */
+    linkedit_segment.filesize = linkedit_size;
     linkedit_segment.maxprot = VM_PROT_READ;
     linkedit_segment.initprot = VM_PROT_READ;
     linkedit_segment.nsects = 0;  /* No section headers */
@@ -566,20 +1242,53 @@ bool macho_write_executable(const char* output_path,
     size_t dyld_padding = dyld_cmd.cmdsize - sizeof(dylinker_command_t) - dyld_path_len;
     if (!write_padding(f, dyld_padding)) {
         fclose(f);
+        macho_symtab_free(&symtab);
         return false;
     }
 
-    /* Create and write LC_SYMTAB (empty symbol table for now) */
+    /* Create and write LC_LOAD_DYLIB */
+    dylib_command_t dylib_cmd = {0};
+    dylib_cmd.cmd = LC_LOAD_DYLIB;
+    size_t lib_path_len = strlen(LIBSYSTEM_PATH) + 1;
+    size_t dylib_cmd_size = sizeof(dylib_command_t) + lib_path_len;
+    dylib_cmd.cmdsize = (uint32_t)align_to(dylib_cmd_size, 8);
+    dylib_cmd.dylib.name_offset = sizeof(dylib_command_t);
+    dylib_cmd.dylib.timestamp = 0;
+    dylib_cmd.dylib.current_version = 0;
+    dylib_cmd.dylib.compatibility_version = 0;
+
+    if (!write_struct(f, &dylib_cmd, sizeof(dylib_cmd))) {
+        fclose(f);
+        macho_symtab_free(&symtab);
+        return false;
+    }
+
+    if (fwrite(LIBSYSTEM_PATH, lib_path_len, 1, f) != 1) {
+        fprintf(stderr, "Mach-O error: Failed to write dylib path\n");
+        fclose(f);
+        macho_symtab_free(&symtab);
+        return false;
+    }
+
+    size_t lib_padding = dylib_cmd.cmdsize - sizeof(dylib_command_t) - lib_path_len;
+    if (!write_padding(f, lib_padding)) {
+        fclose(f);
+        macho_symtab_free(&symtab);
+        return false;
+    }
+
+    /* Create and write LC_SYMTAB */
     symtab_command_t symtab_cmd = {0};
     symtab_cmd.cmd = LC_SYMTAB;
     symtab_cmd.cmdsize = sizeof(symtab_command_t);
-    symtab_cmd.symoff = 0;     /* No symbol table data */
-    symtab_cmd.nsyms = 0;
-    symtab_cmd.stroff = 0;
-    symtab_cmd.strsize = 0;
+    symtab_cmd.symoff = (uint32_t)(linkedit_file_offset + extrel_size);
+    symtab_cmd.nsyms = (uint32_t)symtab.count;
+    symtab_cmd.stroff = (uint32_t)(linkedit_file_offset + extrel_size + symtab_size);
+    symtab_cmd.strsize = (uint32_t)strtab_size;
 
     if (!write_struct(f, &symtab_cmd, sizeof(symtab_cmd))) {
         fclose(f);
+        macho_symtab_free(&symtab);
         return false;
     }
 
@@ -590,9 +1299,9 @@ bool macho_write_executable(const char* output_path,
     dysymtab_cmd.ilocalsym = 0;
     dysymtab_cmd.nlocalsym = 0;
     dysymtab_cmd.iextdefsym = 0;
-    dysymtab_cmd.nextdefsym = 0;
-    dysymtab_cmd.iundefsym = 0;
-    dysymtab_cmd.nundefsym = 0;
+    dysymtab_cmd.nextdefsym = (uint32_t)defined_count;
+    dysymtab_cmd.iundefsym = (uint32_t)defined_count;
+    dysymtab_cmd.nundefsym = (uint32_t)undef_count;
     dysymtab_cmd.tocoff = 0;
     dysymtab_cmd.ntoc = 0;
     dysymtab_cmd.modtaboff = 0;
@@ -601,13 +1310,14 @@ bool macho_write_executable(const char* output_path,
     dysymtab_cmd.nextrefsyms = 0;
     dysymtab_cmd.indirectsymoff = 0;
     dysymtab_cmd.nindirectsyms = 0;
-    dysymtab_cmd.extreloff = 0;
-    dysymtab_cmd.nextrel = 0;
+    dysymtab_cmd.extreloff = (uint32_t)linkedit_file_offset;
+    dysymtab_cmd.nextrel = (uint32_t)extrel.count;
     dysymtab_cmd.locreloff = 0;
     dysymtab_cmd.nlocrel = 0;
 
     if (!write_struct(f, &dysymtab_cmd, sizeof(dysymtab_cmd))) {
         fclose(f);
+        macho_symtab_free(&symtab);
         return false;
     }
 
@@ -640,6 +1350,7 @@ bool macho_write_executable(const char* output_path,
 
     if (!write_struct(f, &build_cmd, sizeof(build_cmd))) {
         fclose(f);
+        macho_symtab_free(&symtab);
         return false;
     }
 
@@ -648,6 +1359,7 @@ bool macho_write_executable(const char* output_path,
     size_t padding_before_text = text_file_offset - current_pos;
     if (!write_padding(f, padding_before_text)) {
         fclose(f);
+        macho_symtab_free(&symtab);
         return false;
     }
 
@@ -661,6 +1373,7 @@ bool macho_write_executable(const char* output_path,
                           context->merged_sections[i].size, 1, f) != 1) {
                     fprintf(stderr, "Mach-O error: Failed to write __text section data\n");
                     fclose(f);
+                    macho_symtab_free(&symtab);
                     return false;
                 }
             }
@@ -688,6 +1401,7 @@ bool macho_write_executable(const char* output_path,
         if (const_offset > current_pos) {
             if (!write_padding(f, const_offset - current_pos)) {
                 fclose(f);
+                macho_symtab_free(&symtab);
                 return false;
             }
         }
@@ -702,6 +1416,7 @@ bool macho_write_executable(const char* output_path,
                           context->merged_sections[i].size, 1, f) != 1) {
                     fprintf(stderr, "Mach-O error: Failed to write __const section data\n");
                     fclose(f);
+                    macho_symtab_free(&symtab);
                     return false;
                 }
             }
@@ -714,28 +1429,93 @@ bool macho_write_executable(const char* output_path,
     uint64_t aligned_pos = round_up_to_page(current_pos, page_size);
     if (!write_padding(f, aligned_pos - current_pos)) {
         fclose(f);
+        macho_symtab_free(&symtab);
         return false;
     }
 
     /* Write __DATA segment data */
-    /* Write __data section data */
-    for (int i = 0; i < context->merged_section_count; i++) {
-        if (context->merged_sections[i].type == SECTION_TYPE_DATA) {
-            if (context->merged_sections[i].data != NULL &&
-                context->merged_sections[i].size > 0) {
-                if (fwrite(context->merged_sections[i].data,
-                          context->merged_sections[i].size, 1, f) != 1) {
-                    fprintf(stderr, "Mach-O error: Failed to write __data section data\n");
-                    fclose(f);
-                    return false;
-                }
+    uint64_t data_written = 0;
+    linker_section_t* data_payloads[] = {
+        macho_find_merged_section(context, SECTION_TYPE_DATA),
+        macho_find_merged_section(context, SECTION_TYPE_TLV),
+        macho_find_merged_section(context, SECTION_TYPE_TDATA)
+    };
+
+    for (size_t i = 0; i < sizeof(data_payloads) / sizeof(data_payloads[0]); i++) {
+        linker_section_t* section = data_payloads[i];
+        if (!section || section->size == 0) {
+            continue;
+        }
+        uint64_t aligned = align_to(data_written, 8);
+        if (aligned > data_written) {
+            if (!write_padding(f, aligned - data_written)) {
+                fclose(f);
+                macho_symtab_free(&symtab);
+                return false;
             }
-            break;
+            data_written = aligned;
+        }
+        if (section->data != NULL) {
+            if (fwrite(section->data, section->size, 1, f) != 1) {
+                fprintf(stderr, "Mach-O error: Failed to write __DATA section data\n");
+                fclose(f);
+                macho_symtab_free(&symtab);
+                return false;
+            }
+        }
+        data_written += section->size;
+    }
+
+    current_pos = data_file_offset + data_filesize;
+    if (linkedit_file_offset > current_pos) {
+        if (!write_padding(f, linkedit_file_offset - current_pos)) {
+            fclose(f);
+            macho_symtab_free(&symtab);
+            return false;
+        }
+    }
+
+    if (extrel.count > 0) {
+        if (fwrite(extrel.relocs, extrel_size, 1, f) != 1) {
+            fprintf(stderr, "Mach-O error: Failed to write external relocations\n");
+            fclose(f);
+            macho_symtab_free(&symtab);
+            macho_extrel_free(&extrel);
+            return false;
+        }
+    }
+    if (symtab.count > 0) {
+        if (fwrite(symtab.symbols, symtab_size, 1, f) != 1) {
+            fprintf(stderr, "Mach-O error: Failed to write symbol table\n");
+            fclose(f);
+            macho_symtab_free(&symtab);
+            macho_extrel_free(&extrel);
+            return false;
+        }
+    }
+    if (symtab.strsize > 0) {
+        if (fwrite(symtab.strtab, symtab.strsize, 1, f) != 1) {
+            fprintf(stderr, "Mach-O error: Failed to write string table\n");
+            fclose(f);
+            macho_symtab_free(&symtab);
+            macho_extrel_free(&extrel);
+            return false;
+        }
+    }
+    uint64_t linkedit_written = extrel_size + symtab_size + (uint64_t)symtab.strsize;
+    if (linkedit_size > linkedit_written) {
+        if (!write_padding(f, linkedit_size - linkedit_written)) {
+            fclose(f);
+            macho_symtab_free(&symtab);
+            macho_extrel_free(&extrel);
+            return false;
         }
     }
 
     /* Note: __bss section has no file content (zero-initialized at runtime) */
 
+    macho_symtab_free(&symtab);
+    macho_extrel_free(&extrel);
     fclose(f);
 
     /* Set executable permissions (0755) */

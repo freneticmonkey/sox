@@ -609,6 +609,28 @@ int linker_link_custom(const linker_options_t* options) {
 
     section_layout_compute(layout);
 
+    for (int i = 0; i < context->object_count; i++) {
+        linker_object_t* obj = context->objects[i];
+        if (!obj) {
+            continue;
+        }
+        free(obj->section_base_addrs);
+        obj->section_base_addrs = NULL;
+        if (obj->section_count > 0) {
+            obj->section_base_addrs = calloc((size_t)obj->section_count, sizeof(uint64_t));
+            if (!obj->section_base_addrs) {
+                fprintf(stderr, "Error: Failed to allocate section base address table\n");
+                section_layout_free(layout);
+                symbol_resolver_free(resolver);
+                linker_context_free(context);
+                return 1;
+            }
+            for (int s = 0; s < obj->section_count; s++) {
+                obj->section_base_addrs[s] = section_layout_get_address(layout, i, s, 0);
+            }
+        }
+    }
+
     // Compute final symbol addresses based on layout
     if (!symbol_resolver_compute_addresses(resolver, layout)) {
         fprintf(stderr, "Error: Failed to compute symbol addresses\n");
