@@ -1510,7 +1510,7 @@ bool codegen_arm64_generate(codegen_arm64_context_t* ctx) {
         uint32_t instr = code[patch->offset];
         int32_t target_offset = (int32_t)patch->target->code_offset;
         int32_t current_offset = (int32_t)(patch->offset * 4);
-        int32_t rel = target_offset - current_offset;
+        int32_t rel = target_offset - (current_offset + 4);
         uint32_t imm26 = (rel >> 2) & 0x3FFFFFF;
         code[patch->offset] = (instr & 0xFC000000) | imm26;
     }

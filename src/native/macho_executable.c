@@ -2,6 +2,9 @@
 #include "macho_writer.h"
 #include "section_layout.h"
 #include "symbol_resolver.h"
+#include "relocation_processor.h"
+#include "instruction_patcher.h"
+#include "arm64_encoder.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -75,6 +78,447 @@ typedef struct {
     uint8_t bss;
 } macho_section_index_map_t;
 
+static int macho_symtab_get_index(macho_symtab_t* table, const char* name);
+static bool macho_symtab_add_undef(macho_symtab_t* table, const char* name);
+
+typedef struct {
+    char* name;
+    char* bind_name;
+    int symtab_index;
+} macho_stub_symbol_t;
+
+typedef struct {
+    macho_stub_symbol_t* items;
+    int count;
+    int capacity;
+} macho_stub_list_t;
+
+typedef struct {
+    uint8_t* data;
+    size_t size;
+    size_t capacity;
+} macho_byte_buffer_t;
+
+static void macho_stub_list_init(macho_stub_list_t* list) {
+    list->items = NULL;
+    list->count = 0;
+    list->capacity = 0;
+}
+
+static void macho_stub_list_free(macho_stub_list_t* list) {
+    if (!list) {
+        return;
+    }
+    for (int i = 0; i < list->count; i++) {
+        free(list->items[i].name);
+        free(list->items[i].bind_name);
+    }
+    free(list->items);
+}
+
+static const char* macho_strip_underscore(const char* name) {
+    if (name && name[0] == '_') {
+        return name + 1;
+    }
+    return name;
+}
+
+static bool macho_stub_list_add(macho_stub_list_t* list,
+                                macho_symtab_t* symtab,
+                                const char* symbol_name) {
+    if (!list || !symtab || !symbol_name) {
+        return false;
+    }
+
+    for (int i = 0; i < list->count; i++) {
+        if (strcmp(list->items[i].name, symbol_name) == 0) {
+            return true;
+        }
+    }
+
+    int full_len = (int)strlen(symbol_name);
+    char* full_name = malloc((size_t)full_len + 2);
+    if (!full_name) {
+        return false;
+    }
+    full_name[0] = '_';
+    memcpy(full_name + 1, symbol_name, (size_t)full_len + 1);
+
+    int sym_index = macho_symtab_get_index(symtab, full_name);
+    if (sym_index < 0) {
+        if (!macho_symtab_add_undef(symtab, symbol_name)) {
+            free(full_name);
+            return false;
+        }
+        sym_index = macho_symtab_get_index(symtab, full_name);
+    }
+    if (sym_index < 0) {
+        free(full_name);
+        return false;
+    }
+
+    if (list->capacity < list->count + 1) {
+        int new_capacity = list->capacity < 8 ? 8 : list->capacity * 2;
+        macho_stub_symbol_t* new_items = realloc(list->items, new_capacity * sizeof(macho_stub_symbol_t));
+        if (!new_items) {
+            return false;
+        }
+        list->items = new_items;
+        list->capacity = new_capacity;
+    }
+
+    char* name_copy = strdup(symbol_name);
+    if (!name_copy) {
+        return false;
+    }
+    char* bind_copy = strdup(full_name);
+    if (!bind_copy) {
+        free(full_name);
+        free(name_copy);
+        return false;
+    }
+    free(full_name);
+
+    list->items[list->count].name = name_copy;
+    list->items[list->count].bind_name = bind_copy;
+    list->items[list->count].symtab_index = sym_index;
+    list->count++;
+
+    return true;
+}
+
+static void macho_buffer_init(macho_byte_buffer_t* buffer) {
+    buffer->data = NULL;
+    buffer->size = 0;
+    buffer->capacity = 0;
+}
+
+static void macho_buffer_free(macho_byte_buffer_t* buffer) {
+    free(buffer->data);
+}
+
+static bool macho_buffer_reserve(macho_byte_buffer_t* buffer, size_t needed) {
+    if (buffer->capacity >= needed) {
+        return true;
+    }
+    size_t new_capacity = buffer->capacity < 64 ? 64 : buffer->capacity * 2;
+    while (new_capacity < needed) {
+        new_capacity *= 2;
+    }
+    uint8_t* new_data = realloc(buffer->data, new_capacity);
+    if (!new_data) {
+        return false;
+    }
+    buffer->data = new_data;
+    buffer->capacity = new_capacity;
+    return true;
+}
+
+static bool macho_buffer_append_byte(macho_byte_buffer_t* buffer, uint8_t value) {
+    if (!macho_buffer_reserve(buffer, buffer->size + 1)) {
+        return false;
+    }
+    buffer->data[buffer->size++] = value;
+    return true;
+}
+
+static bool macho_buffer_append_bytes(macho_byte_buffer_t* buffer, const uint8_t* data, size_t size) {
+    if (!macho_buffer_reserve(buffer, buffer->size + size)) {
+        return false;
+    }
+    memcpy(buffer->data + buffer->size, data, size);
+    buffer->size += size;
+    return true;
+}
+
+static bool macho_buffer_append_uleb(macho_byte_buffer_t* buffer, uint64_t value) {
+    do {
+        uint8_t byte = value & 0x7f;
+        value >>= 7;
+        if (value != 0) {
+            byte |= 0x80;
+        }
+        if (!macho_buffer_append_byte(buffer, byte)) {
+            return false;
+        }
+    } while (value != 0);
+    return true;
+}
+
+static bool macho_buffer_append_cstring(macho_byte_buffer_t* buffer, const char* str) {
+    size_t len = strlen(str) + 1;
+    return macho_buffer_append_bytes(buffer, (const uint8_t*)str, len);
+}
+
+static int macho_count_external_call_symbols(linker_context_t* context) {
+    if (!context) {
+        return 0;
+    }
+    int count = 0;
+    int capacity = 0;
+    const char** names = NULL;
+
+    for (int obj_idx = 0; obj_idx < context->object_count; obj_idx++) {
+        linker_object_t* obj = context->objects[obj_idx];
+        if (!obj) {
+            continue;
+        }
+        for (int reloc_idx = 0; reloc_idx < obj->relocation_count; reloc_idx++) {
+            linker_relocation_t* reloc = &obj->relocations[reloc_idx];
+            if (reloc->type != RELOC_ARM64_CALL26 && reloc->type != RELOC_ARM64_JUMP26) {
+                continue;
+            }
+            if (reloc->symbol_index < 0 || reloc->symbol_index >= obj->symbol_count) {
+                continue;
+            }
+            linker_symbol_t* symbol = &obj->symbols[reloc->symbol_index];
+            if (!symbol->name || symbol->name[0] == '\0') {
+                continue;
+            }
+            if (symbol->defining_object != -1) {
+                continue;
+            }
+
+            bool exists = false;
+            for (int i = 0; i < count; i++) {
+                if (strcmp(names[i], symbol->name) == 0) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (exists) {
+                continue;
+            }
+            if (capacity < count + 1) {
+                int new_capacity = capacity < 8 ? 8 : capacity * 2;
+                const char** new_names = realloc(names, new_capacity * sizeof(const char*));
+                if (!new_names) {
+                    free(names);
+                    return count;
+                }
+                names = new_names;
+                capacity = new_capacity;
+            }
+            names[count++] = symbol->name;
+        }
+    }
+
+    free(names);
+    return count;
+}
+
+static bool macho_stub_list_contains(const macho_stub_list_t* list, const char* name) {
+    if (!list || !name) {
+        return false;
+    }
+    for (int i = 0; i < list->count; i++) {
+        if (strcmp(list->items[i].name, name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static int macho_stub_list_index(const macho_stub_list_t* list, const char* name) {
+    if (!list || !name) {
+        return -1;
+    }
+    for (int i = 0; i < list->count; i++) {
+        if (strcmp(list->items[i].name, name) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static linker_symbol_t* macho_resolve_defined_symbol(linker_context_t* context,
+                                                     linker_symbol_t* symbol) {
+    if (!context || !symbol) {
+        return NULL;
+    }
+    if (symbol->is_defined) {
+        return symbol;
+    }
+    if (symbol->defining_object < 0 || symbol->defining_object >= context->object_count) {
+        return NULL;
+    }
+    linker_object_t* def_obj = context->objects[symbol->defining_object];
+    if (!def_obj || !symbol->name) {
+        return NULL;
+    }
+    for (int i = 0; i < def_obj->symbol_count; i++) {
+        linker_symbol_t* candidate = &def_obj->symbols[i];
+        if (!candidate->is_defined || !candidate->name) {
+            continue;
+        }
+        if (strcmp(candidate->name, symbol->name) == 0) {
+            return candidate;
+        }
+    }
+    return NULL;
+}
+
+#define BIND_OPCODE_DONE 0x00
+#define BIND_OPCODE_SET_DYLIB_ORDINAL_IMM 0x10
+#define BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM 0x40
+#define BIND_OPCODE_SET_TYPE_IMM 0x50
+#define BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB 0x70
+#define BIND_OPCODE_DO_BIND 0x90
+#define BIND_TYPE_POINTER 1
+
+static bool macho_build_bind_info(macho_byte_buffer_t* buffer,
+                                  const macho_stub_list_t* stubs,
+                                  uint8_t segment_index,
+                                  uint64_t got_offset) {
+    if (!buffer || !stubs || stubs->count == 0) {
+        return true;
+    }
+
+    if (!macho_buffer_append_byte(buffer, BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | 1)) {
+        return false;
+    }
+    if (!macho_buffer_append_byte(buffer, BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER)) {
+        return false;
+    }
+
+    for (int i = 0; i < stubs->count; i++) {
+        if (!macho_buffer_append_byte(buffer, BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM)) {
+            return false;
+        }
+        if (!macho_buffer_append_cstring(buffer, stubs->items[i].bind_name)) {
+            return false;
+        }
+        if (!macho_buffer_append_byte(buffer, BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | segment_index)) {
+            return false;
+        }
+        if (!macho_buffer_append_uleb(buffer, got_offset + (uint64_t)i * 8)) {
+            return false;
+        }
+        if (!macho_buffer_append_byte(buffer, BIND_OPCODE_DO_BIND)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool macho_append_bind_start(macho_byte_buffer_t* buffer) {
+    if (!buffer) {
+        return false;
+    }
+    if (buffer->size > 0) {
+        return true;
+    }
+    if (!macho_buffer_append_byte(buffer, BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | 1)) {
+        return false;
+    }
+    if (!macho_buffer_append_byte(buffer, BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER)) {
+        return false;
+    }
+    return true;
+}
+
+static bool macho_append_bind_entry(macho_byte_buffer_t* buffer,
+                                    const char* symbol_name,
+                                    uint8_t segment_index,
+                                    uint64_t segment_offset) {
+    if (!buffer || !symbol_name) {
+        return false;
+    }
+    if (!macho_buffer_append_byte(buffer, BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM)) {
+        return false;
+    }
+    if (!macho_buffer_append_cstring(buffer, symbol_name)) {
+        return false;
+    }
+    if (!macho_buffer_append_byte(buffer, BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | segment_index)) {
+        return false;
+    }
+    if (!macho_buffer_append_uleb(buffer, segment_offset)) {
+        return false;
+    }
+    if (!macho_buffer_append_byte(buffer, BIND_OPCODE_DO_BIND)) {
+        return false;
+    }
+    return true;
+}
+
+static bool macho_append_tlv_binds(macho_byte_buffer_t* buffer,
+                                   linker_context_t* context,
+                                   uint8_t data_segment_index,
+                                   uint64_t tlv_vm_addr) {
+    if (!buffer || !context) {
+        return true;
+    }
+
+    for (int obj_idx = 0; obj_idx < context->object_count; obj_idx++) {
+        linker_object_t* obj = context->objects[obj_idx];
+        if (!obj || !obj->section_base_addrs) {
+            continue;
+        }
+        for (int reloc_idx = 0; reloc_idx < obj->relocation_count; reloc_idx++) {
+            linker_relocation_t* reloc = &obj->relocations[reloc_idx];
+            if (reloc->symbol_index < 0 || reloc->symbol_index >= obj->symbol_count) {
+                continue;
+            }
+            if (reloc->section_index < 0 || reloc->section_index >= obj->section_count) {
+                continue;
+            }
+            linker_symbol_t* symbol = &obj->symbols[reloc->symbol_index];
+            if (!symbol->name || symbol->name[0] == '\0') {
+                continue;
+            }
+            if (symbol->defining_object != -1) {
+                continue;
+            }
+            const char* sym_name = symbol->name;
+            if (strcmp(sym_name, "_tlv_bootstrap") != 0 && strcmp(sym_name, "tlv_bootstrap") != 0) {
+                continue;
+            }
+            linker_section_t* obj_section = &obj->sections[reloc->section_index];
+            if (obj_section->type != SECTION_TYPE_TLV) {
+                continue;
+            }
+
+            uint64_t bind_addr = tlv_vm_addr + reloc->offset;
+            uint64_t segment_offset = bind_addr - tlv_vm_addr;
+
+            char name_buf[256];
+            snprintf(name_buf, sizeof(name_buf), "_%s", sym_name);
+
+            if (!macho_append_bind_start(buffer)) {
+                return false;
+            }
+            if (!macho_append_bind_entry(buffer, name_buf, data_segment_index, segment_offset)) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+static void macho_emit_stub(uint8_t* dst,
+                            uint64_t stub_addr,
+                            uint64_t got_addr) {
+    uint64_t stub_page = stub_addr & ~0xfffull;
+    uint64_t got_page = got_addr & ~0xfffull;
+    int64_t page_delta = (int64_t)((got_page - stub_page) >> 12);
+    uint32_t imm = (uint32_t)page_delta & 0x1fffff;
+    uint32_t immlo = imm & 0x3;
+    uint32_t immhi = (imm >> 2) & 0x7ffff;
+    uint32_t adrp = 0x90000000 | (immlo << 29) | (immhi << 5) | ARM64_X16;
+
+    uint32_t page_off = (uint32_t)(got_addr & 0xfff);
+    uint32_t ldr_off = (page_off / 8) & 0xfff;
+    uint32_t ldr = 0xF9400000 | (ldr_off << 10) | (ARM64_X16 << 5) | ARM64_X16;
+    uint32_t br = 0xD61F0000 | (ARM64_X16 << 5);
+
+    memcpy(dst + 0, &adrp, sizeof(adrp));
+    memcpy(dst + 4, &ldr, sizeof(ldr));
+    memcpy(dst + 8, &br, sizeof(br));
+}
+
 static void macho_symtab_init(macho_symtab_t* table) {
     table->symbols = NULL;
     table->names = NULL;
@@ -127,18 +571,14 @@ static bool macho_symtab_add_undef(macho_symtab_t* table, const char* name) {
 
     const char* base = name;
     size_t base_len = strlen(base);
-    size_t full_len = base_len + (base[0] == '_' ? 0 : 1);
+    size_t full_len = base_len + 1;
     char* full_name = (char*)malloc(full_len + 1);
     if (!full_name) {
         return false;
     }
 
-    if (base[0] == '_') {
-        memcpy(full_name, base, base_len + 1);
-    } else {
-        full_name[0] = '_';
-        memcpy(full_name + 1, base, base_len + 1);
-    }
+    full_name[0] = '_';
+    memcpy(full_name + 1, base, base_len + 1);
 
     if (macho_symtab_has_name(table, full_name)) {
         free(full_name);
@@ -202,18 +642,14 @@ static bool macho_symtab_add_defined(macho_symtab_t* table,
 
     const char* base = name;
     size_t base_len = strlen(base);
-    size_t full_len = base_len + (base[0] == '_' ? 0 : 1);
+    size_t full_len = base_len + 1;
     char* full_name = (char*)malloc(full_len + 1);
     if (!full_name) {
         return false;
     }
 
-    if (base[0] == '_') {
-        memcpy(full_name, base, base_len + 1);
-    } else {
-        full_name[0] = '_';
-        memcpy(full_name + 1, base, base_len + 1);
-    }
+    full_name[0] = '_';
+    memcpy(full_name + 1, base, base_len + 1);
 
     if (macho_symtab_has_name(table, full_name)) {
         free(full_name);
@@ -315,6 +751,12 @@ static macho_section_index_map_t macho_compute_section_indices(linker_context_t*
     if (macho_find_merged_section(context, SECTION_TYPE_RODATA)) {
         map.rodata = index++;
     }
+    if (macho_count_external_call_symbols(context) > 0) {
+        index++;
+    }
+    if (macho_count_external_call_symbols(context) > 0) {
+        index++;
+    }
     if (macho_find_merged_section(context, SECTION_TYPE_DATA)) {
         map.data = index++;
     }
@@ -344,6 +786,7 @@ uint32_t macho_get_segment_section_count(linker_context_t* context,
     }
 
     uint32_t count = 0;
+    int stub_count = macho_count_external_call_symbols(context);
 
     /* Check for __TEXT segment sections */
     if (strcmp(segment_name, SEG_TEXT) == 0) {
@@ -360,6 +803,9 @@ uint32_t macho_get_segment_section_count(linker_context_t* context,
                 count++;
                 break;
             }
+        }
+        if (stub_count > 0) {
+            count++;
         }
     }
     /* Check for __DATA segment sections */
@@ -401,6 +847,13 @@ uint32_t macho_get_segment_section_count(linker_context_t* context,
         }
     }
 
+    /* Check for __DATA_CONST segment sections */
+    else if (strcmp(segment_name, SEG_DATA_CONST) == 0) {
+        if (stub_count > 0) {
+            count = 1;
+        }
+    }
+
     return count;
 }
 
@@ -414,6 +867,8 @@ uint64_t macho_calculate_segment_size(linker_context_t* context,
     }
 
     uint64_t size = 0;
+    int stub_count = macho_count_external_call_symbols(context);
+    uint64_t stubs_size = (uint64_t)stub_count * 12;
 
     /* Calculate size for __TEXT segment */
     if (strcmp(segment_name, SEG_TEXT) == 0) {
@@ -432,6 +887,10 @@ uint64_t macho_calculate_segment_size(linker_context_t* context,
                 size += context->merged_sections[i].size;
                 break;
             }
+        }
+        if (stub_count > 0) {
+            size = align_to(size, 4);
+            size += stubs_size;
         }
     }
     /* Calculate size for __DATA segment */
@@ -477,6 +936,12 @@ uint64_t macho_calculate_segment_size(linker_context_t* context,
             }
         }
     }
+    /* Calculate size for __DATA_CONST segment */
+    else if (strcmp(segment_name, SEG_DATA_CONST) == 0) {
+        if (stub_count > 0) {
+            size = align_to((uint64_t)stub_count * 8, 8);
+        }
+    }
 
     return size;
 }
@@ -490,11 +955,19 @@ uint32_t macho_calculate_load_commands_size(linker_context_t* context) {
     }
 
     uint32_t size = 0;
+    int stub_count = macho_count_external_call_symbols(context);
 
     /* LC_SEGMENT_64 for __TEXT */
     uint32_t text_section_count = macho_get_segment_section_count(context, SEG_TEXT);
     size += sizeof(segment_command_64_t);
     size += text_section_count * sizeof(section_64_t);
+
+    /* LC_SEGMENT_64 for __DATA_CONST (GOT) */
+    if (stub_count > 0) {
+        uint32_t data_const_sections = macho_get_segment_section_count(context, SEG_DATA_CONST);
+        size += sizeof(segment_command_64_t);
+        size += data_const_sections * sizeof(section_64_t);
+    }
 
     /* LC_SEGMENT_64 for __DATA */
     uint32_t data_section_count = macho_get_segment_section_count(context, SEG_DATA);
@@ -525,6 +998,11 @@ uint32_t macho_calculate_load_commands_size(linker_context_t* context) {
 
     /* LC_BUILD_VERSION */
     size += sizeof(build_version_command_t);
+
+    /* LC_DYLD_INFO_ONLY */
+    if (stub_count > 0) {
+        size += sizeof(dyld_info_command_t);
+    }
 
     /* LC_SEGMENT_64 for __LINKEDIT (no section headers) */
     size += sizeof(segment_command_64_t);
@@ -587,10 +1065,17 @@ bool macho_write_executable(const char* output_path,
 
     /* Calculate sizes */
     size_t page_size = get_page_size(PLATFORM_FORMAT_MACH_O);
+    int stub_count = macho_count_external_call_symbols(context);
+    uint64_t stubs_size = (uint64_t)stub_count * 12;
+    uint64_t got_size = (uint64_t)stub_count * 8;
+    bool has_stubs = (stub_count > 0);
+
     uint32_t load_cmds_size = macho_calculate_load_commands_size(context);
     uint32_t text_section_count = macho_get_segment_section_count(context, SEG_TEXT);
+    uint32_t data_const_section_count = macho_get_segment_section_count(context, SEG_DATA_CONST);
     uint32_t data_section_count = macho_get_segment_section_count(context, SEG_DATA);
     uint64_t text_size = macho_calculate_segment_size(context, SEG_TEXT);
+    uint64_t data_const_vmsize = macho_calculate_segment_size(context, SEG_DATA_CONST);
     uint64_t data_vmsize = macho_calculate_segment_size(context, SEG_DATA);
 
     /* Calculate DATA segment file size (exclude BSS/thread BSS which have no file content) */
@@ -613,6 +1098,7 @@ bool macho_write_executable(const char* output_path,
         data_file_cursor += tdata_section->size;
     }
     data_filesize = data_file_cursor;
+    uint64_t data_const_filesize = has_stubs ? align_to(got_size, 8) : 0;
 
     uint64_t header_size = sizeof(mach_header_64_t);
     uint64_t text_file_offset = round_up_to_page(header_size + load_cmds_size, page_size);
@@ -694,6 +1180,50 @@ bool macho_write_executable(const char* output_path,
             }
         }
     }
+
+    macho_stub_list_t stubs;
+    macho_stub_list_init(&stubs);
+
+    if (stub_count > 0) {
+        for (int obj_idx = 0; obj_idx < context->object_count; obj_idx++) {
+            linker_object_t* obj = context->objects[obj_idx];
+            if (!obj) {
+                continue;
+            }
+            for (int reloc_idx = 0; reloc_idx < obj->relocation_count; reloc_idx++) {
+                linker_relocation_t* reloc = &obj->relocations[reloc_idx];
+                if (reloc->type != RELOC_ARM64_CALL26 &&
+                    reloc->type != RELOC_ARM64_JUMP26) {
+                    continue;
+                }
+                if (reloc->symbol_index < 0 || reloc->symbol_index >= obj->symbol_count) {
+                    continue;
+                }
+                linker_symbol_t* symbol = &obj->symbols[reloc->symbol_index];
+                if (!symbol->name || symbol->name[0] == '\0') {
+                    continue;
+                }
+                if (symbol->defining_object != -1) {
+                    continue;
+                }
+                if (!macho_stub_list_add(&stubs, &symtab, symbol->name)) {
+                    fprintf(stderr, "Mach-O error: Failed to add stub for %s\n", symbol->name);
+                    macho_symtab_free(&symtab);
+                    macho_stub_list_free(&stubs);
+                    return false;
+                }
+            }
+        }
+    }
+
+    uint32_t stubs_indirect_index = 0;
+    uint32_t got_indirect_index = 0;
+    uint32_t indirect_count = 0;
+    if (stubs.count > 0) {
+        stubs_indirect_index = 0;
+        got_indirect_index = (uint32_t)stubs.count;
+        indirect_count = (uint32_t)stubs.count * 2u;
+    }
     int defined_count = 0;
     int undef_count = 0;
 
@@ -715,6 +1245,11 @@ bool macho_write_executable(const char* output_path,
                 continue;
             }
             if (symbol->name == NULL || symbol->name[0] == '\0') {
+                continue;
+            }
+            if ((reloc->type == RELOC_ARM64_CALL26 || reloc->type == RELOC_ARM64_JUMP26) &&
+                symbol->defining_object == -1 &&
+                macho_stub_list_contains(&stubs, symbol->name)) {
                 continue;
             }
             if (symbol->defining_object != -1) {
@@ -848,10 +1383,53 @@ bool macho_write_executable(const char* output_path,
         }
     }
 
-    uint64_t extrel_size = (uint64_t)extrel.count * sizeof(relocation_info_t);
-    uint64_t symtab_size = (uint64_t)symtab.count * sizeof(nlist_64_t);
-    uint64_t strtab_size = (uint64_t)symtab.strsize;
-    uint64_t linkedit_size = align_to(extrel_size + symtab_size + strtab_size, 8);
+    bool stubbed = (stubs.count > 0);
+    uint8_t data_const_segment_index = stubbed ? 2 : 0;
+
+    macho_byte_buffer_t bind_info;
+    macho_buffer_init(&bind_info);
+    if (stubbed) {
+        if (!macho_build_bind_info(&bind_info, &stubs, data_const_segment_index, 0)) {
+            fprintf(stderr, "Mach-O error: Failed to build bind info\n");
+            macho_buffer_free(&bind_info);
+            macho_symtab_free(&symtab);
+            macho_extrel_free(&extrel);
+            macho_stub_list_free(&stubs);
+            return false;
+        }
+    }
+
+    macho_byte_buffer_t export_info;
+    macho_buffer_init(&export_info);
+    if (stubbed) {
+        if (!macho_buffer_append_byte(&export_info, 0x00)) {
+            fprintf(stderr, "Mach-O error: Failed to build export info\n");
+            macho_buffer_free(&export_info);
+            macho_buffer_free(&bind_info);
+            macho_symtab_free(&symtab);
+            macho_extrel_free(&extrel);
+            macho_stub_list_free(&stubs);
+            return false;
+        }
+    }
+
+    uint32_t* indirect_symbols = NULL;
+    if (indirect_count > 0) {
+        indirect_symbols = calloc(indirect_count, sizeof(uint32_t));
+        if (!indirect_symbols) {
+            fprintf(stderr, "Mach-O error: Failed to allocate indirect symbol table\n");
+            macho_buffer_free(&export_info);
+            macho_buffer_free(&bind_info);
+            macho_symtab_free(&symtab);
+            macho_extrel_free(&extrel);
+            macho_stub_list_free(&stubs);
+            return false;
+        }
+        for (int i = 0; i < stubs.count; i++) {
+            indirect_symbols[i] = (uint32_t)stubs.items[i].symtab_index;
+            indirect_symbols[stubs.count + i] = (uint32_t)stubs.items[i].symtab_index;
+        }
+    }
 
     /* Calculate file offsets */
 
@@ -878,7 +1456,32 @@ bool macho_write_executable(const char* output_path,
     }
     uint64_t text_vm_addr = base_addr;
 
-    /* Compute actual __TEXT segment filesize from adjusted section addresses */
+    uint64_t stubs_offset = 0;
+    uint64_t stubs_addr = 0;
+    uint64_t got_addr = 0;
+    uint8_t* stubs_data = NULL;
+
+    if (stubbed) {
+        uint64_t cursor = 0;
+        for (int i = 0; i < context->merged_section_count; i++) {
+            if (context->merged_sections[i].type == SECTION_TYPE_TEXT) {
+                cursor += context->merged_sections[i].size;
+                break;
+            }
+        }
+        for (int i = 0; i < context->merged_section_count; i++) {
+            if (context->merged_sections[i].type == SECTION_TYPE_RODATA) {
+                cursor = align_to(cursor, 8);
+                cursor += context->merged_sections[i].size;
+                break;
+            }
+        }
+        cursor = align_to(cursor, 4);
+        stubs_offset = cursor;
+        stubs_addr = text_vm_addr + text_file_offset + stubs_offset;
+    }
+
+    /* Compute actual __TEXT segment filesize based on section addresses */
     uint64_t text_filesize = 0;
     for (int i = 0; i < context->merged_section_count; i++) {
         if (context->merged_sections[i].type == SECTION_TYPE_TEXT ||
@@ -890,12 +1493,256 @@ bool macho_write_executable(const char* output_path,
             }
         }
     }
+    if (stubbed) {
+        uint64_t stubs_end = text_file_offset + stubs_offset + stubs_size;
+        if (stubs_end > text_filesize) {
+            text_filesize = stubs_end;
+        }
+    }
 
-    uint64_t data_file_offset = round_up_to_page(text_filesize, page_size);
+    uint64_t data_const_file_offset = round_up_to_page(text_filesize, page_size);
+    uint64_t data_file_offset = data_const_file_offset + round_up_to_page(data_const_filesize, page_size);
     uint64_t linkedit_file_offset = data_file_offset + round_up_to_page(data_filesize, page_size);
 
+    uint64_t data_const_vm_addr = text_vm_addr + data_const_file_offset;
     uint64_t data_vm_addr = text_vm_addr + data_file_offset;
     uint64_t linkedit_vm_addr = data_vm_addr + round_up_to_page(data_vmsize, page_size);
+
+    if (stubbed) {
+        got_addr = data_const_vm_addr;
+
+        stubs_data = calloc(stubs_size, 1);
+        if (!stubs_data) {
+            fprintf(stderr, "Mach-O error: Failed to allocate stub section\n");
+            free(indirect_symbols);
+            macho_buffer_free(&export_info);
+            macho_buffer_free(&bind_info);
+            macho_symtab_free(&symtab);
+            macho_extrel_free(&extrel);
+            macho_stub_list_free(&stubs);
+            return false;
+        }
+        for (int i = 0; i < stubs.count; i++) {
+            uint64_t stub_addr = stubs_addr + (uint64_t)i * 12;
+            uint64_t got_entry_addr = got_addr + (uint64_t)i * 8;
+            macho_emit_stub(stubs_data + (size_t)i * 12, stub_addr, got_entry_addr);
+        }
+
+        for (int obj_idx = 0; obj_idx < context->object_count; obj_idx++) {
+            linker_object_t* obj = context->objects[obj_idx];
+            if (!obj || !obj->section_base_addrs) {
+                continue;
+            }
+            for (int reloc_idx = 0; reloc_idx < obj->relocation_count; reloc_idx++) {
+                linker_relocation_t* reloc = &obj->relocations[reloc_idx];
+                if (reloc->type != RELOC_ARM64_CALL26 &&
+                    reloc->type != RELOC_ARM64_JUMP26) {
+                    continue;
+                }
+                if (reloc->symbol_index < 0 || reloc->symbol_index >= obj->symbol_count) {
+                    continue;
+                }
+                linker_symbol_t* symbol = &obj->symbols[reloc->symbol_index];
+                if (!symbol->name || symbol->name[0] == '\0') {
+                    continue;
+                }
+                if (symbol->defining_object != -1) {
+                    continue;
+                }
+                int stub_index = macho_stub_list_index(&stubs, symbol->name);
+                if (stub_index < 0) {
+                    continue;
+                }
+
+                if (reloc->section_index < 0 || reloc->section_index >= obj->section_count) {
+                    continue;
+                }
+                linker_section_t* obj_section = &obj->sections[reloc->section_index];
+                linker_section_t* merged = macho_find_merged_section(context, obj_section->type);
+                if (!merged || !merged->data) {
+                    continue;
+                }
+
+                uint64_t section_base = obj->section_base_addrs[reloc->section_index];
+                if (obj_section->type == SECTION_TYPE_TEXT ||
+                    obj_section->type == SECTION_TYPE_RODATA) {
+                    section_base += text_file_offset;
+                }
+                uint64_t P = section_base + reloc->offset;
+                uint64_t offset_in_merged = P - merged->vaddr;
+                if (offset_in_merged >= merged->size) {
+                    continue;
+                }
+
+                uint64_t stub_addr = stubs_addr + (uint64_t)stub_index * 12;
+                int64_t value = (int64_t)((stub_addr + (uint64_t)reloc->addend) - P);
+                if (!patch_instruction(merged->data, merged->size, offset_in_merged,
+                                       value, reloc->type, P)) {
+                    fprintf(stderr, "Mach-O warning: Failed to patch call to stub for %s\n",
+                            symbol->name);
+                }
+            }
+        }
+    }
+
+    linker_section_t* data_sections[] = {
+        macho_find_merged_section(context, SECTION_TYPE_DATA),
+        macho_find_merged_section(context, SECTION_TYPE_TLV),
+        macho_find_merged_section(context, SECTION_TYPE_TDATA),
+        macho_find_merged_section(context, SECTION_TYPE_TBSS),
+        macho_find_merged_section(context, SECTION_TYPE_BSS)
+    };
+
+    uint64_t data_offsets[SECTION_TYPE_TBSS + 1] = {0};
+    bool data_present[SECTION_TYPE_TBSS + 1] = {0};
+    uint64_t data_cursor = 0;
+
+    for (size_t i = 0; i < sizeof(data_sections) / sizeof(data_sections[0]); i++) {
+        linker_section_t* section = data_sections[i];
+        if (!section || section->size == 0) {
+            continue;
+        }
+        data_cursor = align_to(data_cursor, 8);
+        data_offsets[section->type] = data_cursor;
+        data_present[section->type] = true;
+        data_cursor += section->size;
+    }
+
+    uint64_t data_deltas[SECTION_TYPE_TBSS + 1] = {0};
+    for (size_t i = 0; i < sizeof(data_sections) / sizeof(data_sections[0]); i++) {
+        linker_section_t* section = data_sections[i];
+        if (!section || !data_present[section->type]) {
+            continue;
+        }
+        uint64_t final_addr = data_vm_addr + data_offsets[section->type];
+        if (final_addr >= section->vaddr) {
+            data_deltas[section->type] = final_addr - section->vaddr;
+        }
+    }
+
+    uint64_t tlv_vm_addr = 0;
+    if (data_present[SECTION_TYPE_TLV]) {
+        tlv_vm_addr = data_vm_addr + data_offsets[SECTION_TYPE_TLV];
+    }
+
+    if (tlv_vm_addr != 0) {
+        if (!macho_append_tlv_binds(&bind_info, context,
+                                    stubbed ? 3 : 2, tlv_vm_addr)) {
+            fprintf(stderr, "Mach-O error: Failed to build TLV bind info\n");
+            macho_buffer_free(&bind_info);
+            macho_buffer_free(&export_info);
+            macho_symtab_free(&symtab);
+            macho_extrel_free(&extrel);
+            macho_stub_list_free(&stubs);
+            free(indirect_symbols);
+            return false;
+        }
+    }
+
+    for (int obj_idx = 0; obj_idx < context->object_count; obj_idx++) {
+        linker_object_t* obj = context->objects[obj_idx];
+        if (!obj || !obj->section_base_addrs) {
+            continue;
+        }
+        for (int reloc_idx = 0; reloc_idx < obj->relocation_count; reloc_idx++) {
+            linker_relocation_t* reloc = &obj->relocations[reloc_idx];
+            if (reloc->symbol_index < 0 || reloc->symbol_index >= obj->symbol_count) {
+                continue;
+            }
+            linker_symbol_t* symbol = &obj->symbols[reloc->symbol_index];
+            linker_symbol_t* def_sym = macho_resolve_defined_symbol(context, symbol);
+            if (!def_sym || !def_sym->is_defined) {
+                continue;
+            }
+            if (def_sym->section_index < 0 ||
+                def_sym->defining_object < 0 ||
+                def_sym->defining_object >= context->object_count) {
+                continue;
+            }
+            linker_object_t* def_obj = context->objects[def_sym->defining_object];
+            if (!def_obj || def_sym->section_index >= def_obj->section_count) {
+                continue;
+            }
+            section_type_t sym_type = def_obj->sections[def_sym->section_index].type;
+            if (sym_type > SECTION_TYPE_TBSS || !data_present[sym_type]) {
+                continue;
+            }
+            if (data_deltas[sym_type] == 0) {
+                continue;
+            }
+            if (reloc->section_index < 0 || reloc->section_index >= obj->section_count) {
+                continue;
+            }
+            if (reloc->type != RELOC_ARM64_ABS64 &&
+                reloc->type != RELOC_ARM64_TLVP_LOAD_PAGE21 &&
+                reloc->type != RELOC_ARM64_TLVP_LOAD_PAGEOFF12) {
+                continue;
+            }
+
+            linker_section_t* src_section = &obj->sections[reloc->section_index];
+            linker_section_t* merged = macho_find_merged_section(context, src_section->type);
+            if (!merged || !merged->data) {
+                continue;
+            }
+            uint64_t section_base = obj->section_base_addrs[reloc->section_index];
+            if (src_section->type == SECTION_TYPE_TEXT || src_section->type == SECTION_TYPE_RODATA) {
+                section_base += text_file_offset;
+            }
+            uint64_t P = section_base + reloc->offset;
+            uint64_t offset_in_merged = P - merged->vaddr;
+            if (offset_in_merged >= merged->size) {
+                continue;
+            }
+
+            uint64_t S = def_sym->final_address + data_deltas[sym_type];
+            int64_t value = relocation_calculate_value(reloc->type, S, reloc->addend, P);
+            if (!patch_instruction(merged->data, merged->size, offset_in_merged,
+                                   value, reloc->type, P)) {
+                fprintf(stderr, "Mach-O warning: Failed to patch data relocation for %s\n",
+                        def_sym->name ? def_sym->name : "<unknown>");
+            }
+        }
+    }
+
+    if (bind_info.size > 0) {
+        if (!macho_buffer_append_byte(&bind_info, BIND_OPCODE_DONE)) {
+            fprintf(stderr, "Mach-O error: Failed to finalize bind info\n");
+            macho_buffer_free(&bind_info);
+            macho_buffer_free(&export_info);
+            macho_symtab_free(&symtab);
+            macho_extrel_free(&extrel);
+            macho_stub_list_free(&stubs);
+            free(indirect_symbols);
+            return false;
+        }
+    }
+
+    uint64_t rebase_size = 0;
+    uint64_t bind_size = bind_info.size;
+    uint64_t lazy_bind_size = 0;
+    uint64_t export_size = export_info.size;
+
+    uint64_t extrel_size = (uint64_t)extrel.count * sizeof(relocation_info_t);
+    uint64_t symtab_size = (uint64_t)symtab.count * sizeof(nlist_64_t);
+    uint64_t strtab_size = (uint64_t)symtab.strsize;
+    uint64_t indirect_size = (uint64_t)indirect_count * sizeof(uint32_t);
+    uint64_t linkedit_size = align_to(rebase_size + bind_size + lazy_bind_size + export_size +
+                                      extrel_size + symtab_size + indirect_size + strtab_size, 8);
+
+    uint64_t rebase_off = linkedit_file_offset;
+    uint64_t bind_off = align_to(rebase_off + rebase_size, 8);
+    uint64_t lazy_bind_off = align_to(bind_off + bind_size, 8);
+    uint64_t export_off = align_to(lazy_bind_off + lazy_bind_size, 8);
+    uint64_t linkedit_cursor = align_to(export_off + export_size, 8);
+    uint64_t extrel_off = linkedit_cursor;
+    linkedit_cursor = align_to(extrel_off + extrel_size, 8);
+    uint64_t symtab_off = linkedit_cursor;
+    linkedit_cursor = align_to(symtab_off + symtab_size, 8);
+    uint64_t indirect_off = linkedit_cursor;
+    linkedit_cursor = align_to(indirect_off + indirect_size, 8);
+    uint64_t strtab_off = linkedit_cursor;
+    linkedit_cursor = align_to(strtab_off + strtab_size, 8);
+    linkedit_size = align_to(linkedit_cursor - linkedit_file_offset, 8);
 
     /* Create Mach-O header */
     mach_header_64_t header = {0};
@@ -903,9 +1750,9 @@ bool macho_write_executable(const char* output_path,
     header.cputype = CPU_TYPE_ARM64;
     header.cpusubtype = CPU_SUBTYPE_ARM64_ALL;
     header.filetype = MH_EXECUTE;
-    header.ncmds = 11;  /* __PAGEZERO, __TEXT, __DATA, __LINKEDIT, LC_MAIN, LC_LOAD_DYLINKER, LC_LOAD_DYLIB, LC_SYMTAB, LC_DYSYMTAB, LC_UUID, LC_BUILD_VERSION */
+    header.ncmds = stubbed ? 13 : 11;  /* Add __DATA_CONST + LC_DYLD_INFO_ONLY when stubs are present */
     header.sizeofcmds = load_cmds_size;
-    header.flags = MH_DYLDLINK | MH_TWOLEVEL;
+    header.flags = MH_DYLDLINK | MH_TWOLEVEL | MH_PIE;
     header.reserved = 0;
 
     /* Open output file */
@@ -1013,7 +1860,73 @@ bool macho_write_executable(const char* output_path,
                 fclose(f);
                 return false;
             }
+            current_offset += context->merged_sections[i].size;
             break;
+        }
+    }
+
+    /* Write __stubs section header */
+    if (stubbed) {
+        current_offset = align_to(current_offset, 4);
+        section_64_t stubs_sect = {0};
+        strncpy(stubs_sect.sectname, SECT_STUBS, 16);
+        strncpy(stubs_sect.segname, SEG_TEXT, 16);
+        stubs_sect.addr = text_vm_addr + text_file_offset + stubs_offset;
+        stubs_sect.size = stubs_size;
+        stubs_sect.offset = (uint32_t)(stubs_sect.addr - text_vm_addr);
+        stubs_sect.align = 2;  /* 2^2 = 4 bytes */
+        stubs_sect.reloff = 0;
+        stubs_sect.nreloc = 0;
+        stubs_sect.flags = S_SYMBOL_STUBS | S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
+        stubs_sect.reserved1 = stubs_indirect_index;
+        stubs_sect.reserved2 = 12;
+        stubs_sect.reserved3 = 0;
+
+        if (!write_struct(f, &stubs_sect, sizeof(stubs_sect))) {
+            fclose(f);
+            return false;
+        }
+        current_offset += stubs_size;
+    }
+
+    /* Create and write LC_SEGMENT_64 for __DATA_CONST (GOT) */
+    if (stubbed) {
+        segment_command_64_t data_const_segment = {0};
+        data_const_segment.cmd = LC_SEGMENT_64;
+        data_const_segment.cmdsize = sizeof(segment_command_64_t) +
+                                     data_const_section_count * sizeof(section_64_t);
+        strncpy(data_const_segment.segname, SEG_DATA_CONST, 16);
+        data_const_segment.vmaddr = data_const_vm_addr;
+        data_const_segment.vmsize = round_up_to_page(data_const_vmsize, page_size);
+        data_const_segment.fileoff = data_const_file_offset;
+        data_const_segment.filesize = data_const_filesize;
+        data_const_segment.maxprot = VM_PROT_READ | VM_PROT_WRITE;
+        data_const_segment.initprot = VM_PROT_READ | VM_PROT_WRITE;
+        data_const_segment.nsects = data_const_section_count;
+        data_const_segment.flags = SG_READ_ONLY;
+
+        if (!write_struct(f, &data_const_segment, sizeof(data_const_segment))) {
+            fclose(f);
+            return false;
+        }
+
+        section_64_t got_sect = {0};
+        strncpy(got_sect.sectname, SECT_GOT, 16);
+        strncpy(got_sect.segname, SEG_DATA_CONST, 16);
+        got_sect.addr = data_const_vm_addr;
+        got_sect.size = got_size;
+        got_sect.offset = (uint32_t)data_const_file_offset;
+        got_sect.align = 3;  /* 2^3 = 8 bytes */
+        got_sect.reloff = 0;
+        got_sect.nreloc = 0;
+        got_sect.flags = S_NON_LAZY_SYMBOL_POINTERS;
+        got_sect.reserved1 = got_indirect_index;
+        got_sect.reserved2 = 0;
+        got_sect.reserved3 = 0;
+
+        if (!write_struct(f, &got_sect, sizeof(got_sect))) {
+            fclose(f);
+            return false;
         }
     }
 
@@ -1277,13 +2190,36 @@ bool macho_write_executable(const char* output_path,
         return false;
     }
 
+    /* Create and write LC_DYLD_INFO_ONLY */
+    if (stubbed) {
+        dyld_info_command_t dyld_info = {0};
+        dyld_info.cmd = LC_DYLD_INFO_ONLY;
+        dyld_info.cmdsize = sizeof(dyld_info_command_t);
+        dyld_info.rebase_off = rebase_size ? (uint32_t)rebase_off : 0;
+        dyld_info.rebase_size = (uint32_t)rebase_size;
+        dyld_info.bind_off = bind_size ? (uint32_t)bind_off : 0;
+        dyld_info.bind_size = (uint32_t)bind_size;
+        dyld_info.weak_bind_off = 0;
+        dyld_info.weak_bind_size = 0;
+        dyld_info.lazy_bind_off = lazy_bind_size ? (uint32_t)lazy_bind_off : 0;
+        dyld_info.lazy_bind_size = (uint32_t)lazy_bind_size;
+        dyld_info.export_off = export_size ? (uint32_t)export_off : 0;
+        dyld_info.export_size = (uint32_t)export_size;
+
+        if (!write_struct(f, &dyld_info, sizeof(dyld_info))) {
+            fclose(f);
+            macho_symtab_free(&symtab);
+            return false;
+        }
+    }
+
     /* Create and write LC_SYMTAB */
     symtab_command_t symtab_cmd = {0};
     symtab_cmd.cmd = LC_SYMTAB;
     symtab_cmd.cmdsize = sizeof(symtab_command_t);
-    symtab_cmd.symoff = (uint32_t)(linkedit_file_offset + extrel_size);
+    symtab_cmd.symoff = (uint32_t)symtab_off;
     symtab_cmd.nsyms = (uint32_t)symtab.count;
-    symtab_cmd.stroff = (uint32_t)(linkedit_file_offset + extrel_size + symtab_size);
+    symtab_cmd.stroff = (uint32_t)strtab_off;
     symtab_cmd.strsize = (uint32_t)strtab_size;
 
     if (!write_struct(f, &symtab_cmd, sizeof(symtab_cmd))) {
@@ -1308,9 +2244,9 @@ bool macho_write_executable(const char* output_path,
     dysymtab_cmd.nmodtab = 0;
     dysymtab_cmd.extrefsymoff = 0;
     dysymtab_cmd.nextrefsyms = 0;
-    dysymtab_cmd.indirectsymoff = 0;
-    dysymtab_cmd.nindirectsyms = 0;
-    dysymtab_cmd.extreloff = (uint32_t)linkedit_file_offset;
+    dysymtab_cmd.indirectsymoff = indirect_count > 0 ? (uint32_t)indirect_off : 0;
+    dysymtab_cmd.nindirectsyms = indirect_count;
+    dysymtab_cmd.extreloff = extrel.count > 0 ? (uint32_t)extrel_off : 0;
     dysymtab_cmd.nextrel = (uint32_t)extrel.count;
     dysymtab_cmd.locreloff = 0;
     dysymtab_cmd.nlocrel = 0;
@@ -1381,6 +2317,33 @@ bool macho_write_executable(const char* output_path,
         }
     }
 
+    uint64_t current_text_pos = text_file_offset;
+    for (int i = 0; i < context->merged_section_count; i++) {
+        if (context->merged_sections[i].type == SECTION_TYPE_TEXT) {
+            current_text_pos += context->merged_sections[i].size;
+            break;
+        }
+    }
+
+    if (stubbed && stubs_data && stubs_size > 0) {
+        uint64_t stubs_file_offset = text_file_offset + stubs_offset;
+        if (stubs_file_offset > current_text_pos) {
+            if (!write_padding(f, stubs_file_offset - current_text_pos)) {
+                fclose(f);
+                macho_symtab_free(&symtab);
+                return false;
+            }
+            current_text_pos = stubs_file_offset;
+        }
+        if (fwrite(stubs_data, stubs_size, 1, f) != 1) {
+            fprintf(stderr, "Mach-O error: Failed to write __stubs section data\n");
+            fclose(f);
+            macho_symtab_free(&symtab);
+            return false;
+        }
+        current_text_pos += stubs_size;
+    }
+
     /* Align to 8-byte boundary before __const section */
     uint64_t const_offset = 0;
     for (int i = 0; i < context->merged_section_count; i++) {
@@ -1391,19 +2354,13 @@ bool macho_write_executable(const char* output_path,
     }
 
     if (const_offset > 0) {
-        current_pos = text_file_offset;
-        for (int i = 0; i < context->merged_section_count; i++) {
-            if (context->merged_sections[i].type == SECTION_TYPE_TEXT) {
-                current_pos += context->merged_sections[i].size;
-                break;
-            }
-        }
-        if (const_offset > current_pos) {
-            if (!write_padding(f, const_offset - current_pos)) {
+        if (const_offset > current_text_pos) {
+            if (!write_padding(f, const_offset - current_text_pos)) {
                 fclose(f);
                 macho_symtab_free(&symtab);
                 return false;
             }
+            current_text_pos = const_offset;
         }
     }
 
@@ -1424,9 +2381,27 @@ bool macho_write_executable(const char* output_path,
         }
     }
 
-    /* Pad to page boundary before __DATA segment */
+    /* Pad to page boundary before __DATA_CONST segment */
     current_pos = text_filesize;
     uint64_t aligned_pos = round_up_to_page(current_pos, page_size);
+    if (!write_padding(f, aligned_pos - current_pos)) {
+        fclose(f);
+        macho_symtab_free(&symtab);
+        return false;
+    }
+
+    /* Write __DATA_CONST segment data (GOT) */
+    if (stubbed && got_size > 0) {
+        if (!write_padding(f, got_size)) {
+            fclose(f);
+            macho_symtab_free(&symtab);
+            return false;
+        }
+    }
+
+    /* Pad to page boundary before __DATA segment */
+    current_pos = data_const_file_offset + data_const_filesize;
+    aligned_pos = round_up_to_page(current_pos, page_size);
     if (!write_padding(f, aligned_pos - current_pos)) {
         fclose(f);
         macho_symtab_free(&symtab);
@@ -1475,7 +2450,53 @@ bool macho_write_executable(const char* output_path,
         }
     }
 
+    uint64_t linkedit_pos = linkedit_file_offset;
+    if (bind_size > 0) {
+        if (bind_off > linkedit_pos) {
+            if (!write_padding(f, bind_off - linkedit_pos)) {
+                fclose(f);
+                macho_symtab_free(&symtab);
+                return false;
+            }
+            linkedit_pos = bind_off;
+        }
+        if (fwrite(bind_info.data, bind_info.size, 1, f) != 1) {
+            fprintf(stderr, "Mach-O error: Failed to write bind info\n");
+            fclose(f);
+            macho_symtab_free(&symtab);
+            return false;
+        }
+        linkedit_pos += bind_info.size;
+    }
+
+    if (export_size > 0) {
+        if (export_off > linkedit_pos) {
+            if (!write_padding(f, export_off - linkedit_pos)) {
+                fclose(f);
+                macho_symtab_free(&symtab);
+                return false;
+            }
+            linkedit_pos = export_off;
+        }
+        if (fwrite(export_info.data, export_info.size, 1, f) != 1) {
+            fprintf(stderr, "Mach-O error: Failed to write export info\n");
+            fclose(f);
+            macho_symtab_free(&symtab);
+            return false;
+        }
+        linkedit_pos += export_info.size;
+    }
+
     if (extrel.count > 0) {
+        if (extrel_off > linkedit_pos) {
+            if (!write_padding(f, extrel_off - linkedit_pos)) {
+                fclose(f);
+                macho_symtab_free(&symtab);
+                macho_extrel_free(&extrel);
+                return false;
+            }
+            linkedit_pos = extrel_off;
+        }
         if (fwrite(extrel.relocs, extrel_size, 1, f) != 1) {
             fprintf(stderr, "Mach-O error: Failed to write external relocations\n");
             fclose(f);
@@ -1483,8 +2504,19 @@ bool macho_write_executable(const char* output_path,
             macho_extrel_free(&extrel);
             return false;
         }
+        linkedit_pos += extrel_size;
     }
+
     if (symtab.count > 0) {
+        if (symtab_off > linkedit_pos) {
+            if (!write_padding(f, symtab_off - linkedit_pos)) {
+                fclose(f);
+                macho_symtab_free(&symtab);
+                macho_extrel_free(&extrel);
+                return false;
+            }
+            linkedit_pos = symtab_off;
+        }
         if (fwrite(symtab.symbols, symtab_size, 1, f) != 1) {
             fprintf(stderr, "Mach-O error: Failed to write symbol table\n");
             fclose(f);
@@ -1492,8 +2524,39 @@ bool macho_write_executable(const char* output_path,
             macho_extrel_free(&extrel);
             return false;
         }
+        linkedit_pos += symtab_size;
     }
+
+    if (indirect_count > 0 && indirect_symbols != NULL) {
+        if (indirect_off > linkedit_pos) {
+            if (!write_padding(f, indirect_off - linkedit_pos)) {
+                fclose(f);
+                macho_symtab_free(&symtab);
+                macho_extrel_free(&extrel);
+                return false;
+            }
+            linkedit_pos = indirect_off;
+        }
+        if (fwrite(indirect_symbols, indirect_size, 1, f) != 1) {
+            fprintf(stderr, "Mach-O error: Failed to write indirect symbol table\n");
+            fclose(f);
+            macho_symtab_free(&symtab);
+            macho_extrel_free(&extrel);
+            return false;
+        }
+        linkedit_pos += indirect_size;
+    }
+
     if (symtab.strsize > 0) {
+        if (strtab_off > linkedit_pos) {
+            if (!write_padding(f, strtab_off - linkedit_pos)) {
+                fclose(f);
+                macho_symtab_free(&symtab);
+                macho_extrel_free(&extrel);
+                return false;
+            }
+            linkedit_pos = strtab_off;
+        }
         if (fwrite(symtab.strtab, symtab.strsize, 1, f) != 1) {
             fprintf(stderr, "Mach-O error: Failed to write string table\n");
             fclose(f);
@@ -1501,8 +2564,10 @@ bool macho_write_executable(const char* output_path,
             macho_extrel_free(&extrel);
             return false;
         }
+        linkedit_pos += symtab.strsize;
     }
-    uint64_t linkedit_written = extrel_size + symtab_size + (uint64_t)symtab.strsize;
+
+    uint64_t linkedit_written = linkedit_pos - linkedit_file_offset;
     if (linkedit_size > linkedit_written) {
         if (!write_padding(f, linkedit_size - linkedit_written)) {
             fclose(f);
@@ -1514,6 +2579,11 @@ bool macho_write_executable(const char* output_path,
 
     /* Note: __bss section has no file content (zero-initialized at runtime) */
 
+    free(stubs_data);
+    free(indirect_symbols);
+    macho_buffer_free(&export_info);
+    macho_buffer_free(&bind_info);
+    macho_stub_list_free(&stubs);
     macho_symtab_free(&symtab);
     macho_extrel_free(&extrel);
     fclose(f);
