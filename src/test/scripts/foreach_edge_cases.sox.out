@@ -1,0 +1,39 @@
+=== Test 1: Nested foreach loops ===
+Outer - Index: 0, Value: 1
+  Inner - Index: 0, Value: a, Combined: 1a
+  Inner - Index: 1, Value: b, Combined: 1b
+Outer - Index: 1, Value: 2
+  Inner - Index: 0, Value: a, Combined: 2a
+  Inner - Index: 1, Value: b, Combined: 2b
+=== Test 2: Foreach inside function ===
+Function iterating array:
+  Function - Index: 0, Value: 10
+  Function - Index: 1, Value: 20
+  Function - Index: 2, Value: 30
+=== Test 3: Variable scoping ===
+Before foreach - global_i: 99, global_val: global
+Inside foreach - i: 0, val: 1
+Inside foreach - i: 1, val: 2
+Inside foreach - i: 2, val: 3
+After foreach - global_i: 99, global_val: global
+=== Test 4: Different variable names ===
+Using index/item - Index: 0, Item: first
+Using index/item - Index: 1, Item: second
+Using index/item - Index: 2, Item: third
+Using pos/element - Position: 0, Element: first
+Using pos/element - Position: 1, Element: second
+Using pos/element - Position: 2, Element: third
+=== Test 5: Mixed nested containers ===
+Class: class1
+  Student 0: 85
+  Student 1: 90
+  Student 2: 78
+Class: class2
+  Student 0: 92
+  Student 1: 88
+  Student 2: 95
+=== Test 6: Function returning iterable ===
+Range value - Index: 0, Value: 5
+Range value - Index: 1, Value: 6
+Range value - Index: 2, Value: 7
+Range value - Index: 3, Value: 8

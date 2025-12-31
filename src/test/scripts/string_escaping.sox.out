@@ -1,0 +1,5 @@
+--- String Escaping Test ---
+Line 1\nLine 2
+Tab\tSeparated
+Backslash: \\
+--- End ---

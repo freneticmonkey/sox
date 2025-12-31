@@ -1,0 +1,21 @@
+=== Test 1: Basic table iteration ===
+Key: name, Value: John
+Key: age, Value: 30
+Key: city, Value: New York
+=== Test 2: Mixed value types in table ===
+Key: count, Value: 42
+Key: message, Value: hello
+Key: active, Value: true
+Key: pi, Value: 3.14159
+=== Test 3: Empty table ===
+Empty table test completed
+=== Test 4: Single entry table ===
+Key: only, Value: value
+=== Test 5: Numeric string keys ===
+Key: 0, Value: zero
+Key: 1, Value: one
+Key: 2, Value: two
+=== Test 6: Computation in table loop ===
+Student: alice, Score: 85, Grade: B
+Student: bob, Score: 92, Grade: A
+Student: charlie, Score: 78, Grade: C
