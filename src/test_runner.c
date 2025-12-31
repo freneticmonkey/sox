@@ -14,7 +14,6 @@
 #include "testing.h"
 #include "vm.h"
 #include "lib/file.h"
-#include "lib/memory.h"
 #include "lib/print.h"
 
 #define TEST_NAME_LEN 37
@@ -29,10 +28,17 @@ static void _test_list_add(test_list_t* list, const char* name, int length) {
     if (list->count + 1 > list->capacity) {
         int old_capacity = list->capacity;
         list->capacity = old_capacity < 8 ? 8 : old_capacity * 2;
-        list->names = GROW_ARRAY(char*, list->names, old_capacity, list->capacity);
+        char** resized = realloc(list->names, sizeof(char*) * list->capacity);
+        if (resized == NULL) {
+            return;
+        }
+        list->names = resized;
     }
 
-    char* copy = ALLOCATE(char, length + 1);
+    char* copy = (char*)malloc((size_t)length + 1);
+    if (copy == NULL) {
+        return;
+    }
     memcpy(copy, name, length);
     copy[length] = '\0';
     list->names[list->count++] = copy;
@@ -40,9 +46,9 @@ static void _test_list_add(test_list_t* list, const char* name, int length) {
 
 static void _test_list_free(test_list_t* list) {
     for (int i = 0; i < list->count; i++) {
-        FREE_ARRAY(char, list->names[i], (int)strlen(list->names[i]) + 1);
+        free(list->names[i]);
     }
-    FREE_ARRAY(char*, list->names, list->capacity);
+    free(list->names);
     list->names = NULL;
     list->count = 0;
     list->capacity = 0;
