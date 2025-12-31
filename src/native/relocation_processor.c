@@ -106,8 +106,24 @@ int64_t relocation_calculate_value(relocation_type_t type,
             /* For ADRP, return target address (patching function handles page calc) */
             return (int64_t)(S + (uint64_t)A);
 
+        case RELOC_ARM64_GOT_LOAD_PAGE21:
+            /* GOT page relocation uses the same target address as ADRP */
+            return (int64_t)(S + (uint64_t)A);
+
+        case RELOC_ARM64_TLVP_LOAD_PAGE21:
+            /* TLV page relocation uses the same target address as ADRP */
+            return (int64_t)(S + (uint64_t)A);
+
         case RELOC_ARM64_ADD_ABS_LO12_NC:
             /* S + A (absolute, low 12 bits extracted during patching) */
+            return (int64_t)(S + (uint64_t)A);
+
+        case RELOC_ARM64_GOT_LOAD_PAGEOFF12:
+            /* GOT page offset relocation uses the same target address as ADD */
+            return (int64_t)(S + (uint64_t)A);
+
+        case RELOC_ARM64_TLVP_LOAD_PAGEOFF12:
+            /* TLV page offset relocation uses the same target address as ADD */
             return (int64_t)(S + (uint64_t)A);
 
         case RELOC_NONE:

@@ -172,6 +172,8 @@ linker_object_t* linker_object_new(const char* filename, platform_format_t forma
         return NULL;
     }
 
+    object->section_base_addrs = NULL;
+
     return object;
 }
 
@@ -197,6 +199,9 @@ void linker_object_free(linker_object_t* object) {
 
     /* Free relocations */
     free(object->relocations);
+
+    /* Free section base address mapping */
+    free(object->section_base_addrs);
 
     /* Free raw data (if allocated) */
     free(object->raw_data);
@@ -368,6 +373,9 @@ const char* section_type_name(section_type_t type) {
         case SECTION_TYPE_DATA:    return "DATA";
         case SECTION_TYPE_BSS:     return "BSS";
         case SECTION_TYPE_RODATA:  return "RODATA";
+        case SECTION_TYPE_TLV:     return "TLV";
+        case SECTION_TYPE_TDATA:   return "TDATA";
+        case SECTION_TYPE_TBSS:    return "TBSS";
         case SECTION_TYPE_UNKNOWN: return "Unknown";
         default:                   return "Invalid";
     }
@@ -404,6 +412,10 @@ const char* relocation_type_name(relocation_type_t type) {
         case RELOC_ARM64_JUMP26:               return "ARM64_JUMP26";
         case RELOC_ARM64_ADR_PREL_PG_HI21:     return "ARM64_ADR_PREL_PG_HI21";
         case RELOC_ARM64_ADD_ABS_LO12_NC:      return "ARM64_ADD_ABS_LO12_NC";
+        case RELOC_ARM64_GOT_LOAD_PAGE21:      return "ARM64_GOT_LOAD_PAGE21";
+        case RELOC_ARM64_GOT_LOAD_PAGEOFF12:   return "ARM64_GOT_LOAD_PAGEOFF12";
+        case RELOC_ARM64_TLVP_LOAD_PAGE21:     return "ARM64_TLVP_LOAD_PAGE21";
+        case RELOC_ARM64_TLVP_LOAD_PAGEOFF12:  return "ARM64_TLVP_LOAD_PAGEOFF12";
         case RELOC_RELATIVE:                   return "RELATIVE";
         default:                               return "Invalid";
     }

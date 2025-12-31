@@ -231,6 +231,16 @@ linker_object_t* linker_read_object(const char* filename) {
         return NULL;
     }
 
+    if (getenv("SOX_MACHO_GOT_DEBUG")) {
+        fprintf(stderr,
+                "[GOT-DEBUG] Read object %s format=%s sections=%d symbols=%d relocs=%d\n",
+                filename,
+                platform_format_name(obj->format),
+                obj->section_count,
+                obj->symbol_count,
+                obj->relocation_count);
+    }
+
     /* Ensure format was set correctly */
     if (obj->format != format) {
         fprintf(stderr, "Linker warning: Format mismatch in object file '%s' (detected %s, parsed as %s)\n",

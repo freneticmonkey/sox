@@ -36,7 +36,10 @@ typedef enum {
     SECTION_TYPE_TEXT,    /* Executable code (.text) */
     SECTION_TYPE_DATA,    /* Initialized data (.data) */
     SECTION_TYPE_BSS,     /* Uninitialized data (.bss) */
-    SECTION_TYPE_RODATA   /* Read-only data (.rodata) */
+    SECTION_TYPE_RODATA,  /* Read-only data (.rodata) */
+    SECTION_TYPE_TLV,     /* Thread-local variables (Mach-O __thread_vars) */
+    SECTION_TYPE_TDATA,   /* Thread-local data (Mach-O __thread_data) */
+    SECTION_TYPE_TBSS     /* Thread-local bss (Mach-O __thread_bss) */
 } section_type_t;
 
 /* Symbol types */
@@ -71,6 +74,10 @@ typedef enum {
     RELOC_ARM64_JUMP26,     /* 26-bit PC-relative jump (B) */
     RELOC_ARM64_ADR_PREL_PG_HI21,   /* Page-relative ADR */
     RELOC_ARM64_ADD_ABS_LO12_NC,    /* Low 12 bits */
+    RELOC_ARM64_GOT_LOAD_PAGE21,    /* GOT page distance */
+    RELOC_ARM64_GOT_LOAD_PAGEOFF12, /* GOT page offset */
+    RELOC_ARM64_TLVP_LOAD_PAGE21,   /* Thread-local variable page distance */
+    RELOC_ARM64_TLVP_LOAD_PAGEOFF12,/* Thread-local variable page offset */
 
     /* Common */
     RELOC_RELATIVE,         /* Relative to load address */
@@ -134,6 +141,9 @@ struct linker_object_t {
     /* Raw data (optional, for debugging) */
     uint8_t* raw_data;
     size_t raw_size;
+
+    /* Section base addresses in merged layout (indexed by section) */
+    uint64_t* section_base_addrs;
 };
 
 /* Global linker context */

@@ -1,0 +1,5 @@
+fn sum9(a, b, c, d, e, f, g, h, i) {
+    return a + b + c + d + e + f + g + h + i;
+}
+
+print(sum9(1, 2, 3, 4, 5, 6, 7, 8, 9));

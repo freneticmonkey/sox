@@ -11,6 +11,12 @@ typedef struct {
     int target_label;
 } jump_patch_t;
 
+// Patch location for direct function calls
+typedef struct {
+    size_t offset;          // Offset of call instruction
+    ir_function_t* target;  // Target function
+} call_patch_t;
+
 // External symbol relocation
 typedef struct {
     size_t offset;          // Offset in code where relocation is needed
@@ -37,6 +43,11 @@ typedef struct {
     jump_patch_t* jump_patches;
     int patch_count;
     int patch_capacity;
+
+    // Patch locations for direct calls
+    call_patch_t* call_patches;
+    int call_patch_count;
+    int call_patch_capacity;
 
     // Relocations for external symbols
     codegen_relocation_t* relocations;

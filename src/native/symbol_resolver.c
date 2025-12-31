@@ -478,6 +478,12 @@ static bool resolve_phase1_collect_symbols(symbol_resolver_t* resolver,
                 continue;
             }
 
+            /* Local symbols are defined within their object; record the defining object. */
+            if (symbol->binding == SYMBOL_BINDING_LOCAL) {
+                symbol->defining_object = obj_idx;
+                continue;
+            }
+
             if (symbol->binding != SYMBOL_BINDING_GLOBAL &&
                 symbol->binding != SYMBOL_BINDING_WEAK) {
                 continue;
@@ -589,6 +595,37 @@ static bool resolve_phase2_resolve_undefined(symbol_resolver_t* resolver,
                 /* Note: final_address will be computed later in symbol_resolver_compute_addresses() */
 
             } else {
+                /* Fallback: allow resolution against locally-bound definitions */
+                bool resolved_local = false;
+                for (int def_obj_idx = 0; def_obj_idx < object_count; def_obj_idx++) {
+                    linker_object_t* def_obj = objects[def_obj_idx];
+                    if (!def_obj) {
+                        continue;
+                    }
+                    for (int def_sym_idx = 0; def_sym_idx < def_obj->symbol_count; def_sym_idx++) {
+                        linker_symbol_t* def_sym = &def_obj->symbols[def_sym_idx];
+                        if (!def_sym->is_defined) {
+                            continue;
+                        }
+                        if (def_sym->name == NULL || def_sym->name[0] == '\0') {
+                            continue;
+                        }
+                        if (strcmp(def_sym->name, symbol->name) != 0) {
+                            continue;
+                        }
+                        symbol->defining_object = def_obj_idx;
+                        resolved_local = true;
+                        break;
+                    }
+                    if (resolved_local) {
+                        break;
+                    }
+                }
+
+                if (resolved_local) {
+                    continue;
+                }
+
                 /* Not found - check if it's a runtime symbol */
                 if (is_runtime_symbol(symbol->name)) {
                     /* Mark as runtime symbol (external reference) */
@@ -781,8 +818,8 @@ bool symbol_resolver_compute_addresses(symbol_resolver_t* resolver,
         return false;
     }
 
-    /* Enable verbose mode for debugging (can be controlled via env var later) */
-    bool verbose = false;  /* Set to true to enable debug output */
+    /* Enable verbose mode for debugging (controlled by resolver->verbose) */
+    bool verbose = resolver->verbose;
 
     /* Part 1: Compute addresses for GLOBAL/WEAK symbols in hash table */
     for (size_t i = 0; i < resolver->table_size; i++) {

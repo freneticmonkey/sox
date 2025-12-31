@@ -40,7 +40,8 @@
 
 // Symbol types
 #define N_UNDF 0x0
-#define N_EXT 0x1
+#define N_EXT  0x1
+#define N_PEXT 0x10
 #define N_SECT 0xE
 
 // Platform types

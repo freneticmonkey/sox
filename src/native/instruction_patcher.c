@@ -138,6 +138,64 @@ bool patch_arm64_add_imm12(uint8_t* code, size_t code_size, size_t offset, uint1
     return true;
 }
 
+bool patch_arm64_load_imm12(uint8_t* code, size_t code_size, size_t offset, uint16_t imm12) {
+    /* SECURITY FIX: Critical Issue #4 - Bounds Checking */
+    CHECK_PATCH_BOUNDS(code, code_size, offset, sizeof(uint32_t));
+
+    /* Validate range: 12-bit unsigned (0 to 4095) */
+    if (imm12 > 0xFFF) {
+        fprintf(stderr, "Instruction patcher error: ARM64 LDR immediate %u (0x%x) out of range [0, 4095]\n",
+                imm12, imm12);
+        return false;
+    }
+
+    /* Read current instruction */
+    uint32_t* insn = (uint32_t*)(code + offset);
+
+    /* Preserve bits: [31:22] opcode/size, [9:5] Rn, [4:0] Rt
+     * Replace bits: [21:10] imm12 */
+    *insn = (*insn & 0xFFC003FF) | ((imm12 & 0xFFF) << 10);
+
+    return true;
+}
+
+bool patch_arm64_ldr_imm12_scaled(uint8_t* code, size_t code_size, size_t offset, uint64_t value) {
+    /* SECURITY FIX: Critical Issue #4 - Bounds Checking */
+    CHECK_PATCH_BOUNDS(code, code_size, offset, sizeof(uint32_t));
+
+    uint32_t insn = *(uint32_t*)(code + offset);
+    uint32_t size_field = (insn >> 30) & 0x3;
+    uint32_t scale = 1u << size_field;
+    uint32_t offset_bytes = (uint32_t)(value & 0xFFF);
+
+    if (scale == 0 || (offset_bytes % scale) != 0) {
+        fprintf(stderr, "Instruction patcher error: ARM64 LDR offset 0x%x not aligned to scale %u\n",
+                offset_bytes, scale);
+        return false;
+    }
+
+    uint32_t imm12 = offset_bytes / scale;
+    return patch_arm64_load_imm12(code, code_size, offset, (uint16_t)imm12);
+}
+
+bool patch_arm64_add_imm12_rewrite(uint8_t* code, size_t code_size, size_t offset, uint16_t imm12) {
+    CHECK_PATCH_BOUNDS(code, code_size, offset, sizeof(uint32_t));
+
+    if (imm12 > 0xFFF) {
+        fprintf(stderr, "Instruction patcher error: ARM64 ADD immediate %u (0x%x) out of range [0, 4095]\n",
+                imm12, imm12);
+        return false;
+    }
+
+    uint32_t* insn = (uint32_t*)(code + offset);
+    uint32_t rd = *insn & 0x1F;
+    uint32_t rn = (*insn >> 5) & 0x1F;
+    uint32_t add = 0x91000000 | ((uint32_t)imm12 << 10) | (rn << 5) | rd;
+    *insn = add;
+
+    return true;
+}
+
 bool patch_arm64_abs64(uint8_t* code, size_t code_size, size_t offset, uint64_t value) {
     /* SECURITY FIX: Critical Issue #4 - Bounds Checking */
     CHECK_PATCH_BOUNDS(code, code_size, offset, sizeof(uint64_t));
@@ -200,9 +258,25 @@ bool patch_instruction(uint8_t* code,
              * pc is the location of the ADRP instruction */
             return patch_arm64_adrp(code, code_size, offset, (uint64_t)value, pc);
 
+        case RELOC_ARM64_GOT_LOAD_PAGE21:
+            /* GOT page relocation uses ADRP-style patching */
+            return patch_arm64_adrp(code, code_size, offset, (uint64_t)value, pc);
+
+        case RELOC_ARM64_TLVP_LOAD_PAGE21:
+            /* TLV page relocation uses ADRP-style patching */
+            return patch_arm64_adrp(code, code_size, offset, (uint64_t)value, pc);
+
         case RELOC_ARM64_ADD_ABS_LO12_NC:
             /* Extract low 12 bits of absolute address */
             return patch_arm64_add_imm12(code, code_size, offset, (uint16_t)(value & 0xFFF));
+
+        case RELOC_ARM64_GOT_LOAD_PAGEOFF12:
+            /* GOT page offset relocation uses LDR-style imm12 patching */
+            return patch_arm64_ldr_imm12_scaled(code, code_size, offset, (uint16_t)(value & 0xFFF));
+
+        case RELOC_ARM64_TLVP_LOAD_PAGEOFF12:
+            /* TLV page offset relocation uses ADD-style patching */
+            return patch_arm64_add_imm12_rewrite(code, code_size, offset, (uint16_t)(value & 0xFFF));
 
         case RELOC_NONE:
             /* No patching needed */
@@ -277,9 +351,35 @@ bool validate_relocation_range(int64_t value, relocation_type_t type) {
              * Validated in patch_arm64_adrp */
             return true;
 
+        case RELOC_ARM64_GOT_LOAD_PAGE21:
+            /* Same range as ADRP */
+            return true;
+
+        case RELOC_ARM64_TLVP_LOAD_PAGE21:
+            /* Same range as ADRP */
+            return true;
+
         case RELOC_ARM64_ADD_ABS_LO12_NC:
             /* 12-bit unsigned
              * NC = No Check, so we only validate against maximum */
+            if ((value & 0xFFF) > 0xFFF) {
+                fprintf(stderr, "Error: ARM64 12-bit immediate out of range: %lld\n",
+                        (long long)(value & 0xFFF));
+                return false;
+            }
+            return true;
+
+        case RELOC_ARM64_GOT_LOAD_PAGEOFF12:
+            /* Same range as ADD/LDR imm12 */
+            if ((value & 0xFFF) > 0xFFF) {
+                fprintf(stderr, "Error: ARM64 12-bit immediate out of range: %lld\n",
+                        (long long)(value & 0xFFF));
+                return false;
+            }
+            return true;
+
+        case RELOC_ARM64_TLVP_LOAD_PAGEOFF12:
+            /* Same range as ADD */
             if ((value & 0xFFF) > 0xFFF) {
                 fprintf(stderr, "Error: ARM64 12-bit immediate out of range: %lld\n",
                         (long long)(value & 0xFFF));

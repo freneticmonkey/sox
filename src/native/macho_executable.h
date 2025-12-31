@@ -51,31 +51,64 @@
 /* Additional Mach-O constants for executables (extend macho_writer.h) */
 #define MH_EXECUTE 0x2              /* Executable file type */
 #define MH_PIE 0x200000             /* Position-independent executable */
+#define MH_DYLDLINK 0x4             /* Dynamically linked */
+#define MH_TWOLEVEL 0x80            /* Two-level namespace */
 
 #define LC_MAIN 0x80000028          /* Entry point command (modern macOS) */
 #define LC_LOAD_DYLINKER 0xe        /* Dynamic linker command */
+#define LC_LOAD_DYLIB 0xc           /* Load dynamic library */
 #define LC_SYMTAB 0x2               /* Symbol table */
 #define LC_DYSYMTAB 0xb             /* Dynamic symbol table */
 #define LC_UUID 0x1b                /* UUID */
 #define LC_BUILD_VERSION 0x32       /* Build version */
+#define LC_DYLD_INFO_ONLY 0x80000022 /* Dyld info (compressed) */
 
 #define VM_PROT_NONE 0x00           /* No protection */
 #define VM_PROT_READ 0x01           /* Read permission */
 #define VM_PROT_WRITE 0x02          /* Write permission */
 #define VM_PROT_EXECUTE 0x04        /* Execute permission */
 
+#define SG_READ_ONLY 0x10           /* Read-only data segment */
+
+#define S_ZEROFILL 0x1              /* Zero-filled section (no file content) */
+#define S_SYMBOL_STUBS 0x8          /* Section contains symbol stubs */
+#define S_NON_LAZY_SYMBOL_POINTERS 0x6 /* Non-lazy symbol pointers */
+#define S_THREAD_LOCAL_REGULAR 0x11     /* Thread-local data section */
+#define S_THREAD_LOCAL_ZEROFILL 0x12    /* Thread-local bss section */
+#define S_THREAD_LOCAL_VARIABLES 0x13   /* Thread-local variable section */
+
 /* Segment names */
 #define SEG_TEXT "__TEXT"           /* Text segment name */
 #define SEG_DATA "__DATA"           /* Data segment name */
+#define SEG_DATA_CONST "__DATA_CONST" /* Read-only data segment */
 
 /* Section names */
 #define SECT_TEXT "__text"          /* Code section */
 #define SECT_CONST "__const"        /* Read-only data section */
+#define SECT_STUBS "__stubs"        /* Symbol stubs section */
 #define SECT_DATA "__data"          /* Initialized data section */
 #define SECT_BSS "__bss"            /* Uninitialized data section */
+#define SECT_GOT "__got"            /* Global offset table section */
+#define SECT_TLV "__thread_vars"    /* Thread-local variables section */
+#define SECT_TDATA "__thread_data"  /* Thread-local data section */
+#define SECT_TBSS "__thread_bss"    /* Thread-local bss section */
 
 /* Default dynamic linker path */
 #define DYLD_PATH "/usr/lib/dyld"
+#define LIBSYSTEM_PATH "/usr/lib/libSystem.B.dylib"
+
+typedef struct {
+    uint32_t name_offset;
+    uint32_t timestamp;
+    uint32_t current_version;
+    uint32_t compatibility_version;
+} dylib_t;
+
+typedef struct {
+    uint32_t cmd;
+    uint32_t cmdsize;
+    dylib_t dylib;
+} dylib_command_t;
 
 /* Entry point command structure (LC_MAIN) */
 typedef struct {
@@ -99,6 +132,22 @@ typedef struct {
     uint32_t cmdsize;               /* sizeof(uuid_command_t) */
     uint8_t uuid[16];               /* 128-bit UUID */
 } uuid_command_t;
+
+/* Dyld info command structure (LC_DYLD_INFO_ONLY) */
+typedef struct {
+    uint32_t cmd;
+    uint32_t cmdsize;
+    uint32_t rebase_off;
+    uint32_t rebase_size;
+    uint32_t bind_off;
+    uint32_t bind_size;
+    uint32_t weak_bind_off;
+    uint32_t weak_bind_size;
+    uint32_t lazy_bind_off;
+    uint32_t lazy_bind_size;
+    uint32_t export_off;
+    uint32_t export_size;
+} dyld_info_command_t;
 
 /*
  * Main Mach-O Executable Writer API

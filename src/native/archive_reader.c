@@ -219,7 +219,7 @@ bool archive_extract_objects(const char* archive_path,
         return false;
     }
 
-    if (verbose) {
+    if (verbose || getenv("SOX_MACHO_GOT_DEBUG")) {
         fprintf(stderr, "[ARCHIVE] Extracting objects from %s\n", archive_path);
     }
 
@@ -236,7 +236,7 @@ bool archive_extract_objects(const char* archive_path,
     while ((entry = archive_next_entry(ar)) != NULL) {
         /* Skip special entries (symbol table, etc.) */
         if (entry->name[0] == '_' && entry->name[1] == '_') {
-            if (verbose) {
+            if (verbose || getenv("SOX_MACHO_GOT_DEBUG")) {
                 fprintf(stderr, "[ARCHIVE] Skipping special entry: %s\n", entry->name);
             }
             continue;
@@ -245,13 +245,13 @@ bool archive_extract_objects(const char* archive_path,
         /* Skip non-object files */
         size_t name_len = strlen(entry->name);
         if (name_len < 2 || strcmp(entry->name + name_len - 2, ".o") != 0) {
-            if (verbose) {
+            if (verbose || getenv("SOX_MACHO_GOT_DEBUG")) {
                 fprintf(stderr, "[ARCHIVE] Skipping non-object entry: %s\n", entry->name);
             }
             continue;
         }
 
-        if (verbose) {
+        if (verbose || getenv("SOX_MACHO_GOT_DEBUG")) {
             fprintf(stderr, "[ARCHIVE] Extracting object: %s (%llu bytes)\n",
                     entry->name, (unsigned long long)entry->size);
         }

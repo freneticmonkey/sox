@@ -89,6 +89,9 @@ bool patch_arm64_adrp(uint8_t* code, size_t code_size, size_t offset, uint64_t t
  * Valid range: 0 to 4095 (0x000 to 0xFFF)
  */
 bool patch_arm64_add_imm12(uint8_t* code, size_t code_size, size_t offset, uint16_t imm12);
+bool patch_arm64_add_imm12_rewrite(uint8_t* code, size_t code_size, size_t offset, uint16_t imm12);
+bool patch_arm64_load_imm12(uint8_t* code, size_t code_size, size_t offset, uint16_t imm12);
+bool patch_arm64_ldr_imm12_scaled(uint8_t* code, size_t code_size, size_t offset, uint64_t value);
 
 /* Patch 64-bit absolute address for ARM64 */
 bool patch_arm64_abs64(uint8_t* code, size_t code_size, size_t offset, uint64_t value);

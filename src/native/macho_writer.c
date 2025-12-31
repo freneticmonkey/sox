@@ -960,18 +960,18 @@ bool macho_create_object_file_with_arm64_relocs_and_strings(const char* filename
             if (!reloc || !reloc->symbol) continue;
 
             // Check if it's a local string symbol
-            bool is_local_string = false;
+            bool is_string_symbol = false;
             if (str_lits && string_literal_count > 0) {
                 for (int j = 0; j < string_literal_count; j++) {
                     if (strcmp(reloc->symbol, str_lits[j].symbol) == 0) {
-                        is_local_string = true;
+                        is_string_symbol = true;
                         break;
                     }
                 }
             }
 
             // Skip local string symbols (already added above)
-            if (is_local_string) continue;
+            if (is_string_symbol) continue;
 
             // Check if we've already added this symbol
             int symbol_index = -1;
@@ -996,7 +996,7 @@ bool macho_create_object_file_with_arm64_relocs_and_strings(const char* filename
             const arm64_relocation_t* reloc = &arm64_relocs[i];
             if (!reloc || !reloc->symbol) continue;
 
-            // Find the symbol index
+            // Find the symbol index or section number
             uint32_t symbol_index = 0;
             bool found = false;
 
@@ -1004,7 +1004,7 @@ bool macho_create_object_file_with_arm64_relocs_and_strings(const char* filename
             if (str_lits && string_literal_count > 0 && string_symbol_indices) {
                 for (int j = 0; j < string_literal_count; j++) {
                     if (strcmp(reloc->symbol, str_lits[j].symbol) == 0) {
-                        // Use the actual symbol index from when we added the symbol
+                        // Use symbol-relative relocation for string literals
                         symbol_index = string_symbol_indices[j];
                         found = true;
                         break;
@@ -1052,7 +1052,8 @@ bool macho_create_object_file_with_arm64_relocs_and_strings(const char* filename
             bool is_pcrel = (macho_reloc_type != 4);  // false for PAGEOFF12, true for others
 
             int32_t byte_offset = (int32_t)(reloc->offset * 4);
-            macho_add_relocation(builder, byte_offset, symbol_index, is_pcrel, 2, true, macho_reloc_type);
+            macho_add_relocation(builder, byte_offset, symbol_index, is_pcrel, 2,
+                                 true, macho_reloc_type);
         }
 
         free(symbol_names);

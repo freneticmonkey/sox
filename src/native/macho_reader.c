@@ -35,6 +35,15 @@
 #define RELOC_EXTERN(info)     (((info) >> 27) & 0x1)        /* Bit 27 */
 #define RELOC_TYPE(info)       (((info) >> 28) & 0xF)        /* Bits 28-31 */
 
+static bool macho_tlv_debug_enabled(void) {
+    const char* env = getenv("SOX_MACHO_TLV_DEBUG");
+    return env && env[0] != '\0';
+}
+
+static bool macho_got_debug_enabled(void) {
+    const char* env = getenv("SOX_MACHO_GOT_DEBUG");
+    return env && env[0] != '\0';
+}
 /**
  * Map section type from Mach-O section name to unified section type.
  */
@@ -43,6 +52,12 @@ static section_type_t map_section_type(const char* sectname, const char* segname
         return SECTION_TYPE_TEXT;
     } else if (strcmp(sectname, "__data") == 0 && strcmp(segname, "__DATA") == 0) {
         return SECTION_TYPE_DATA;
+    } else if (strcmp(sectname, "__thread_vars") == 0 && strcmp(segname, "__DATA") == 0) {
+        return SECTION_TYPE_TLV;
+    } else if (strcmp(sectname, "__thread_data") == 0 && strcmp(segname, "__DATA") == 0) {
+        return SECTION_TYPE_TDATA;
+    } else if (strcmp(sectname, "__thread_bss") == 0 && strcmp(segname, "__DATA") == 0) {
+        return SECTION_TYPE_TBSS;
     } else if (strcmp(sectname, "__bss") == 0 && strcmp(segname, "__DATA") == 0) {
         return SECTION_TYPE_BSS;
     } else if (strcmp(sectname, "__rodata") == 0 ||
@@ -63,8 +78,8 @@ static void map_symbol_type_and_binding(uint8_t n_type, uint8_t n_sect,
     /* Extract type bits (N_TYPE mask = 0x0e) */
     uint8_t type_bits = n_type & 0x0e;
 
-    /* Extract external bit (N_EXT = 0x01) */
-    bool is_external = (n_type & 0x01) != 0;
+    /* Extract external bits (N_EXT/N_PEXT) */
+    bool is_external = (n_type & (N_EXT | N_PEXT)) != 0;
 
     /* Determine binding */
     if (is_external) {
@@ -101,17 +116,16 @@ relocation_type_t macho_map_relocation_type(uint32_t macho_type) {
         case ARM64_RELOC_PAGEOFF12:
             return RELOC_ARM64_ADD_ABS_LO12_NC;
         case ARM64_RELOC_GOT_LOAD_PAGE21:
+            return RELOC_ARM64_GOT_LOAD_PAGE21;
         case ARM64_RELOC_POINTER_TO_GOT:
-            /* GOT relocations - map to page-relative for now */
-            return RELOC_ARM64_ADR_PREL_PG_HI21;
+            /* Treat pointer-to-GOT like a GOT page relocation */
+            return RELOC_ARM64_GOT_LOAD_PAGE21;
         case ARM64_RELOC_GOT_LOAD_PAGEOFF12:
-            return RELOC_ARM64_ADD_ABS_LO12_NC;
+            return RELOC_ARM64_GOT_LOAD_PAGEOFF12;
         case ARM64_RELOC_TLVP_LOAD_PAGE21:
-            /* Thread-local variable page distance - map to page-relative */
-            return RELOC_ARM64_ADR_PREL_PG_HI21;
+            return RELOC_ARM64_TLVP_LOAD_PAGE21;
         case ARM64_RELOC_TLVP_LOAD_PAGEOFF12:
-            /* Thread-local variable page offset - map to page offset */
-            return RELOC_ARM64_ADD_ABS_LO12_NC;
+            return RELOC_ARM64_TLVP_LOAD_PAGEOFF12;
         case ARM64_RELOC_ADDEND:
             /* ADDEND is a modifier, not a standalone relocation */
             return RELOC_NONE;
@@ -266,6 +280,21 @@ bool macho_parse_symbols(linker_object_t* obj, const uint8_t* data, size_t size,
         }
 
         link_sym->value = sym->n_value;
+        if (link_sym->is_defined &&
+            link_sym->section_index >= 0 &&
+            link_sym->section_index < obj->section_count) {
+            linker_section_t* sect = &obj->sections[link_sym->section_index];
+            if (link_sym->value >= sect->vaddr) {
+                link_sym->value -= sect->vaddr;
+            }
+            if (macho_tlv_debug_enabled() && sect->type == SECTION_TYPE_TLV) {
+                fprintf(stderr,
+                        "[TLV-DEBUG] SYMBOL OFFSET name=%s value=0x%llx sect_vaddr=0x%llx\n",
+                        link_sym->name ? link_sym->name : "<unknown>",
+                        (unsigned long long)sym->n_value,
+                        (unsigned long long)sect->vaddr);
+            }
+        }
         link_sym->size = 0;  /* Mach-O doesn't store symbol size in nlist_64 */
         link_sym->final_address = 0;
         link_sym->defining_object = -1;  /* Will be set by caller */
@@ -317,6 +346,10 @@ static bool parse_section_relocations(linker_object_t* obj, const uint8_t* data,
 
     const relocation_info_t* relocs = (const relocation_info_t*)(data + reloff);
 
+    int32_t pending_addend = 0;
+    bool has_pending_addend = false;
+    uint32_t pending_addend_addr = 0;
+
     /* Parse each relocation */
     for (uint32_t i = 0; i < nreloc; i++) {
         const relocation_info_t* reloc = &relocs[i];
@@ -332,7 +365,21 @@ static bool parse_section_relocations(linker_object_t* obj, const uint8_t* data,
 
         /* Skip ADDEND relocations (they modify the next relocation) */
         if (type == ARM64_RELOC_ADDEND) {
-            /* TODO: Handle addend for next relocation */
+            int32_t addend = (int32_t)(symbolnum & 0x00ffffff);
+            if (addend & 0x00800000) {
+                addend |= (int32_t)0xff000000;
+            }
+            pending_addend = addend;
+            pending_addend_addr = (uint32_t)reloc->r_address;
+            has_pending_addend = true;
+            if (macho_tlv_debug_enabled()) {
+                fprintf(stderr,
+                        "[TLV-DEBUG] ADDEND reloc section=%d addr=0x%x addend=%d external=%u\n",
+                        section_index,
+                        reloc->r_address,
+                        pending_addend,
+                        external);
+            }
             continue;
         }
 
@@ -355,13 +402,49 @@ static bool parse_section_relocations(linker_object_t* obj, const uint8_t* data,
         link_reloc->offset = (uint64_t)reloc->r_address;
         link_reloc->type = unified_type;
         link_reloc->section_index = section_index;
-        link_reloc->addend = 0;  /* TODO: Extract from ADDEND relocation if present */
+        link_reloc->addend = 0;
         link_reloc->object_index = -1;  /* Will be set by caller */
+        if (has_pending_addend) {
+            if (pending_addend_addr == (uint32_t)reloc->r_address) {
+                link_reloc->addend = pending_addend;
+                if (macho_tlv_debug_enabled()) {
+                    fprintf(stderr,
+                            "[TLV-DEBUG] APPLY ADDEND section=%d addr=0x%x addend=%d type=%u\n",
+                            section_index,
+                            reloc->r_address,
+                            pending_addend,
+                            type);
+                }
+            } else if (macho_tlv_debug_enabled()) {
+                fprintf(stderr,
+                        "[TLV-DEBUG] DROP ADDEND section=%d pending_addr=0x%x next_addr=0x%x addend=%d\n",
+                        section_index,
+                        pending_addend_addr,
+                        reloc->r_address,
+                        pending_addend);
+            }
+            has_pending_addend = false;
+        }
 
         /* Set symbol index */
         if (external) {
             /* External relocation - symbolnum is symbol table index */
             link_reloc->symbol_index = (int)symbolnum;
+            if (macho_got_debug_enabled() &&
+                (unified_type == RELOC_ARM64_GOT_LOAD_PAGE21 ||
+                 unified_type == RELOC_ARM64_GOT_LOAD_PAGEOFF12)) {
+                const char* sym_name = (symbolnum < (uint32_t)obj->symbol_count &&
+                                        obj->symbols[symbolnum].name)
+                                       ? obj->symbols[symbolnum].name
+                                       : "<unknown>";
+                fprintf(stderr,
+                        "[GOT-DEBUG] reloc type=%u unified=%d addr=0x%x sym=%s external=%u\n",
+                        type,
+                        unified_type,
+                        reloc->r_address,
+                        sym_name,
+                        external);
+            }
         } else {
             /* Section-relative relocation - symbolnum is section number (1-based in Mach-O)
              * Encode as negative: -(section_num + 2)
