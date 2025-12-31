@@ -9,7 +9,7 @@ var passedTests = 0
 var failedTests = 0
 
 // Basic assertion - checks if condition is true
-fn assert(condition, message) {
+fn check(condition, message) {
     totalTests = totalTests + 1
     if (condition) {
         passedTests = passedTests + 1
@@ -157,7 +157,7 @@ fn runAndExit() {
 
 // Export public API
 return {
-    assert: assert,
+    check: check,
     assertEqual: assertEqual,
     assertNotEqual: assertNotEqual,
     assertNil: assertNil,

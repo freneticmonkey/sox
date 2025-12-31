@@ -1,0 +1,25 @@
+fn add(a, b) {
+    return a + b
+}
+
+fn makeAdder(x) {
+    fn inner(y) {
+        return x + y
+    }
+    return inner
+}
+
+fn fib(n) {
+    if (n < 2) return n
+    return fib(n - 1) + fib(n - 2)
+}
+
+#[test]
+fn TestFunctions(t) {
+    if (add(2, 3) != 5) { t.Error("function call") }
+
+    var inc = makeAdder(1)
+    if (inc(4) != 5) { t.Error("closure") }
+
+    if (fib(6) != 8) { t.Error("recursion") }
+}

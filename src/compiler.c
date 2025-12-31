@@ -103,6 +103,7 @@ typedef struct switch_t {
     int      start;
     int      default_jump;
     uint8_t  global_variable;
+    bool     is_global;
 } switch_t;
 
 typedef struct compiler_t compiler_t;
@@ -352,7 +353,7 @@ static obj_function_t* _end_compiler() {
 
     // Call any deferred functions before returning
     if ( _current->defer_count > 0 ) {
-        for (int i = 0; i < _current->defer_count ; i++ ) {
+        for (int i = _current->defer_count - 1; i >= 0; i-- ) {
             // obj_function_t defer_func = _current->deferred_functions[i];
             // if ( defer_func->type != TYPE_DEFER )
             //     _error("Can't read local variable in its own initializer.");
@@ -954,6 +955,7 @@ parse_rule_t rules[] = {
     [TOKEN_SLASH]         = {NULL,            _binary,  PREC_FACTOR},
     [TOKEN_STAR]          = {NULL,            _binary,  PREC_FACTOR},
     [TOKEN_UNDERSCORE]    = {NULL,            NULL,     PREC_NONE},
+    [TOKEN_HASH]          = {NULL,            NULL,     PREC_NONE},
     [TOKEN_BANG]          = {_unary,          NULL,     PREC_NONE},
     [TOKEN_BANG_EQUAL]    = {NULL,            _binary,  PREC_EQUALITY},
     [TOKEN_EQUAL]         = {NULL,            NULL,     PREC_NONE},
@@ -966,6 +968,7 @@ parse_rule_t rules[] = {
     [TOKEN_STRING]        = {_string,         NULL,     PREC_NONE},
     [TOKEN_NUMBER]        = {_number,         NULL,     PREC_NONE},
     [TOKEN_AND]           = {NULL,            _and_,    PREC_AND},
+    [TOKEN_ASSERT]        = {NULL,            NULL,     PREC_NONE},
     [TOKEN_CLASS]         = {NULL,            NULL,     PREC_NONE},
     [TOKEN_ELSE]          = {NULL,            NULL,     PREC_NONE},
     [TOKEN_FALSE]         = {_literal,        NULL,     PREC_NONE},
@@ -1096,12 +1099,13 @@ static void _loop_end() {
     _current->loop = _current->loop->enclosing;
 }
 
-static void _switch_start(switch_t *_switch, uint8_t global) {
+static void _switch_start(switch_t *_switch, uint8_t variable, bool is_global) {
 
     _switch->enclosing = _current->_switch;
     _switch->start = _current_chunk()->count;
     _switch->default_jump = -1;
-    _switch->global_variable = global;
+    _switch->global_variable = variable;
+    _switch->is_global = is_global;
 
     _current->_switch = _switch;
 }
@@ -1111,7 +1115,11 @@ static bool _switch_found_default() {
 }
 
 static void _switch_get_variable() {
-    _emit_bytes(OP_GET_GLOBAL, _current->_switch->global_variable);
+    if (_current->_switch->is_global) {
+        _emit_bytes(OP_GET_GLOBAL, _current->_switch->global_variable);
+    } else {
+        _emit_bytes(OP_GET_LOCAL, _current->_switch->global_variable);
+    }
 }
 
 static void _switch_set_default_location() {
@@ -1248,8 +1256,12 @@ static void _defer_declaration() {
     _current->deferred_functions[_current->defer_count++] = _current->local_count - 1;
 }
 
-static void _fun_declaration() {
+static void _fun_declaration(bool is_test) {
     uint8_t global = _parse_variable("Expect function name.");
+
+    if (is_test && _current->enclosing != NULL) {
+        _error_at_current("Test functions must be declared at top level.");
+    }
     
     if (_current->enclosing == NULL) {
         if ( strncmp(_parser.previous.start, "main", 4) == 0 ) {
@@ -1302,6 +1314,21 @@ static void _expression_statement() {
     _expression();
     _optional_consume(TOKEN_SEMICOLON, "Expect ';' after expression.");
     _emit_byte(OP_POP);
+}
+
+static void _assert_statement() {
+    _consume(TOKEN_LEFT_PAREN, "Expect '(' after 'assert'.");
+    _expression();
+
+    if (_match(TOKEN_COMMA)) {
+        _expression();
+    } else {
+        _emit_byte(OP_NIL);
+    }
+
+    _consume(TOKEN_RIGHT_PAREN, "Expect ')' after assert.");
+    _optional_consume(TOKEN_SEMICOLON, "Expect ';' after assert.");
+    _emit_byte(OP_ASSERT);
 }
 
 // static void _in_statement() {
@@ -1674,6 +1701,11 @@ static void _switch_statement() {
     
     // setup a global for the switched value
     uint8_t global = _generate_variable(TOKEN_SWITCH, "switch_var");
+    bool is_global = (_current->scope_depth == 0);
+    uint8_t variable = global;
+    if (!is_global) {
+        variable = (uint8_t)(_current->local_count - 1);
+    }
     _mark_initialized();
 
     // read the value to be switched on
@@ -1683,7 +1715,7 @@ static void _switch_statement() {
     _define_variable(global);
 
     switch_t _switch;
-    _switch_start(&_switch, global);
+    _switch_start(&_switch, variable, is_global);
     
     _consume(TOKEN_LEFT_BRACE, "Expect '{' before switch body.");
     _begin_scope();
@@ -1785,6 +1817,7 @@ static void _synchronize() {
             case TOKEN_SWITCH:
             case TOKEN_WHILE:
             case TOKEN_PRINT:
+            case TOKEN_ASSERT:
             case TOKEN_RETURN:
                 return;
 
@@ -1931,12 +1964,27 @@ static void _declaration() {
 
     if ( _match(TOKEN_IMPORT) ) {
         _import_declaration();
+    } else if ( _match(TOKEN_HASH) ) {
+        bool is_test = false;
+
+        _consume(TOKEN_LEFT_BRACKET, "Expect '[' after '#'.");
+        _consume(TOKEN_IDENTIFIER, "Expect attribute name after '#['.");
+        if (_parser.previous.length == 4 &&
+            memcmp(_parser.previous.start, "test", 4) == 0) {
+            is_test = true;
+        } else {
+            _error("Unknown attribute.");
+        }
+        _consume(TOKEN_RIGHT_BRACKET, "Expect ']' after attribute.");
+
+        _consume(TOKEN_FUN, "Expect 'fn' after attribute.");
+        _fun_declaration(is_test);
     } else if ( _match(TOKEN_CLASS) ) {
         _class_declaration();
     } else if (_match(TOKEN_DEFER)) {
         _defer_declaration();
     } else if ( _match(TOKEN_FUN) ) {
-        _fun_declaration();
+        _fun_declaration(false);
     } else if ( _match(TOKEN_VAR) ) {
         _var_declaration();
     } else {
@@ -1952,6 +2000,8 @@ static void _statement() {
         _break_statement();
     } else if ( _match(TOKEN_CONTINUE) ) {
         _continue_statement();
+    } else if ( _match(TOKEN_ASSERT) ) {
+        _assert_statement();
     } else if ( _match(TOKEN_PRINT) ) {
         _print_statement();
     } else if ( _match(TOKEN_IF) ) {
@@ -1976,6 +2026,10 @@ static void _statement() {
 }
 
 obj_function_t* l_compile(const char* source) {
+    return l_compile_with_options(source, false);
+}
+
+obj_function_t* l_compile_with_options(const char* source, bool skip_main) {
     l_init_scanner(source);
     compiler_t compiler;
 
@@ -1993,7 +2047,7 @@ obj_function_t* l_compile(const char* source) {
     }
 
     // if the main function is defined, call it
-    if ( compiler.main_function != -1 ) {
+    if (!skip_main && compiler.main_function != -1) {
 
         // generate a call to the main function
         _emit_bytes(OP_GET_GLOBAL, compiler.main_function);

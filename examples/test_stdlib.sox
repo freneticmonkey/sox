@@ -11,7 +11,7 @@ import "modules/array"
 var passed = 0
 var failed = 0
 
-fn assert(condition, message) {
+fn check(condition, message) {
     if (condition) {
         passed = passed + 1
         print("✓ " + message)
@@ -26,25 +26,25 @@ fn assert(condition, message) {
 // ===================
 print("--- String Utils Tests ---")
 
-assert(string_utils.upper("hello") == "HELLO", "upper() converts to uppercase")
-assert(string_utils.lower("WORLD") == "world", "lower() converts to lowercase")
-assert(string_utils.trim("  spaced  ") == "spaced", "trim() removes whitespace")
-assert(string_utils.indexOf("hello world", "world") == 6, "indexOf() finds substring position")
-assert(string_utils.indexOf("hello", "xyz") == -1, "indexOf() returns -1 when not found")
-assert(string_utils.substring("hello", 1, 4) == "ell", "substring() extracts substring")
-assert(string_utils.replace("hello world", "world", "sox") == "hello sox", "replace() replaces substring")
-assert(string_utils.startsWith("hello", "hel"), "startsWith() checks prefix")
-assert(!string_utils.startsWith("hello", "wor"), "startsWith() rejects wrong prefix")
-assert(string_utils.endsWith("hello", "llo"), "endsWith() checks suffix")
-assert(!string_utils.endsWith("hello", "abc"), "endsWith() rejects wrong suffix")
-assert(string_utils.contains("hello world", "wor"), "contains() finds substring")
-assert(string_utils.repeat("Ha", 3) == "HaHaHa", "repeat() repeats string")
+check(string_utils.upper("hello") == "HELLO", "upper() converts to uppercase")
+check(string_utils.lower("WORLD") == "world", "lower() converts to lowercase")
+check(string_utils.trim("  spaced  ") == "spaced", "trim() removes whitespace")
+check(string_utils.indexOf("hello world", "world") == 6, "indexOf() finds substring position")
+check(string_utils.indexOf("hello", "xyz") == -1, "indexOf() returns -1 when not found")
+check(string_utils.substring("hello", 1, 4) == "ell", "substring() extracts substring")
+check(string_utils.replace("hello world", "world", "sox") == "hello sox", "replace() replaces substring")
+check(string_utils.startsWith("hello", "hel"), "startsWith() checks prefix")
+check(!string_utils.startsWith("hello", "wor"), "startsWith() rejects wrong prefix")
+check(string_utils.endsWith("hello", "llo"), "endsWith() checks suffix")
+check(!string_utils.endsWith("hello", "abc"), "endsWith() rejects wrong suffix")
+check(string_utils.contains("hello world", "wor"), "contains() finds substring")
+check(string_utils.repeat("Ha", 3) == "HaHaHa", "repeat() repeats string")
 
 var parts = string_utils.split("a,b,c", ",")
-assert(len(parts) == 3, "split() creates array of 3 parts")
-assert(parts[0] == "a", "split() first part is 'a'")
-assert(parts[1] == "b", "split() second part is 'b'")
-assert(parts[2] == "c", "split() third part is 'c'")
+check(len(parts) == 3, "split() creates array of 3 parts")
+check(parts[0] == "a", "split() first part is 'a'")
+check(parts[1] == "b", "split() second part is 'b'")
+check(parts[2] == "c", "split() third part is 'c'")
 
 print("")
 
@@ -53,37 +53,37 @@ print("")
 // ===================
 print("--- Math Tests ---")
 
-assert(math.abs(-5) == 5, "abs() returns absolute value")
-assert(math.abs(5) == 5, "abs() keeps positive numbers positive")
-assert(math.square(4) == 16, "square() computes square")
-assert(math.cube(3) == 27, "cube() computes cube")
-assert(math.max(10, 20) == 20, "max() returns larger value")
-assert(math.min(10, 20) == 10, "min() returns smaller value")
-assert(math.sqrt(16) == 4, "sqrt() computes square root")
-assert(math.pow(2, 3) == 8, "pow() computes exponentiation")
-assert(math.floor(3.7) == 3, "floor() rounds down")
-assert(math.ceil(3.2) == 4, "ceil() rounds up")
-assert(math.round(3.5) == 4, "round() rounds to nearest")
-assert(math.clamp(15, 0, 10) == 10, "clamp() limits to max")
-assert(math.clamp(-5, 0, 10) == 0, "clamp() limits to min")
-assert(math.clamp(5, 0, 10) == 5, "clamp() keeps value in range")
-assert(math.sign(5) == 1, "sign() returns 1 for positive")
-assert(math.sign(-5) == -1, "sign() returns -1 for negative")
-assert(math.sign(0) == 0, "sign() returns 0 for zero")
-assert(math.isEven(4), "isEven() identifies even numbers")
-assert(!math.isEven(5), "isEven() rejects odd numbers")
-assert(math.isOdd(5), "isOdd() identifies odd numbers")
-assert(!math.isOdd(4), "isOdd() rejects even numbers")
+check(math.abs(-5) == 5, "abs() returns absolute value")
+check(math.abs(5) == 5, "abs() keeps positive numbers positive")
+check(math.square(4) == 16, "square() computes square")
+check(math.cube(3) == 27, "cube() computes cube")
+check(math.max(10, 20) == 20, "max() returns larger value")
+check(math.min(10, 20) == 10, "min() returns smaller value")
+check(math.sqrt(16) == 4, "sqrt() computes square root")
+check(math.pow(2, 3) == 8, "pow() computes exponentiation")
+check(math.floor(3.7) == 3, "floor() rounds down")
+check(math.ceil(3.2) == 4, "ceil() rounds up")
+check(math.round(3.5) == 4, "round() rounds to nearest")
+check(math.clamp(15, 0, 10) == 10, "clamp() limits to max")
+check(math.clamp(-5, 0, 10) == 0, "clamp() limits to min")
+check(math.clamp(5, 0, 10) == 5, "clamp() keeps value in range")
+check(math.sign(5) == 1, "sign() returns 1 for positive")
+check(math.sign(-5) == -1, "sign() returns -1 for negative")
+check(math.sign(0) == 0, "sign() returns 0 for zero")
+check(math.isEven(4), "isEven() identifies even numbers")
+check(!math.isEven(5), "isEven() rejects odd numbers")
+check(math.isOdd(5), "isOdd() identifies odd numbers")
+check(!math.isOdd(4), "isOdd() rejects even numbers")
 
 var rand = math.random()
-assert(rand >= 0 and rand <= 1, "random() returns value between 0 and 1")
+check(rand >= 0 and rand <= 1, "random() returns value between 0 and 1")
 
 var randInt = math.randomInt(1, 10)
-assert(randInt >= 1 and randInt <= 10, "randomInt() returns value in range")
+check(randInt >= 1 and randInt <= 10, "randomInt() returns value in range")
 
 // Test trig functions (just check they work, not precise values)
 var sinVal = math.sin(math.pi / 2)
-assert(sinVal > 0.99 and sinVal < 1.01, "sin(π/2) ≈ 1")
+check(sinVal > 0.99 and sinVal < 1.01, "sin(π/2) ≈ 1")
 
 print("")
 
@@ -96,75 +96,75 @@ var arr = [1, 2, 3, 4, 5]
 
 // Test map
 var doubled = array.map(arr, fn(x) { return x * 2 })
-assert(len(doubled) == 5, "map() preserves length")
-assert(doubled[0] == 2, "map() transforms first element")
-assert(doubled[4] == 10, "map() transforms last element")
+check(len(doubled) == 5, "map() preserves length")
+check(doubled[0] == 2, "map() transforms first element")
+check(doubled[4] == 10, "map() transforms last element")
 
 // Test filter
 var evens = array.filter(arr, fn(x) { return math.isEven(x) })
-assert(len(evens) == 2, "filter() returns 2 even numbers")
-assert(evens[0] == 2, "filter() includes 2")
-assert(evens[1] == 4, "filter() includes 4")
+check(len(evens) == 2, "filter() returns 2 even numbers")
+check(evens[0] == 2, "filter() includes 2")
+check(evens[1] == 4, "filter() includes 4")
 
 // Test reduce
 var sum = array.reduce(arr, fn(acc, x) { return acc + x }, 0)
-assert(sum == 15, "reduce() computes sum correctly")
+check(sum == 15, "reduce() computes sum correctly")
 
 // Test slice
 var sliced = array.slice(arr, 1, 4)
-assert(len(sliced) == 3, "slice() returns correct length")
-assert(sliced[0] == 2, "slice() starts at correct index")
-assert(sliced[2] == 4, "slice() ends at correct index")
+check(len(sliced) == 3, "slice() returns correct length")
+check(sliced[0] == 2, "slice() starts at correct index")
+check(sliced[2] == 4, "slice() ends at correct index")
 
 // Test reverse
 var reversed = array.reverse(arr)
-assert(len(reversed) == 5, "reverse() preserves length")
-assert(reversed[0] == 5, "reverse() flips first element")
-assert(reversed[4] == 1, "reverse() flips last element")
+check(len(reversed) == 5, "reverse() preserves length")
+check(reversed[0] == 5, "reverse() flips first element")
+check(reversed[4] == 1, "reverse() flips last element")
 
 // Test indexOf
-assert(array.indexOf(arr, 3) == 2, "indexOf() finds element position")
-assert(array.indexOf(arr, 99) == -1, "indexOf() returns -1 when not found")
+check(array.indexOf(arr, 3) == 2, "indexOf() finds element position")
+check(array.indexOf(arr, 99) == -1, "indexOf() returns -1 when not found")
 
 // Test contains
-assert(array.contains(arr, 3), "contains() finds existing element")
-assert(!array.contains(arr, 99), "contains() rejects missing element")
+check(array.contains(arr, 3), "contains() finds existing element")
+check(!array.contains(arr, 99), "contains() rejects missing element")
 
 // Test find
 var found = array.find(arr, fn(x) { return x > 3 })
-assert(found == 4, "find() returns first matching element")
+check(found == 4, "find() returns first matching element")
 
 // Test every
-assert(array.every(arr, fn(x) { return x > 0 }), "every() returns true when all match")
-assert(!array.every(arr, fn(x) { return x > 3 }), "every() returns false when not all match")
+check(array.every(arr, fn(x) { return x > 0 }), "every() returns true when all match")
+check(!array.every(arr, fn(x) { return x > 3 }), "every() returns false when not all match")
 
 // Test some
-assert(array.some(arr, fn(x) { return x > 3 }), "some() returns true when any match")
-assert(!array.some(arr, fn(x) { return x > 10 }), "some() returns false when none match")
+check(array.some(arr, fn(x) { return x > 3 }), "some() returns true when any match")
+check(!array.some(arr, fn(x) { return x > 10 }), "some() returns false when none match")
 
 // Test concat
 var arr2 = [6, 7]
 var concatenated = array.concat(arr, arr2)
-assert(len(concatenated) == 7, "concat() combines arrays")
-assert(concatenated[5] == 6, "concat() includes second array")
+check(len(concatenated) == 7, "concat() combines arrays")
+check(concatenated[5] == 6, "concat() includes second array")
 
 // Test first and last
-assert(array.first(arr) == 1, "first() returns first element")
-assert(array.last(arr) == 5, "last() returns last element")
+check(array.first(arr) == 1, "first() returns first element")
+check(array.last(arr) == 5, "last() returns last element")
 
 // Test take and drop
 var taken = array.take(arr, 3)
-assert(len(taken) == 3, "take() returns first N elements")
-assert(taken[2] == 3, "take() includes correct elements")
+check(len(taken) == 3, "take() returns first N elements")
+check(taken[2] == 3, "take() includes correct elements")
 
 var dropped = array.drop(arr, 2)
-assert(len(dropped) == 3, "drop() removes first N elements")
-assert(dropped[0] == 3, "drop() starts at correct position")
+check(len(dropped) == 3, "drop() removes first N elements")
+check(dropped[0] == 3, "drop() starts at correct position")
 
 // Test join with strings
 var strArr = ["hello", "world", "sox"]
 var joined = array.join(strArr, " ")
-assert(joined == "hello world sox", "join() combines strings with separator")
+check(joined == "hello world sox", "join() combines strings with separator")
 
 print("")
 

@@ -1,0 +1,29 @@
+#[test]
+fn TestArithmetic(t) {
+    var sum = 1 + 2
+    if (sum != 3) { t.Error("addition") }
+    if (5 - 2 != 3) { t.Error("subtraction") }
+    if (4 * 3 != 12) { t.Error("multiplication") }
+    if (8 / 2 != 4) { t.Error("division") }
+    if ((5 > 3) != true) { t.Error("greater comparison") }
+    if ((2 < 1) != false) { t.Error("less comparison") }
+    if ((3 >= 3) != true) { t.Error("greater equal") }
+    if ((2 <= 1) != false) { t.Error("less equal") }
+}
+
+#[test]
+fn TestStrings(t) {
+    var name = "sox"
+    if (name + "!" != "sox!") { t.Error("string concat") }
+    if ("hello" == "world") { t.Error("string equality") }
+    if ("a" != "a") { t.Error("string inequality") }
+}
+
+#[test]
+fn TestBooleans(t) {
+    if (!true) { t.Error("not true") }
+    if (false) { t.Error("false literal") }
+    if ((true and false) != false) { t.Error("and") }
+    if ((true or false) != true) { t.Error("or") }
+    assert(true, "assert passes")
+}

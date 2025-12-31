@@ -5,9 +5,9 @@ print("")
 import "modules/test"
 
 print("--- Basic Assertions ---")
-test.assert(true, "true should pass")
-test.assert(1 == 1, "1 == 1 should pass")
-test.assert(5 > 3, "5 > 3 should pass")
+test.check(true, "true should pass")
+test.check(1 == 1, "1 == 1 should pass")
+test.check(5 > 3, "5 > 3 should pass")
 
 print("")
 print("--- Equality Assertions ---")
@@ -36,7 +36,7 @@ test.assertFalse(5 < 3, "5 < 3 is false")
 
 print("")
 print("--- Intentional Failures (for demonstration) ---")
-test.assert(false, "This should fail (testing failure reporting)")
+test.check(false, "This should fail (testing failure reporting)")
 test.assertEqual(5, 10, "This should fail (5 != 10)")
 
 // Print summary

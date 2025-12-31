@@ -75,6 +75,7 @@ int l_op_get_arg_size_bytes(const chunk_t* chunk, int ip) {
         case OP_DIVIDE:
         case OP_NEGATE:
         case OP_NOT:
+        case OP_ASSERT:
         case OP_PRINT:
         case OP_INHERIT:
             return 0;

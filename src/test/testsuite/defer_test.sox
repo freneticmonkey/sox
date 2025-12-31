@@ -1,0 +1,17 @@
+fn runWithDefer(calls) {
+    defer () {
+        push(calls, "last")
+    }
+    defer () {
+        push(calls, "first")
+    }
+}
+
+#[test]
+fn TestDefer(t) {
+    var calls[]
+    runWithDefer(calls)
+    if (len(calls) != 2) { t.Error("defer count") }
+    if (calls[0] != "first") { t.Error("defer order first") }
+    if (calls[1] != "last") { t.Error("defer order last") }
+}

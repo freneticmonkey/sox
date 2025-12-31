@@ -9,6 +9,7 @@
 #include "lib/native_api.h"
 #include "lib/print.h"
 #include "lib/table.h"
+#include "testing.h"
 #include "common.h"
 #include "compiler.h"
 #include "vm.h"
@@ -49,6 +50,7 @@ void l_vm_define_native(const char* name, native_func_t function) {
 }
 
 void l_vm_runtime_error(const char* format, ...) {
+    vm.runtime_error = true;
     va_list args;
     va_start(args, format);
     vfprintf(stderr, format, args);
@@ -132,6 +134,8 @@ void l_init_vm(vm_config_t *config) {
     vm.exit_handler_count = 0;
     vm.exit_handler_capacity = 0;
     vm.cleanup_done = false;
+    vm.runtime_error = false;
+    vm.test_state = NULL;
 
     // Register cleanup with atexit for safety
     atexit(l_vm_cleanup);
@@ -263,6 +267,9 @@ static InterpretResult _run() {
     } while (false)
 
     for (;;) {
+        if (vm.runtime_error) {
+            return INTERPRET_RUNTIME_ERROR;
+        }
 
 #ifdef DEBUG_TRACE_EXECUTION
         printf("          ");
@@ -541,6 +548,38 @@ static InterpretResult _run() {
             case OP_MULTIPLY: BINARY_OP(NUMBER_VAL, *); break;
             case OP_DIVIDE:   BINARY_OP(NUMBER_VAL, /); break;
             case OP_NOT:      l_push(BOOL_VAL(_is_falsey(l_pop()))); break;
+            case OP_ASSERT: {
+                value_t message = l_pop();
+                value_t condition = l_pop();
+                if (_is_falsey(condition)) {
+                    if (vm.test_state != NULL) {
+                        const char* text = NULL;
+                        if (IS_STRING(message)) {
+                            text = AS_STRING(message)->chars;
+                        }
+                        vm.test_state->failure_count++;
+                        vm.test_state->fatal_triggered = true;
+                        if (text != NULL) {
+                            fprintf(stderr, "Error: Assertion failed: %s\n", text);
+                        } else if (IS_NIL(message)) {
+                            fprintf(stderr, "Error: Assertion failed.\n");
+                        } else {
+                            fprintf(stderr, "Error: Assertion failed: message must be a string.\n");
+                        }
+                        vm.runtime_error = true;
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
+                    if (IS_STRING(message)) {
+                        l_vm_runtime_error("Assertion failed: %s", AS_STRING(message)->chars);
+                    } else if (IS_NIL(message)) {
+                        l_vm_runtime_error("Assertion failed.");
+                    } else {
+                        l_vm_runtime_error("Assertion failed: message must be a string.");
+                    }
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                break;
+            }
             case OP_NEGATE: {
                 if (!IS_NUMBER(_peek(0))) {
                     l_vm_runtime_error("Operand must be a number.");
@@ -907,7 +946,7 @@ static InterpretResult _run() {
                 obj_iterator_t *it = AS_ITERATOR(iterator);
 
                 // increment the iterator
-                iterator_next_t next = l_iterator_next(&it->it);
+                l_iterator_next(&it->it);
 
                 // Update the local index and value variables with new values
                 frame->slots[it->index] = NUMBER_VAL(l_iterator_index(&it->it));
@@ -951,7 +990,11 @@ static InterpretResult _run() {
 }
 
 InterpretResult l_interpret(const char* source) {
-    obj_function_t* function = l_compile(source);
+    return l_interpret_with_options(source, false);
+}
+
+InterpretResult l_interpret_with_options(const char* source, bool skip_main) {
+    obj_function_t* function = l_compile_with_options(source, skip_main);
     if (function == NULL) {
         return INTERPRET_COMPILE_ERROR;
     }
@@ -970,6 +1013,7 @@ void l_set_entry_point(obj_closure_t * entry_point) {
 }
 
 InterpretResult l_run() {
+    vm.runtime_error = false;
 
     // Set the value of argc and argv in the appropriate globals
     l_table_set(
@@ -1003,6 +1047,28 @@ InterpretResult l_run() {
         l_copy_string("argv", 4),
         l_pop()
     );
+
+    return _run();
+}
+
+InterpretResult l_call_global(const char* name, int argCount, value_t* args) {
+    value_t callee;
+    obj_string_t* name_string = l_copy_string(name, strlen(name));
+
+    if (!l_table_get(&vm.globals, name_string, &callee)) {
+        l_vm_runtime_error("Undefined function '%s'.", name);
+        return INTERPRET_RUNTIME_ERROR;
+    }
+
+    vm.runtime_error = false;
+    l_push(callee);
+    for (int i = 0; i < argCount; i++) {
+        l_push(args[i]);
+    }
+
+    if (!_call_value(callee, argCount)) {
+        return INTERPRET_RUNTIME_ERROR;
+    }
 
     return _run();
 }

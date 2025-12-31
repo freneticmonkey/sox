@@ -1,0 +1,70 @@
+#[test]
+fn TestIfElse(t) {
+    var value = 0
+    if (true) {
+        value = 1
+    } else {
+        value = 2
+    }
+    if (value != 1) { t.Error("if/else") }
+}
+
+#[test]
+fn TestWhileFor(t) {
+    var i = 0
+    while i < 3 {
+        i = i + 1
+    }
+    if (i != 3) { t.Error("while loop") }
+
+    var sum = 0
+    for var j = 0; j < 3; j = j + 1 {
+        sum = sum + j
+    }
+    if (sum != 3) { t.Error("for loop") }
+}
+
+#[test]
+fn TestBreakContinue(t) {
+    var i = 0
+    var total = 0
+    while i < 5 {
+        i = i + 1
+        if (i == 3) {
+            continue
+        }
+        total = total + i
+        if (i == 4) {
+            break
+        }
+    }
+    if (total != 7) { t.Error("break/continue") }
+}
+
+#[test]
+fn TestSwitch(t) {
+    var out = 0
+    switch 2 {
+        case 1 {
+            out = 1
+        }
+        case 2 {
+            out = 2
+        }
+        default {
+            out = 3
+        }
+    }
+    if (out != 2) { t.Error("switch case") }
+
+    var out2 = 0
+    switch 5 {
+        case 1 {
+            out2 = 1
+        }
+        default {
+            out2 = 5
+        }
+    }
+    if (out2 != 5) { t.Error("switch default") }
+}

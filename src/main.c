@@ -9,6 +9,7 @@
 #include "lib/debug.h"
 #include "lib/file.h"
 #include "lib/arg_parser.h"
+#include "test_runner.h"
 
 static void _repl() {
     char line[1024];
@@ -41,6 +42,32 @@ int main(int argc, const char* argv[]) {
     // Handle version request
     if (args.show_version) {
         print_version();
+        return 0;
+    }
+
+    if (args.run_tests) {
+        vm_config_t config;
+        l_init_vmconfig(&config, argc, argv);
+
+        config.enable_serialisation = args.enable_serialisation;
+        config.suppress_print = args.suppress_print;
+        config.enable_wasm_output = args.enable_wasm_output;
+        config.enable_wat_output = args.enable_wat_output;
+        config.enable_native_output = args.enable_native_output;
+        config.native_output_file = args.native_output_file;
+        config.native_target_arch = args.native_target_arch;
+        config.native_target_os = args.native_target_os;
+        config.native_emit_object = args.native_emit_object;
+        config.native_debug_output = args.native_debug_output;
+        config.native_optimization_level = args.native_optimization_level;
+        config.use_custom_linker = args.use_custom_linker;
+
+        int status = l_run_tests(&config, args.input_file);
+        l_free_vmconfig(&config);
+
+        if (status != 0) {
+            exit(status);
+        }
         return 0;
     }
 
