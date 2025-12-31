@@ -36,6 +36,7 @@ Test functions receive a `t` context with `t.Error("msg")` and `t.Fatal("msg")`.
 
 ## Future Language features
 - [x] Defer
+    - Executes in LIFO order (last deferred runs first)
 - [x] replace fun with fn
 - [x] remove semi-colon line ending
 - [x] bracketless expressions
