@@ -954,6 +954,7 @@ parse_rule_t rules[] = {
     [TOKEN_SLASH]         = {NULL,            _binary,  PREC_FACTOR},
     [TOKEN_STAR]          = {NULL,            _binary,  PREC_FACTOR},
     [TOKEN_UNDERSCORE]    = {NULL,            NULL,     PREC_NONE},
+    [TOKEN_HASH]          = {NULL,            NULL,     PREC_NONE},
     [TOKEN_BANG]          = {_unary,          NULL,     PREC_NONE},
     [TOKEN_BANG_EQUAL]    = {NULL,            _binary,  PREC_EQUALITY},
     [TOKEN_EQUAL]         = {NULL,            NULL,     PREC_NONE},
@@ -966,6 +967,7 @@ parse_rule_t rules[] = {
     [TOKEN_STRING]        = {_string,         NULL,     PREC_NONE},
     [TOKEN_NUMBER]        = {_number,         NULL,     PREC_NONE},
     [TOKEN_AND]           = {NULL,            _and_,    PREC_AND},
+    [TOKEN_ASSERT]        = {NULL,            NULL,     PREC_NONE},
     [TOKEN_CLASS]         = {NULL,            NULL,     PREC_NONE},
     [TOKEN_ELSE]          = {NULL,            NULL,     PREC_NONE},
     [TOKEN_FALSE]         = {_literal,        NULL,     PREC_NONE},
@@ -1248,8 +1250,12 @@ static void _defer_declaration() {
     _current->deferred_functions[_current->defer_count++] = _current->local_count - 1;
 }
 
-static void _fun_declaration() {
+static void _fun_declaration(bool is_test) {
     uint8_t global = _parse_variable("Expect function name.");
+
+    if (is_test && _current->enclosing != NULL) {
+        _error_at_current("Test functions must be declared at top level.");
+    }
     
     if (_current->enclosing == NULL) {
         if ( strncmp(_parser.previous.start, "main", 4) == 0 ) {
@@ -1302,6 +1308,21 @@ static void _expression_statement() {
     _expression();
     _optional_consume(TOKEN_SEMICOLON, "Expect ';' after expression.");
     _emit_byte(OP_POP);
+}
+
+static void _assert_statement() {
+    _consume(TOKEN_LEFT_PAREN, "Expect '(' after 'assert'.");
+    _expression();
+
+    if (_match(TOKEN_COMMA)) {
+        _expression();
+    } else {
+        _emit_byte(OP_NIL);
+    }
+
+    _consume(TOKEN_RIGHT_PAREN, "Expect ')' after assert.");
+    _optional_consume(TOKEN_SEMICOLON, "Expect ';' after assert.");
+    _emit_byte(OP_ASSERT);
 }
 
 // static void _in_statement() {
@@ -1785,6 +1806,7 @@ static void _synchronize() {
             case TOKEN_SWITCH:
             case TOKEN_WHILE:
             case TOKEN_PRINT:
+            case TOKEN_ASSERT:
             case TOKEN_RETURN:
                 return;
 
@@ -1931,12 +1953,27 @@ static void _declaration() {
 
     if ( _match(TOKEN_IMPORT) ) {
         _import_declaration();
+    } else if ( _match(TOKEN_HASH) ) {
+        bool is_test = false;
+
+        _consume(TOKEN_LEFT_BRACKET, "Expect '[' after '#'.");
+        _consume(TOKEN_IDENTIFIER, "Expect attribute name after '#['.");
+        if (_parser.previous.length == 4 &&
+            memcmp(_parser.previous.start, "test", 4) == 0) {
+            is_test = true;
+        } else {
+            _error("Unknown attribute.");
+        }
+        _consume(TOKEN_RIGHT_BRACKET, "Expect ']' after attribute.");
+
+        _consume(TOKEN_FUN, "Expect 'fn' after attribute.");
+        _fun_declaration(is_test);
     } else if ( _match(TOKEN_CLASS) ) {
         _class_declaration();
     } else if (_match(TOKEN_DEFER)) {
         _defer_declaration();
     } else if ( _match(TOKEN_FUN) ) {
-        _fun_declaration();
+        _fun_declaration(false);
     } else if ( _match(TOKEN_VAR) ) {
         _var_declaration();
     } else {
@@ -1952,6 +1989,8 @@ static void _statement() {
         _break_statement();
     } else if ( _match(TOKEN_CONTINUE) ) {
         _continue_statement();
+    } else if ( _match(TOKEN_ASSERT) ) {
+        _assert_statement();
     } else if ( _match(TOKEN_PRINT) ) {
         _print_statement();
     } else if ( _match(TOKEN_IF) ) {
@@ -1976,6 +2015,10 @@ static void _statement() {
 }
 
 obj_function_t* l_compile(const char* source) {
+    return l_compile_with_options(source, false);
+}
+
+obj_function_t* l_compile_with_options(const char* source, bool skip_main) {
     l_init_scanner(source);
     compiler_t compiler;
 
@@ -1993,7 +2036,7 @@ obj_function_t* l_compile(const char* source) {
     }
 
     // if the main function is defined, call it
-    if ( compiler.main_function != -1 ) {
+    if (!skip_main && compiler.main_function != -1) {
 
         // generate a call to the main function
         _emit_bytes(OP_GET_GLOBAL, compiler.main_function);

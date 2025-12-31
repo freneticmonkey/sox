@@ -11,6 +11,7 @@ typedef struct {
     // Output options
     bool show_version;
     bool show_help;
+    bool run_tests;
 
     // Bytecode options
     bool enable_serialisation;

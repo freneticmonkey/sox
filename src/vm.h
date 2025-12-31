@@ -16,6 +16,8 @@ typedef struct {
     value_t* slots;
 } callframe_t;
 
+typedef struct test_state_t test_state_t;
+
 typedef struct {
     bool init;
     callframe_t frames[FRAMES_MAX];
@@ -43,8 +45,10 @@ typedef struct {
     int      exit_handler_count;
     int      exit_handler_capacity;
     bool     cleanup_done;
+    bool     runtime_error;
 
     vm_config_t *config;
+    test_state_t *test_state;
 
 } vm_t;
 
@@ -65,8 +69,10 @@ void    l_push(value_t value);
 value_t l_pop();
 
 InterpretResult l_interpret(const char * source);
+InterpretResult l_interpret_with_options(const char* source, bool skip_main);
 void l_set_entry_point(obj_closure_t * entry_point);
 InterpretResult l_run();
+InterpretResult l_call_global(const char* name, int argCount, value_t* args);
 
 void l_vm_define_native(const char* name, native_func_t function);
 void l_vm_register_exit_handler(value_t handler);

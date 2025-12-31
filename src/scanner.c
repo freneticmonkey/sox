@@ -155,7 +155,14 @@ static TokenType _check_keyword(int start, int length, const char* rest, TokenTy
 
 static TokenType _identifier_type() {
     switch (_scanner.start[0]) {
-        case 'a': return _check_keyword(1, 2, "nd", TOKEN_AND);
+        case 'a':
+            if (_scanner.current - _scanner.start > 1) {
+                switch (_scanner.start[1]) {
+                    case 'n': return _check_keyword(2, 1, "d", TOKEN_AND);
+                    case 's': return _check_keyword(2, 4, "sert", TOKEN_ASSERT);
+                }
+            }
+            break;
         case 'b': return _check_keyword(1, 4, "reak", TOKEN_BREAK);
         case 'c':
             if (_scanner.current - _scanner.start > 1) {
@@ -298,6 +305,7 @@ token_t l_scan_token() {
         case '/': return _make_token(TOKEN_SLASH);
         case '*': return _make_token(TOKEN_STAR);
         case '_': return _make_token(TOKEN_UNDERSCORE);
+        case '#': return _make_token(TOKEN_HASH);
         case '!': {
             return _make_token(
                 _match('=') ? TOKEN_BANG_EQUAL : TOKEN_BANG

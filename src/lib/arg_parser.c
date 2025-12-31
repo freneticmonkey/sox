@@ -16,6 +16,7 @@ void print_help(const char* program_name) {
 
     struct arg_lit* serialise = arg_lit0(NULL, "serialise", "Enable bytecode serialization (cache compiled bytecode)");
     struct arg_lit* suppress = arg_lit0(NULL, "suppress-print", "Suppress print output (useful for testing)");
+    struct arg_lit* test = arg_lit0("t", "test", "Run tests from *_test.sox files");
 
     struct arg_lit* wasm = arg_lit0(NULL, "wasm", "Generate WebAssembly binary output (.wasm)");
     struct arg_lit* wat = arg_lit0(NULL, "wat", "Generate WebAssembly text format output (.wat)");
@@ -31,7 +32,7 @@ void print_help(const char* program_name) {
 
     struct arg_end* end = arg_end(20);
 
-    void* argtable[] = { help, version, input, serialise, suppress, wasm, wat,
+    void* argtable[] = { help, version, input, serialise, suppress, test, wasm, wat,
                          native, native_out, native_arch, native_os, native_obj,
                          native_debug, native_opt, custom_linker, end };
 
@@ -49,6 +50,7 @@ void print_help(const char* program_name) {
     printf("\n");
     printf("Examples:\n");
     printf("  %s script.sox                   Run a Sox script\n", program_name);
+    printf("  %s --test src/test/testsuite    Run Sox tests in a directory\n", program_name);
     printf("  %s script.sox --wasm            Generate WebAssembly output\n", program_name);
     printf("  %s script.sox --native          Generate native executable (current platform)\n", program_name);
     printf("  %s script.sox --native --native-obj\n", program_name);
@@ -91,6 +93,7 @@ bool parse_arguments(int argc, const char* argv[], sox_args_t* args) {
 
     struct arg_lit* serialise = arg_lit0(NULL, "serialise", "Enable bytecode serialization");
     struct arg_lit* suppress = arg_lit0(NULL, "suppress-print", "Suppress print output");
+    struct arg_lit* test = arg_lit0("t", "test", "Run tests from *_test.sox files");
 
     struct arg_lit* wasm = arg_lit0(NULL, "wasm", "Generate WebAssembly binary");
     struct arg_lit* wat = arg_lit0(NULL, "wat", "Generate WebAssembly text format");
@@ -106,7 +109,7 @@ bool parse_arguments(int argc, const char* argv[], sox_args_t* args) {
 
     struct arg_end* end = arg_end(20);
 
-    void* argtable[] = { help, version, input, serialise, suppress, wasm, wat,
+    void* argtable[] = { help, version, input, serialise, suppress, test, wasm, wat,
                          native, native_out, native_arch, native_os, native_obj,
                          native_debug, native_opt, custom_linker, end };
 
@@ -151,8 +154,13 @@ bool parse_arguments(int argc, const char* argv[], sox_args_t* args) {
     // Extract options
     args->enable_serialisation = (serialise->count > 0);
     args->suppress_print = (suppress->count > 0);
+    args->run_tests = (test->count > 0);
     args->enable_wasm_output = (wasm->count > 0);
     args->enable_wat_output = (wat->count > 0);
+
+    if (args->run_tests && !args->input_file) {
+        args->input_file = ".";
+    }
 
     // Native code generation options
     if (native->count > 0) {

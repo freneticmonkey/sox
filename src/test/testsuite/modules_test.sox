@@ -1,0 +1,7 @@
+import "examples/modules/math"
+
+#[test]
+fn TestModules(t) {
+    if (math.square(3) != 9) { t.Error("module square") }
+    if (math.isEven(4) != true) { t.Error("module isEven") }
+}

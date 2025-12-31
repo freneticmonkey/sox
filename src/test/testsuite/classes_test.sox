@@ -1,0 +1,21 @@
+class Base {
+    init(value) {
+        this.value = value
+    }
+
+    get() {
+        return this.value
+    }
+}
+
+class Child < Base {
+    get() {
+        return super.get() + 1
+    }
+}
+
+#[test]
+fn TestClasses(t) {
+    var c = Child(2)
+    if (c.get() != 3) { t.Error("class inheritance") }
+}
