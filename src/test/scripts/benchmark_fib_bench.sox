@@ -1,0 +1,13 @@
+fn fib(n) {
+  if (n < 2) return n;
+  return fib(n - 1) + fib(n - 2);
+}
+
+fn BenchmarkFib20(b) {
+  var n = b["n"];
+  var i = 0;
+  while (i < n) {
+    fib(20);
+    i = i + 1;
+  }
+}

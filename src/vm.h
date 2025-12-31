@@ -76,6 +76,7 @@ InterpretResult l_call_global(const char* name, int argCount, value_t* args);
 
 void l_vm_define_native(const char* name, native_func_t function);
 void l_vm_register_exit_handler(value_t handler);
+bool l_vm_call_value(value_t callee, int argCount);
 
 void l_vm_runtime_error(const char* format, ...);
 

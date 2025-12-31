@@ -61,6 +61,9 @@ int main(int argc, const char* argv[]) {
         config.native_debug_output = args.native_debug_output;
         config.native_optimization_level = args.native_optimization_level;
         config.use_custom_linker = args.use_custom_linker;
+        config.enable_benchmarks = args.enable_benchmarks;
+        config.benchmark_time_seconds = args.benchmark_time_seconds;
+        config.benchmark_filter = args.benchmark_filter;
 
         int status = l_run_tests(&config, args.input_file);
         l_free_vmconfig(&config);
@@ -95,6 +98,9 @@ int main(int argc, const char* argv[]) {
         config.native_debug_output = args.native_debug_output;
         config.native_optimization_level = args.native_optimization_level;
         config.use_custom_linker = args.use_custom_linker;
+        config.enable_benchmarks = args.enable_benchmarks;
+        config.benchmark_time_seconds = args.benchmark_time_seconds;
+        config.benchmark_filter = args.benchmark_filter;
 
         l_init_memory();
         l_init_vm(&config);

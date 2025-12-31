@@ -31,6 +31,11 @@ typedef struct {
     int native_optimization_level;  // 0-3
     bool use_custom_linker;    // Use custom linker instead of system linker
 
+    // Benchmarking options
+    bool enable_benchmarks;
+    double benchmark_time_seconds;
+    char* benchmark_filter;
+
     // Internal
     int argc;
     const char** argv;

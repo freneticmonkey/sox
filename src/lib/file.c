@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -11,6 +12,8 @@
 #endif
 
 #include "lib/file.h"
+#include "lib/benchmark.h"
+#include "lib/iterator.h"
 #include "lib/print.h"
 #include "lib/linker.h"
 #include "serialise.h"
@@ -393,6 +396,146 @@ int _interpret_run(vm_config_t *config, const char* source) {
     return 0;
 }
 
+typedef struct bench_vm_state_t {
+    value_t callee;
+    obj_table_t* bench_table;
+    obj_string_t* key_n;
+    obj_string_t* key_N;
+    bool failed;
+} bench_vm_state_t;
+
+static bool _bench_call(value_t callee, obj_table_t* bench_table) {
+    l_push(callee);
+    l_push(OBJ_VAL(bench_table));
+    if (!l_vm_call_value(callee, 1)) {
+        return false;
+    }
+
+    if (vm.frame_count == 0) {
+        l_pop();
+        return true;
+    }
+
+    InterpretResult result = l_run();
+    return result == INTERPRET_OK;
+}
+
+static void _bench_vm_entry(sox_benchmark_context_t* ctx) {
+    bench_vm_state_t* state = (bench_vm_state_t*)ctx->user_data;
+    l_table_set(&state->bench_table->table, state->key_n, NUMBER_VAL((double)ctx->iterations));
+    l_table_set(&state->bench_table->table, state->key_N, NUMBER_VAL((double)ctx->iterations));
+
+    if (!_bench_call(state->callee, state->bench_table)) {
+        state->failed = true;
+        ctx->failed = true;
+    }
+}
+
+static bool _is_benchmark_callable(value_t value) {
+    if (!IS_OBJ(value)) {
+        return false;
+    }
+
+    ObjType type = OBJ_TYPE(value);
+    return type == OBJ_CLOSURE || type == OBJ_NATIVE;
+}
+
+static int _run_benchmarks(vm_config_t* config) {
+    iterator_t it;
+    l_table_get_iterator(&vm.globals, &it);
+
+    const char* prefix = "Benchmark";
+    size_t prefix_len = strlen(prefix);
+    int bench_count = 0;
+
+    iterator_next_t next = l_iterator_next(&it);
+    while (l_iterator_has_next(next)) {
+        obj_string_t* name = next.key;
+        value_t value = *next.value;
+
+        if (name != NULL && name->length >= (int)prefix_len &&
+            strncmp(name->chars, prefix, prefix_len) == 0) {
+            if (config->benchmark_filter != NULL &&
+                strstr(name->chars, config->benchmark_filter) == NULL) {
+                next = l_iterator_next(&it);
+                continue;
+            }
+
+            if (!_is_benchmark_callable(value)) {
+                fprintf(stderr, "Skipping %s (not callable)\n", name->chars);
+                next = l_iterator_next(&it);
+                continue;
+            }
+
+            obj_table_t* bench_table = l_new_table();
+            obj_string_t* key_n = l_copy_string("n", 1);
+            obj_string_t* key_N = l_copy_string("N", 1);
+            obj_string_t* key_name = l_copy_string("name", 4);
+            obj_string_t* bench_name = l_copy_string(name->chars, name->length);
+            l_table_set(&bench_table->table, key_name, OBJ_VAL(bench_name));
+
+            bench_vm_state_t state = {
+                .callee = value,
+                .bench_table = bench_table,
+                .key_n = key_n,
+                .key_N = key_N,
+                .failed = false,
+            };
+
+            sox_benchmark_config_t bench_config = sox_benchmark_default_config();
+            bench_config.target_ns = (uint64_t)(config->benchmark_time_seconds * 1000000000.0);
+
+            sox_benchmark_result_t result = sox_benchmark_run(&bench_config, _bench_vm_entry, &state);
+            if (state.failed || result.failed) {
+                fprintf(stderr, "Benchmark %s failed\n", name->chars);
+                return 70;
+            }
+
+            printf("%-24s %12" PRIu64 " %12.2f ns/op\n",
+                   name->chars,
+                   result.iterations,
+                   result.ns_per_op);
+            bench_count++;
+        }
+
+        next = l_iterator_next(&it);
+    }
+
+    if (bench_count == 0) {
+        printf("No benchmarks found (functions named Benchmark*)\n");
+    }
+
+    return 0;
+}
+
+static int _interpret_bench(vm_config_t *config, const char* source) {
+    InterpretResult result;
+
+    l_init_memory();
+    l_init_vm(config);
+
+    result = l_interpret(source);
+    if (result == INTERPRET_COMPILE_ERROR) {
+        l_free_vm();
+        l_free_memory();
+        return 65;
+    }
+
+    result = l_run();
+    if (result == INTERPRET_RUNTIME_ERROR) {
+        l_free_vm();
+        l_free_memory();
+        return 70;
+    }
+
+    int bench_result = _run_benchmarks(config);
+
+    l_free_vm();
+    l_free_memory();
+
+    return bench_result;
+}
+
 int l_run_file(vm_config_t *config) {
     if (config->args.argc < 2) {
         fprintf(stderr, "Usage: sox [path] [optional: --serialise]\n");
@@ -420,6 +563,18 @@ int l_run_file(vm_config_t *config) {
     }
 
     InterpretResult result;
+
+    if (config->enable_benchmarks) {
+        if (config->enable_native_output || config->enable_wasm_output || config->enable_wat_output) {
+            fprintf(stderr, "Error: --bench cannot be combined with native or wasm output flags\n");
+            free(source);
+            return 64;
+        }
+
+        int bench_result = _interpret_bench(config, source);
+        free(source);
+        return bench_result;
+    }
 
     // Check if we need to generate native code
     if (config->enable_native_output) {

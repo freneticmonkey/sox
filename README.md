@@ -14,6 +14,9 @@ variation of the implementation of the sox interpreter as described on http://cr
 ### WebAssembly Support
 Sox can generate WebAssembly (WASM) binary and WebAssembly Text Format (WAT) output. See [WebAssembly Documentation](docs/wasm.md) for details on supported opcodes and usage.
 
+### Benchmarking
+Sox can run Go-style benchmarks defined in Sox source. See [Benchmarking](docs/benchmarking.md) for usage and examples.
+
 ### Built-in Testing (Experimental)
 Sox supports Go-style tests with `#[test]` attributes in files ending with `_test.sox`. Run tests with `--test`:
 ```
@@ -47,7 +50,7 @@ Test functions receive a `t` context with `t.Error("msg")` and `t.Fatal("msg")`.
 - [x] argc / argv parameters to main
 - [ ] unit test functions
     - [x] assert keyword + functionality
-    - [ ] benchmark option
+    - [x] benchmark option
 - [ ] native container implementations
     - [x] table
     - [x] list / slice

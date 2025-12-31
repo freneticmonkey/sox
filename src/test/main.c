@@ -1,6 +1,7 @@
 #include <munit/munit.h>
 
 #include "common.h"
+#include "test/benchmark_test.h"
 #include "test/bytecode_test.h"
 #include "test/scripts_test.h"
 #include "test/serialise_test.h"
@@ -19,6 +20,7 @@ int main(int argc, char* argv[]) {
 
     MunitSuite suites[] = {
         l_vm_test_setup(),
+        l_benchmark_test_setup(),
         l_bytecode_test_setup(),
         l_scripts_test_setup(),
         l_serialise_test_setup(),
