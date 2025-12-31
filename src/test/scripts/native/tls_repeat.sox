@@ -1,0 +1,4 @@
+// Repeated TLS/TLV access via multiple runtime string allocations
+print("TLS-1");
+print("TLS-2");
+print("TLS-3");

@@ -1,0 +1,13 @@
+fn end()
+{
+    print(" world")
+}
+
+fn say()
+{
+    print(" to the")
+    end()
+}
+
+print("hello")
+say()
