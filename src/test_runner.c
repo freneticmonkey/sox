@@ -17,6 +17,8 @@
 #include "lib/memory.h"
 #include "lib/print.h"
 
+#define TEST_NAME_LEN 37
+
 typedef struct {
     char** names;
     int count;
@@ -110,13 +112,58 @@ static bool _is_directory(const char* path) {
 #endif
 }
 
-static int _run_single_test(const char* file_path, const char* test_name) {
-    int result = 0;
+typedef enum {
+    TEST_OK,
+    TEST_FAIL,
+    TEST_ERROR
+} test_result_t;
+
+typedef struct {
+    int successes;
+    int failures;
+    int errors;
+} test_summary_t;
+
+static const char* _base_name(const char* path) {
+    const char* last_slash = strrchr(path, '/');
+    return last_slash ? last_slash + 1 : path;
+}
+
+static void _strip_suffix(char* name, const char* suffix) {
+    size_t name_len = strlen(name);
+    size_t suffix_len = strlen(suffix);
+    if (name_len >= suffix_len &&
+        strcmp(name + name_len - suffix_len, suffix) == 0) {
+        name[name_len - suffix_len] = '\0';
+    }
+}
+
+static char* _format_test_name(const char* file_path, const char* test_name) {
+    const char* base = _base_name(file_path);
+    char* file_copy = strdup(base);
+    if (file_copy == NULL) {
+        return NULL;
+    }
+    _strip_suffix(file_copy, ".sox");
+    _strip_suffix(file_copy, "_test");
+
+    size_t size = strlen("sox//") + strlen(file_copy) + strlen(test_name) + 1;
+    char* full = malloc(size);
+    if (full != NULL) {
+        snprintf(full, size, "sox/%s/%s", file_copy, test_name);
+    }
+    free(file_copy);
+    return full;
+}
+
+static test_result_t _run_single_test(const char* file_path, const char* test_name) {
+    test_result_t result = TEST_OK;
 
     char* source = l_read_file(file_path);
     if (source == NULL) {
         fprintf(stderr, "Failed to read test file: %s\n", file_path);
-        return 1;
+        result = TEST_ERROR;
+        return result;
     }
 
     vm_config_t config;
@@ -137,14 +184,14 @@ static int _run_single_test(const char* file_path, const char* test_name) {
     InterpretResult interpret = l_interpret_with_options(source, true);
     if (interpret != INTERPRET_OK) {
         fprintf(stderr, "Compile error in %s\n", file_path);
-        result = 1;
+        result = TEST_ERROR;
         goto cleanup;
     }
 
     InterpretResult run_result = l_run();
     if (run_result != INTERPRET_OK) {
         fprintf(stderr, "Runtime error in setup for %s\n", file_path);
-        result = 1;
+        result = TEST_ERROR;
         goto cleanup;
     }
 
@@ -165,8 +212,10 @@ static int _run_single_test(const char* file_path, const char* test_name) {
     }
     vm.test_state = NULL;
 
-    if (call_result != INTERPRET_OK || state.failure_count > 0) {
-        result = 1;
+    if (state.failure_count > 0) {
+        result = TEST_FAIL;
+    } else if (call_result != INTERPRET_OK) {
+        result = TEST_ERROR;
     }
 
 cleanup:
@@ -177,13 +226,14 @@ cleanup:
     return result;
 }
 
-static int _run_tests_in_file(const char* file_path) {
-    int failures = 0;
+static test_summary_t _run_tests_in_file(const char* file_path) {
+    test_summary_t summary = {0};
 
     char* source = l_read_file(file_path);
     if (source == NULL) {
         fprintf(stderr, "Failed to read test file: %s\n", file_path);
-        return 1;
+        summary.errors++;
+        return summary;
     }
 
     test_list_t list = {0};
@@ -191,27 +241,41 @@ static int _run_tests_in_file(const char* file_path) {
     free(source);
 
     if (list.count == 0) {
-        printf("No tests found in %s\n", file_path);
         _test_list_free(&list);
-        return 0;
+        return summary;
     }
 
-    printf("Running %d tests in %s\n", list.count, file_path);
-
     for (int i = 0; i < list.count; i++) {
-        printf("TEST %s\n", list.names[i]);
-        if (_run_single_test(file_path, list.names[i]) != 0) {
-            failures++;
+        char* display = _format_test_name(file_path, list.names[i]);
+        if (display == NULL) {
+            display = strdup(list.names[i]);
         }
+
+        fprintf(stdout, "%-*s", TEST_NAME_LEN, display ? display : list.names[i]);
+        test_result_t result = _run_single_test(file_path, list.names[i]);
+        if (result == TEST_OK) {
+            fprintf(stdout, "[ OK   ]\n");
+            summary.successes++;
+        } else if (result == TEST_FAIL) {
+            fprintf(stdout, "[ FAIL ]\n");
+            summary.failures++;
+        } else {
+            fprintf(stdout, "[ ERROR]\n");
+            summary.errors++;
+        }
+        free(display);
     }
 
     _test_list_free(&list);
-    return failures;
+    return summary;
 }
 
 int l_run_tests(vm_config_t* base_config, const char* path) {
     (void)base_config;
-    int failures = 0;
+    test_summary_t summary = {0};
+    int total = 0;
+
+    fprintf(stdout, "Running test suite with seed 0x%08x...\n", 0);
 
     if (_is_directory(path)) {
         int file_count = 0;
@@ -223,19 +287,32 @@ int l_run_tests(vm_config_t* base_config, const char* path) {
         }
 
         for (int i = 0; i < file_count; i++) {
-            failures += _run_tests_in_file(files[i]);
+            test_summary_t file_summary = _run_tests_in_file(files[i]);
+            summary.successes += file_summary.successes;
+            summary.failures += file_summary.failures;
+            summary.errors += file_summary.errors;
         }
 
         l_free_file_list(files, file_count);
     } else {
-        failures += _run_tests_in_file(path);
+        test_summary_t file_summary = _run_tests_in_file(path);
+        summary.successes += file_summary.successes;
+        summary.failures += file_summary.failures;
+        summary.errors += file_summary.errors;
     }
 
-    if (failures == 0) {
-        printf("All tests passed.\n");
+    total = summary.failures + summary.errors + summary.successes;
+    if (total == 0) {
+        fprintf(stderr, "No tests run, 0 (100%%) skipped.\n");
+    } else {
+        double success_percent = ((double)summary.successes) / ((double)total) * 100.0;
+        fprintf(stdout, "%d of %d (%0.0f%%) tests successful, 0 (0%%) test skipped.\n",
+                summary.successes, total, success_percent);
+    }
+
+    if (summary.failures == 0 && summary.errors == 0) {
         return 0;
     }
 
-    printf("Test failures: %d\n", failures);
     return 1;
 }

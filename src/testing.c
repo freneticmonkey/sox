@@ -1,8 +1,8 @@
 #include "testing.h"
 
+#include <stdio.h>
 #include <string.h>
 
-#include "lib/print.h"
 #include "lib/table.h"
 #include "vm.h"
 
@@ -31,7 +31,7 @@ static value_t _test_error(int argCount, value_t* args) {
     }
 
     vm.test_state->failure_count++;
-    l_printf("FAIL %s: %s\n", vm.test_state->test_name, message);
+    fprintf(stderr, "Error: %s\n", message);
     return NIL_VAL;
 }
 
@@ -48,8 +48,8 @@ static value_t _test_fatal(int argCount, value_t* args) {
 
     vm.test_state->failure_count++;
     vm.test_state->fatal_triggered = true;
-    l_printf("FAIL %s: %s\n", vm.test_state->test_name, message);
-    l_vm_runtime_error("Fatal: %s", message);
+    fprintf(stderr, "Error: %s\n", message);
+    vm.runtime_error = true;
     return NIL_VAL;
 }
 

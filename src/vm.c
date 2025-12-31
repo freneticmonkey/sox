@@ -9,6 +9,7 @@
 #include "lib/native_api.h"
 #include "lib/print.h"
 #include "lib/table.h"
+#include "testing.h"
 #include "common.h"
 #include "compiler.h"
 #include "vm.h"
@@ -551,6 +552,23 @@ static InterpretResult _run() {
                 value_t message = l_pop();
                 value_t condition = l_pop();
                 if (_is_falsey(condition)) {
+                    if (vm.test_state != NULL) {
+                        const char* text = NULL;
+                        if (IS_STRING(message)) {
+                            text = AS_STRING(message)->chars;
+                        }
+                        vm.test_state->failure_count++;
+                        vm.test_state->fatal_triggered = true;
+                        if (text != NULL) {
+                            fprintf(stderr, "Error: Assertion failed: %s\n", text);
+                        } else if (IS_NIL(message)) {
+                            fprintf(stderr, "Error: Assertion failed.\n");
+                        } else {
+                            fprintf(stderr, "Error: Assertion failed: message must be a string.\n");
+                        }
+                        vm.runtime_error = true;
+                        return INTERPRET_RUNTIME_ERROR;
+                    }
                     if (IS_STRING(message)) {
                         l_vm_runtime_error("Assertion failed: %s", AS_STRING(message)->chars);
                     } else if (IS_NIL(message)) {
