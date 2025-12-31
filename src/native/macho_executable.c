@@ -10,6 +10,10 @@
 #include <stdio.h>
 #include <sys/stat.h>
 
+#ifndef MH_HAS_TLV_DESCRIPTORS
+#define MH_HAS_TLV_DESCRIPTORS 0x00800000
+#endif
+
 /*
  * Mach-O Executable Writer Implementation
  *
@@ -23,6 +27,28 @@
 /* Helper: Round up to page boundary (16KB for Mach-O) */
 static uint64_t round_up_to_page(uint64_t value, size_t page_size) {
     return align_to(value, page_size);
+}
+
+static bool macho_tlv_debug_enabled(void) {
+    const char* env = getenv("SOX_MACHO_TLV_DEBUG");
+    return env && env[0] != '\0';
+}
+
+static bool macho_got_debug_enabled(void) {
+    const char* env = getenv("SOX_MACHO_GOT_DEBUG");
+    return env && env[0] != '\0';
+}
+
+static void macho_dump_bytes(const char* label, const uint8_t* data, size_t size, size_t max) {
+    if (!label || !data) {
+        return;
+    }
+    size_t dump_size = size < max ? size : max;
+    fprintf(stderr, "[TLV-DEBUG] %s size=%zu dump=%zu:", label, size, dump_size);
+    for (size_t i = 0; i < dump_size; i++) {
+        fprintf(stderr, " %02x", data[i]);
+    }
+    fprintf(stderr, "\n");
 }
 
 /* Helper: Write structure to file with error checking */
@@ -307,6 +333,64 @@ static int macho_count_external_call_symbols(linker_context_t* context) {
     return count;
 }
 
+static int macho_count_external_got_symbols(linker_context_t* context) {
+    if (!context) {
+        return 0;
+    }
+    int count = 0;
+    int capacity = 0;
+    const char** names = NULL;
+
+    for (int obj_idx = 0; obj_idx < context->object_count; obj_idx++) {
+        linker_object_t* obj = context->objects[obj_idx];
+        if (!obj) {
+            continue;
+        }
+        for (int reloc_idx = 0; reloc_idx < obj->relocation_count; reloc_idx++) {
+            linker_relocation_t* reloc = &obj->relocations[reloc_idx];
+            if (reloc->type != RELOC_ARM64_GOT_LOAD_PAGE21 &&
+                reloc->type != RELOC_ARM64_GOT_LOAD_PAGEOFF12) {
+                continue;
+            }
+            if (reloc->symbol_index < 0 || reloc->symbol_index >= obj->symbol_count) {
+                continue;
+            }
+            linker_symbol_t* symbol = &obj->symbols[reloc->symbol_index];
+            if (!symbol->name || symbol->name[0] == '\0') {
+                continue;
+            }
+            if (symbol->defining_object != -1) {
+                continue;
+            }
+
+            bool exists = false;
+            for (int i = 0; i < count; i++) {
+                if (strcmp(names[i], symbol->name) == 0) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (exists) {
+                continue;
+            }
+            if (capacity < count + 1) {
+                int new_capacity = capacity < 8 ? 8 : capacity * 2;
+                const char** new_names = realloc(names, new_capacity * sizeof(const char*));
+                if (!new_names) {
+                    free(names);
+                    return count;
+                }
+                names = new_names;
+                capacity = new_capacity;
+            }
+            names[count++] = symbol->name;
+        }
+    }
+
+    free(names);
+    return count;
+}
+
 static bool macho_stub_list_contains(const macho_stub_list_t* list, const char* name) {
     if (!list || !name) {
         return false;
@@ -443,6 +527,35 @@ static bool macho_append_bind_entry(macho_byte_buffer_t* buffer,
     return true;
 }
 
+static bool macho_append_bind_entry_with_type(macho_byte_buffer_t* buffer,
+                                              const char* symbol_name,
+                                              uint8_t segment_index,
+                                              uint64_t segment_offset,
+                                              uint8_t type) {
+    if (!buffer || !symbol_name) {
+        return false;
+    }
+    if (!macho_buffer_append_byte(buffer, BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM)) {
+        return false;
+    }
+    if (!macho_buffer_append_cstring(buffer, symbol_name)) {
+        return false;
+    }
+    if (!macho_buffer_append_byte(buffer, BIND_OPCODE_SET_TYPE_IMM | type)) {
+        return false;
+    }
+    if (!macho_buffer_append_byte(buffer, BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | segment_index)) {
+        return false;
+    }
+    if (!macho_buffer_append_uleb(buffer, segment_offset)) {
+        return false;
+    }
+    if (!macho_buffer_append_byte(buffer, BIND_OPCODE_DO_BIND)) {
+        return false;
+    }
+    return true;
+}
+
 static bool macho_append_tlv_binds(macho_byte_buffer_t* buffer,
                                    linker_context_t* context,
                                    uint8_t data_segment_index,
@@ -489,7 +602,8 @@ static bool macho_append_tlv_binds(macho_byte_buffer_t* buffer,
             if (!macho_append_bind_start(buffer)) {
                 return false;
             }
-            if (!macho_append_bind_entry(buffer, name_buf, data_segment_index, segment_offset)) {
+            if (!macho_append_bind_entry_with_type(buffer, name_buf, data_segment_index,
+                                                   segment_offset, BIND_TYPE_POINTER)) {
                 return false;
             }
         }
@@ -787,6 +901,8 @@ uint32_t macho_get_segment_section_count(linker_context_t* context,
 
     uint32_t count = 0;
     int stub_count = macho_count_external_call_symbols(context);
+    int got_symbol_count = macho_count_external_got_symbols(context);
+    int got_count = stub_count + got_symbol_count;
 
     /* Check for __TEXT segment sections */
     if (strcmp(segment_name, SEG_TEXT) == 0) {
@@ -849,7 +965,7 @@ uint32_t macho_get_segment_section_count(linker_context_t* context,
 
     /* Check for __DATA_CONST segment sections */
     else if (strcmp(segment_name, SEG_DATA_CONST) == 0) {
-        if (stub_count > 0) {
+        if (got_count > 0) {
             count = 1;
         }
     }
@@ -868,6 +984,8 @@ uint64_t macho_calculate_segment_size(linker_context_t* context,
 
     uint64_t size = 0;
     int stub_count = macho_count_external_call_symbols(context);
+    int got_symbol_count = macho_count_external_got_symbols(context);
+    int got_count = stub_count + got_symbol_count;
     uint64_t stubs_size = (uint64_t)stub_count * 12;
 
     /* Calculate size for __TEXT segment */
@@ -938,8 +1056,8 @@ uint64_t macho_calculate_segment_size(linker_context_t* context,
     }
     /* Calculate size for __DATA_CONST segment */
     else if (strcmp(segment_name, SEG_DATA_CONST) == 0) {
-        if (stub_count > 0) {
-            size = align_to((uint64_t)stub_count * 8, 8);
+        if (got_count > 0) {
+            size = align_to((uint64_t)got_count * 8, 8);
         }
     }
 
@@ -956,6 +1074,8 @@ uint32_t macho_calculate_load_commands_size(linker_context_t* context) {
 
     uint32_t size = 0;
     int stub_count = macho_count_external_call_symbols(context);
+    int got_symbol_count = macho_count_external_got_symbols(context);
+    int got_count = stub_count + got_symbol_count;
 
     /* LC_SEGMENT_64 for __TEXT */
     uint32_t text_section_count = macho_get_segment_section_count(context, SEG_TEXT);
@@ -963,7 +1083,7 @@ uint32_t macho_calculate_load_commands_size(linker_context_t* context) {
     size += text_section_count * sizeof(section_64_t);
 
     /* LC_SEGMENT_64 for __DATA_CONST (GOT) */
-    if (stub_count > 0) {
+    if (got_count > 0) {
         uint32_t data_const_sections = macho_get_segment_section_count(context, SEG_DATA_CONST);
         size += sizeof(segment_command_64_t);
         size += data_const_sections * sizeof(section_64_t);
@@ -1000,7 +1120,7 @@ uint32_t macho_calculate_load_commands_size(linker_context_t* context) {
     size += sizeof(build_version_command_t);
 
     /* LC_DYLD_INFO_ONLY */
-    if (stub_count > 0) {
+    if (got_count > 0) {
         size += sizeof(dyld_info_command_t);
     }
 
@@ -1066,9 +1186,12 @@ bool macho_write_executable(const char* output_path,
     /* Calculate sizes */
     size_t page_size = get_page_size(PLATFORM_FORMAT_MACH_O);
     int stub_count = macho_count_external_call_symbols(context);
+    int got_symbol_count = macho_count_external_got_symbols(context);
+    int got_entry_count = stub_count + got_symbol_count;
     uint64_t stubs_size = (uint64_t)stub_count * 12;
-    uint64_t got_size = (uint64_t)stub_count * 8;
+    uint64_t got_size = (uint64_t)got_entry_count * 8;
     bool has_stubs = (stub_count > 0);
+    bool has_got = (got_entry_count > 0);
 
     uint32_t load_cmds_size = macho_calculate_load_commands_size(context);
     uint32_t text_section_count = macho_get_segment_section_count(context, SEG_TEXT);
@@ -1098,7 +1221,7 @@ bool macho_write_executable(const char* output_path,
         data_file_cursor += tdata_section->size;
     }
     data_filesize = data_file_cursor;
-    uint64_t data_const_filesize = has_stubs ? align_to(got_size, 8) : 0;
+    uint64_t data_const_filesize = has_got ? align_to(got_size, 8) : 0;
 
     uint64_t header_size = sizeof(mach_header_64_t);
     uint64_t text_file_offset = round_up_to_page(header_size + load_cmds_size, page_size);
@@ -1183,6 +1306,8 @@ bool macho_write_executable(const char* output_path,
 
     macho_stub_list_t stubs;
     macho_stub_list_init(&stubs);
+    macho_stub_list_t got_entries;
+    macho_stub_list_init(&got_entries);
 
     if (stub_count > 0) {
         for (int obj_idx = 0; obj_idx < context->object_count; obj_idx++) {
@@ -1210,8 +1335,40 @@ bool macho_write_executable(const char* output_path,
                     fprintf(stderr, "Mach-O error: Failed to add stub for %s\n", symbol->name);
                     macho_symtab_free(&symtab);
                     macho_stub_list_free(&stubs);
+                    macho_stub_list_free(&got_entries);
                     return false;
                 }
+            }
+        }
+    }
+
+    for (int obj_idx = 0; obj_idx < context->object_count; obj_idx++) {
+        linker_object_t* obj = context->objects[obj_idx];
+        if (!obj) {
+            continue;
+        }
+        for (int reloc_idx = 0; reloc_idx < obj->relocation_count; reloc_idx++) {
+            linker_relocation_t* reloc = &obj->relocations[reloc_idx];
+            if (reloc->type != RELOC_ARM64_GOT_LOAD_PAGE21 &&
+                reloc->type != RELOC_ARM64_GOT_LOAD_PAGEOFF12) {
+                continue;
+            }
+            if (reloc->symbol_index < 0 || reloc->symbol_index >= obj->symbol_count) {
+                continue;
+            }
+            linker_symbol_t* symbol = &obj->symbols[reloc->symbol_index];
+            if (!symbol->name || symbol->name[0] == '\0') {
+                continue;
+            }
+            if (symbol->defining_object != -1) {
+                continue;
+            }
+            if (!macho_stub_list_add(&got_entries, &symtab, symbol->name)) {
+                fprintf(stderr, "Mach-O error: Failed to add GOT entry for %s\n", symbol->name);
+                macho_symtab_free(&symtab);
+                macho_stub_list_free(&stubs);
+                macho_stub_list_free(&got_entries);
+                return false;
             }
         }
     }
@@ -1219,10 +1376,11 @@ bool macho_write_executable(const char* output_path,
     uint32_t stubs_indirect_index = 0;
     uint32_t got_indirect_index = 0;
     uint32_t indirect_count = 0;
-    if (stubs.count > 0) {
+    uint32_t got_entry_total = (uint32_t)stubs.count + (uint32_t)got_entries.count;
+    if (got_entry_total > 0) {
         stubs_indirect_index = 0;
-        got_indirect_index = (uint32_t)stubs.count;
-        indirect_count = (uint32_t)stubs.count * 2u;
+        got_indirect_index = has_stubs ? (uint32_t)stubs.count : 0;
+        indirect_count = (has_stubs ? (uint32_t)stubs.count : 0) + got_entry_total;
     }
     int defined_count = 0;
     int undef_count = 0;
@@ -1345,6 +1503,16 @@ bool macho_write_executable(const char* output_path,
                     is_pcrel = false;
                     length = 2;
                     break;
+                case RELOC_ARM64_GOT_LOAD_PAGE21:
+                    macho_type = 5;
+                    is_pcrel = true;
+                    length = 2;
+                    break;
+                case RELOC_ARM64_GOT_LOAD_PAGEOFF12:
+                    macho_type = 6;
+                    is_pcrel = false;
+                    length = 2;
+                    break;
                 case RELOC_ARM64_TLVP_LOAD_PAGE21:
                     macho_type = 8;
                     is_pcrel = true;
@@ -1383,25 +1551,39 @@ bool macho_write_executable(const char* output_path,
         }
     }
 
-    bool stubbed = (stubs.count > 0);
-    uint8_t data_const_segment_index = stubbed ? 2 : 0;
+    bool has_got_entries = (stubs.count + got_entries.count) > 0;
+    uint8_t data_const_segment_index = has_got_entries ? 2 : 0;
 
     macho_byte_buffer_t bind_info;
     macho_buffer_init(&bind_info);
-    if (stubbed) {
-        if (!macho_build_bind_info(&bind_info, &stubs, data_const_segment_index, 0)) {
+    if (has_got_entries) {
+        if (has_stubs &&
+            !macho_build_bind_info(&bind_info, &stubs, data_const_segment_index, 0)) {
             fprintf(stderr, "Mach-O error: Failed to build bind info\n");
             macho_buffer_free(&bind_info);
             macho_symtab_free(&symtab);
             macho_extrel_free(&extrel);
             macho_stub_list_free(&stubs);
+            macho_stub_list_free(&got_entries);
             return false;
+        }
+        if (got_entries.count > 0) {
+            uint64_t got_offset = (uint64_t)stubs.count * 8;
+            if (!macho_build_bind_info(&bind_info, &got_entries, data_const_segment_index, got_offset)) {
+                fprintf(stderr, "Mach-O error: Failed to build GOT bind info\n");
+                macho_buffer_free(&bind_info);
+                macho_symtab_free(&symtab);
+                macho_extrel_free(&extrel);
+                macho_stub_list_free(&stubs);
+                macho_stub_list_free(&got_entries);
+                return false;
+            }
         }
     }
 
     macho_byte_buffer_t export_info;
     macho_buffer_init(&export_info);
-    if (stubbed) {
+    if (has_got_entries) {
         if (!macho_buffer_append_byte(&export_info, 0x00)) {
             fprintf(stderr, "Mach-O error: Failed to build export info\n");
             macho_buffer_free(&export_info);
@@ -1409,6 +1591,7 @@ bool macho_write_executable(const char* output_path,
             macho_symtab_free(&symtab);
             macho_extrel_free(&extrel);
             macho_stub_list_free(&stubs);
+            macho_stub_list_free(&got_entries);
             return false;
         }
     }
@@ -1423,11 +1606,20 @@ bool macho_write_executable(const char* output_path,
             macho_symtab_free(&symtab);
             macho_extrel_free(&extrel);
             macho_stub_list_free(&stubs);
+            macho_stub_list_free(&got_entries);
             return false;
         }
+        uint32_t cursor = 0;
+        if (has_stubs) {
+            for (int i = 0; i < stubs.count; i++) {
+                indirect_symbols[cursor++] = (uint32_t)stubs.items[i].symtab_index;
+            }
+        }
         for (int i = 0; i < stubs.count; i++) {
-            indirect_symbols[i] = (uint32_t)stubs.items[i].symtab_index;
-            indirect_symbols[stubs.count + i] = (uint32_t)stubs.items[i].symtab_index;
+            indirect_symbols[cursor++] = (uint32_t)stubs.items[i].symtab_index;
+        }
+        for (int i = 0; i < got_entries.count; i++) {
+            indirect_symbols[cursor++] = (uint32_t)got_entries.items[i].symtab_index;
         }
     }
 
@@ -1461,7 +1653,7 @@ bool macho_write_executable(const char* output_path,
     uint64_t got_addr = 0;
     uint8_t* stubs_data = NULL;
 
-    if (stubbed) {
+    if (has_stubs) {
         uint64_t cursor = 0;
         for (int i = 0; i < context->merged_section_count; i++) {
             if (context->merged_sections[i].type == SECTION_TYPE_TEXT) {
@@ -1493,7 +1685,7 @@ bool macho_write_executable(const char* output_path,
             }
         }
     }
-    if (stubbed) {
+    if (has_stubs) {
         uint64_t stubs_end = text_file_offset + stubs_offset + stubs_size;
         if (stubs_end > text_filesize) {
             text_filesize = stubs_end;
@@ -1508,9 +1700,11 @@ bool macho_write_executable(const char* output_path,
     uint64_t data_vm_addr = text_vm_addr + data_file_offset;
     uint64_t linkedit_vm_addr = data_vm_addr + round_up_to_page(data_vmsize, page_size);
 
-    if (stubbed) {
+    if (has_got) {
         got_addr = data_const_vm_addr;
+    }
 
+    if (has_stubs) {
         stubs_data = calloc(stubs_size, 1);
         if (!stubs_data) {
             fprintf(stderr, "Mach-O error: Failed to allocate stub section\n");
@@ -1520,6 +1714,7 @@ bool macho_write_executable(const char* output_path,
             macho_symtab_free(&symtab);
             macho_extrel_free(&extrel);
             macho_stub_list_free(&stubs);
+            macho_stub_list_free(&got_entries);
             return false;
         }
         for (int i = 0; i < stubs.count; i++) {
@@ -1585,6 +1780,93 @@ bool macho_write_executable(const char* output_path,
         }
     }
 
+    if (has_got) {
+        for (int obj_idx = 0; obj_idx < context->object_count; obj_idx++) {
+            linker_object_t* obj = context->objects[obj_idx];
+            if (!obj || !obj->section_base_addrs) {
+                continue;
+            }
+            for (int reloc_idx = 0; reloc_idx < obj->relocation_count; reloc_idx++) {
+                linker_relocation_t* reloc = &obj->relocations[reloc_idx];
+                if (reloc->type != RELOC_ARM64_GOT_LOAD_PAGE21 &&
+                    reloc->type != RELOC_ARM64_GOT_LOAD_PAGEOFF12) {
+                    continue;
+                }
+                if (reloc->symbol_index < 0 || reloc->symbol_index >= obj->symbol_count) {
+                    continue;
+                }
+                linker_symbol_t* symbol = &obj->symbols[reloc->symbol_index];
+                if (!symbol->name || symbol->name[0] == '\0') {
+                    continue;
+                }
+                if (symbol->defining_object != -1) {
+                    continue;
+                }
+
+                int got_index = -1;
+                int stub_index = macho_stub_list_index(&stubs, symbol->name);
+                if (stub_index >= 0) {
+                    got_index = stub_index;
+                } else {
+                    int data_index = macho_stub_list_index(&got_entries, symbol->name);
+                    if (data_index >= 0) {
+                        got_index = stubs.count + data_index;
+                    }
+                }
+                if (got_index < 0) {
+                    if (macho_got_debug_enabled()) {
+                        fprintf(stderr,
+                                "[GOT-DEBUG] Missing GOT entry for %s (obj=%d reloc=%d)\n",
+                                symbol->name ? symbol->name : "<unknown>",
+                                obj_idx, reloc_idx);
+                    }
+                    continue;
+                }
+
+                if (reloc->section_index < 0 || reloc->section_index >= obj->section_count) {
+                    continue;
+                }
+                linker_section_t* obj_section = &obj->sections[reloc->section_index];
+                linker_section_t* merged = macho_find_merged_section(context, obj_section->type);
+                if (!merged || !merged->data) {
+                    continue;
+                }
+
+                uint64_t section_base = obj->section_base_addrs[reloc->section_index];
+                if (obj_section->type == SECTION_TYPE_TEXT ||
+                    obj_section->type == SECTION_TYPE_RODATA) {
+                    section_base += text_file_offset;
+                }
+                uint64_t P = section_base + reloc->offset;
+                uint64_t offset_in_merged = P - merged->vaddr;
+                if (offset_in_merged >= merged->size) {
+                    continue;
+                }
+
+                uint64_t got_entry_addr = got_addr + (uint64_t)got_index * 8;
+                int64_t value = relocation_calculate_value(reloc->type, got_entry_addr,
+                                                           reloc->addend, P);
+                if (macho_got_debug_enabled()) {
+                    fprintf(stderr,
+                            "[GOT-DEBUG] sym=%s type=%s obj=%d reloc=%d P=0x%llx got=0x%llx addend=0x%llx value=0x%llx\n",
+                            symbol->name ? symbol->name : "<unknown>",
+                            relocation_type_name(reloc->type),
+                            obj_idx,
+                            reloc_idx,
+                            (unsigned long long)P,
+                            (unsigned long long)got_entry_addr,
+                            (unsigned long long)reloc->addend,
+                            (unsigned long long)value);
+                }
+                if (!patch_instruction(merged->data, merged->size, offset_in_merged,
+                                       value, reloc->type, P)) {
+                    fprintf(stderr, "Mach-O warning: Failed to patch GOT relocation for %s\n",
+                            symbol->name);
+                }
+            }
+        }
+    }
+
     linker_section_t* data_sections[] = {
         macho_find_merged_section(context, SECTION_TYPE_DATA),
         macho_find_merged_section(context, SECTION_TYPE_TLV),
@@ -1621,21 +1903,65 @@ bool macho_write_executable(const char* output_path,
     }
 
     uint64_t tlv_vm_addr = 0;
+    uint64_t tlv_layout_addr = 0;
+    uint64_t tlv_delta = 0;
     if (data_present[SECTION_TYPE_TLV]) {
         tlv_vm_addr = data_vm_addr + data_offsets[SECTION_TYPE_TLV];
+        linker_section_t* tlv_section_layout = macho_find_merged_section(context, SECTION_TYPE_TLV);
+        if (tlv_section_layout) {
+            tlv_layout_addr = tlv_section_layout->vaddr;
+        }
+        if (tlv_vm_addr != 0 && tlv_layout_addr != 0 && tlv_vm_addr != tlv_layout_addr) {
+            tlv_delta = tlv_vm_addr - tlv_layout_addr;
+        }
+    }
+
+    uint64_t tls_block_base = 0;
+    if (data_present[SECTION_TYPE_TDATA]) {
+        tls_block_base = data_vm_addr + data_offsets[SECTION_TYPE_TDATA];
+    } else if (data_present[SECTION_TYPE_TBSS]) {
+        tls_block_base = data_vm_addr + data_offsets[SECTION_TYPE_TBSS];
     }
 
     if (tlv_vm_addr != 0) {
         if (!macho_append_tlv_binds(&bind_info, context,
-                                    stubbed ? 3 : 2, tlv_vm_addr)) {
+                                    has_got ? 3 : 2, tlv_vm_addr)) {
             fprintf(stderr, "Mach-O error: Failed to build TLV bind info\n");
             macho_buffer_free(&bind_info);
             macho_buffer_free(&export_info);
             macho_symtab_free(&symtab);
             macho_extrel_free(&extrel);
             macho_stub_list_free(&stubs);
+            macho_stub_list_free(&got_entries);
             free(indirect_symbols);
             return false;
+        }
+    }
+
+    if (macho_tlv_debug_enabled()) {
+        linker_section_t* tlv_debug_section = macho_find_merged_section(context, SECTION_TYPE_TLV);
+        if (tlv_debug_section) {
+            fprintf(stderr,
+                    "[TLV-DEBUG] __thread_vars vaddr=0x%llx vm_addr=0x%llx size=%zu delta=0x%llx\n",
+                    (unsigned long long)tlv_debug_section->vaddr,
+                    (unsigned long long)tlv_vm_addr,
+                    tlv_debug_section->size,
+                    (unsigned long long)tlv_delta);
+            if (tlv_debug_section->data && tlv_debug_section->size > 0) {
+                macho_dump_bytes("__thread_vars", tlv_debug_section->data,
+                                 tlv_debug_section->size, 32);
+            }
+        }
+        if (bind_info.size > 0) {
+            macho_dump_bytes("bind_info", bind_info.data, bind_info.size, 64);
+        }
+    }
+
+    if (tlv_delta != 0) {
+        for (int i = 0; i < symtab.count; i++) {
+            if (symtab.symbols[i].n_sect == section_indices.tlv) {
+                symtab.symbols[i].n_value += tlv_delta;
+            }
         }
     }
 
@@ -1667,9 +1993,6 @@ bool macho_write_executable(const char* output_path,
             if (sym_type > SECTION_TYPE_TBSS || !data_present[sym_type]) {
                 continue;
             }
-            if (data_deltas[sym_type] == 0) {
-                continue;
-            }
             if (reloc->section_index < 0 || reloc->section_index >= obj->section_count) {
                 continue;
             }
@@ -1694,8 +2017,54 @@ bool macho_write_executable(const char* output_path,
                 continue;
             }
 
-            uint64_t S = def_sym->final_address + data_deltas[sym_type];
-            int64_t value = relocation_calculate_value(reloc->type, S, reloc->addend, P);
+            uint64_t delta = data_deltas[sym_type];
+            if (sym_type == SECTION_TYPE_TLV &&
+                (reloc->type == RELOC_ARM64_TLVP_LOAD_PAGE21 ||
+                 reloc->type == RELOC_ARM64_TLVP_LOAD_PAGEOFF12) &&
+                tlv_delta != 0) {
+                delta = tlv_delta;
+            }
+            if (delta == 0) {
+                continue;
+            }
+
+            uint64_t S = def_sym->final_address + delta;
+            int64_t value = 0;
+            if (reloc->type == RELOC_ARM64_ABS64 &&
+                src_section->type == SECTION_TYPE_TLV &&
+                (sym_type == SECTION_TYPE_TDATA || sym_type == SECTION_TYPE_TBSS) &&
+                tls_block_base != 0) {
+                uint64_t abs_addr = S;
+                uint64_t offset = abs_addr - tls_block_base;
+                value = (int64_t)(offset + (uint64_t)reloc->addend);
+                if (macho_tlv_debug_enabled()) {
+                    fprintf(stderr,
+                            "[TLV-DEBUG] TLS OFFSET sym=%s abs=0x%llx base=0x%llx offset=0x%llx addend=0x%llx\n",
+                            def_sym->name ? def_sym->name : "<unknown>",
+                            (unsigned long long)abs_addr,
+                            (unsigned long long)tls_block_base,
+                            (unsigned long long)offset,
+                            (unsigned long long)reloc->addend);
+                }
+            } else {
+                value = relocation_calculate_value(reloc->type, S, reloc->addend, P);
+            }
+            if (tlv_delta != 0 &&
+                (reloc->type == RELOC_ARM64_TLVP_LOAD_PAGE21 ||
+                 reloc->type == RELOC_ARM64_TLVP_LOAD_PAGEOFF12)) {
+                const char* debug_env = getenv("SOX_MACHO_TLV_DEBUG");
+                if (debug_env && debug_env[0] != '\0') {
+                    fprintf(stderr,
+                            "[TLV-REPATCH] sym=%s type=%d P=0x%llx S=0x%llx delta=0x%llx addend=0x%llx value=0x%llx\n",
+                            def_sym->name ? def_sym->name : "<unknown>",
+                            reloc->type,
+                            (unsigned long long)P,
+                            (unsigned long long)S,
+                            (unsigned long long)delta,
+                            (unsigned long long)reloc->addend,
+                            (unsigned long long)value);
+                }
+            }
             if (!patch_instruction(merged->data, merged->size, offset_in_merged,
                                    value, reloc->type, P)) {
                 fprintf(stderr, "Mach-O warning: Failed to patch data relocation for %s\n",
@@ -1712,6 +2081,7 @@ bool macho_write_executable(const char* output_path,
             macho_symtab_free(&symtab);
             macho_extrel_free(&extrel);
             macho_stub_list_free(&stubs);
+            macho_stub_list_free(&got_entries);
             free(indirect_symbols);
             return false;
         }
@@ -1750,9 +2120,12 @@ bool macho_write_executable(const char* output_path,
     header.cputype = CPU_TYPE_ARM64;
     header.cpusubtype = CPU_SUBTYPE_ARM64_ALL;
     header.filetype = MH_EXECUTE;
-    header.ncmds = stubbed ? 13 : 11;  /* Add __DATA_CONST + LC_DYLD_INFO_ONLY when stubs are present */
+    header.ncmds = has_got ? 13 : 11;  /* Add __DATA_CONST + LC_DYLD_INFO_ONLY when GOT is present */
     header.sizeofcmds = load_cmds_size;
     header.flags = MH_DYLDLINK | MH_TWOLEVEL | MH_PIE;
+    if (macho_find_merged_section(context, SECTION_TYPE_TLV)) {
+        header.flags |= MH_HAS_TLV_DESCRIPTORS;
+    }
     header.reserved = 0;
 
     /* Open output file */
@@ -1866,7 +2239,7 @@ bool macho_write_executable(const char* output_path,
     }
 
     /* Write __stubs section header */
-    if (stubbed) {
+    if (has_stubs) {
         current_offset = align_to(current_offset, 4);
         section_64_t stubs_sect = {0};
         strncpy(stubs_sect.sectname, SECT_STUBS, 16);
@@ -1890,7 +2263,7 @@ bool macho_write_executable(const char* output_path,
     }
 
     /* Create and write LC_SEGMENT_64 for __DATA_CONST (GOT) */
-    if (stubbed) {
+    if (has_got) {
         segment_command_64_t data_const_segment = {0};
         data_const_segment.cmd = LC_SEGMENT_64;
         data_const_segment.cmdsize = sizeof(segment_command_64_t) +
@@ -2191,7 +2564,7 @@ bool macho_write_executable(const char* output_path,
     }
 
     /* Create and write LC_DYLD_INFO_ONLY */
-    if (stubbed) {
+    if (has_got) {
         dyld_info_command_t dyld_info = {0};
         dyld_info.cmd = LC_DYLD_INFO_ONLY;
         dyld_info.cmdsize = sizeof(dyld_info_command_t);
@@ -2325,7 +2698,7 @@ bool macho_write_executable(const char* output_path,
         }
     }
 
-    if (stubbed && stubs_data && stubs_size > 0) {
+    if (has_stubs && stubs_data && stubs_size > 0) {
         uint64_t stubs_file_offset = text_file_offset + stubs_offset;
         if (stubs_file_offset > current_text_pos) {
             if (!write_padding(f, stubs_file_offset - current_text_pos)) {
@@ -2391,7 +2764,7 @@ bool macho_write_executable(const char* output_path,
     }
 
     /* Write __DATA_CONST segment data (GOT) */
-    if (stubbed && got_size > 0) {
+    if (has_got && got_size > 0) {
         if (!write_padding(f, got_size)) {
             fclose(f);
             macho_symtab_free(&symtab);
@@ -2584,6 +2957,7 @@ bool macho_write_executable(const char* output_path,
     macho_buffer_free(&export_info);
     macho_buffer_free(&bind_info);
     macho_stub_list_free(&stubs);
+    macho_stub_list_free(&got_entries);
     macho_symtab_free(&symtab);
     macho_extrel_free(&extrel);
     fclose(f);

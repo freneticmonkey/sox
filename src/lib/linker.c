@@ -19,6 +19,7 @@
 
 #define MAX_LINKERS 5
 #define MAX_CMD_LEN 1024
+#define MACOS_CODESIGN_PATH "/usr/bin/codesign"
 
 // Get the current platform (public function, implementation follows)
 platform_t linker_get_current_platform(void);
@@ -62,6 +63,44 @@ static bool _is_cross_compilation(const char* target_os, const char* target_arch
     bool arch_mismatch = strcmp(current.arch, target_arch) != 0;
 
     return os_mismatch || arch_mismatch;
+}
+
+static bool _is_macos_target(const char* target_os) {
+    return target_os != NULL &&
+           (strcmp(target_os, "macos") == 0 || strcmp(target_os, "darwin") == 0);
+}
+
+static void _maybe_codesign_macos_output(const linker_options_t* options) {
+    if (!_is_macos_target(options->target_os)) {
+        return;
+    }
+
+    platform_t current = _get_current_platform_impl();
+    if (strcmp(current.os, "macos") != 0) {
+        fprintf(stderr,
+                "Warning: macOS target detected but host is %s; code signing skipped.\n"
+                "Run on macOS: " MACOS_CODESIGN_PATH " --force --sign - %s\n",
+                current.os, options->output_file);
+        return;
+    }
+
+    if (access(MACOS_CODESIGN_PATH, X_OK) != 0) {
+        fprintf(stderr,
+                "Warning: codesign not available; code signing skipped.\n"
+                "Run: " MACOS_CODESIGN_PATH " --force --sign - %s\n",
+                options->output_file);
+        return;
+    }
+
+    char cmd[MAX_CMD_LEN];
+    snprintf(cmd, sizeof(cmd), MACOS_CODESIGN_PATH " --force --sign - %s", options->output_file);
+    int result = system(cmd);
+    if (result != 0) {
+        fprintf(stderr,
+                "Warning: codesign failed; native binary may not launch.\n"
+                "Run: " MACOS_CODESIGN_PATH " --force --sign - %s\n",
+                options->output_file);
+    }
 }
 
 // Try to find a cross-compiler for the target
@@ -468,7 +507,7 @@ bool linker_is_simple_link_job(const linker_options_t* options) {
 // Custom linker implementation - Phase 6.1 Integration Layer
 // This orchestrates all 5 phases of the custom linker
 int linker_link_custom(const linker_options_t* options) {
-    if (options->verbose_linking || options->verbose) {
+    if (options->verbose_linking || options->verbose || getenv("SOX_MACHO_GOT_DEBUG")) {
         fprintf(stderr, "[CUSTOM LINKER] Starting custom linking process\n");
         fprintf(stderr, "[CUSTOM LINKER] Input: %s\n", options->input_file);
         fprintf(stderr, "[CUSTOM LINKER] Output: %s\n", options->output_file);
@@ -476,7 +515,7 @@ int linker_link_custom(const linker_options_t* options) {
     }
 
     // Phase 1: Create linker context and read object file
-    if (options->verbose_linking || options->verbose) {
+    if (options->verbose_linking || options->verbose || getenv("SOX_MACHO_GOT_DEBUG")) {
         fprintf(stderr, "[CUSTOM LINKER] Phase 1: Reading object file...\n");
     }
 
@@ -509,6 +548,28 @@ int linker_link_custom(const linker_options_t* options) {
         linker_object_free(obj);
         linker_context_free(context);
         return 1;
+    }
+
+    if (options->verbose_linking || options->verbose) {
+        for (int obj_idx = 0; obj_idx < context->object_count; obj_idx++) {
+            linker_object_t* dbg_obj = context->objects[obj_idx];
+            if (!dbg_obj) {
+                continue;
+            }
+            for (int sym_idx = 0; sym_idx < dbg_obj->symbol_count; sym_idx++) {
+                linker_symbol_t* sym = &dbg_obj->symbols[sym_idx];
+                if (!sym->name) {
+                    continue;
+                }
+                if (strstr(sym->name, "runtime_ctx") == NULL &&
+                    strstr(sym->name, "tlv_bootstrap") == NULL) {
+                    continue;
+                }
+                fprintf(stderr, "[CUSTOM LINKER] Symbol scan (input): obj=%d name=%s defined=%d binding=%s section=%d\n",
+                        obj_idx, sym->name, sym->is_defined,
+                        symbol_binding_name(sym->binding), sym->section_index);
+            }
+        }
     }
 
     // Phase 1.5: Extract runtime library if needed
@@ -557,6 +618,45 @@ int linker_link_custom(const linker_options_t* options) {
         }
     }
 
+    if (options->verbose_linking || options->verbose) {
+        for (int obj_idx = 0; obj_idx < context->object_count; obj_idx++) {
+            linker_object_t* dbg_obj = context->objects[obj_idx];
+            if (!dbg_obj) {
+                continue;
+            }
+            for (int sym_idx = 0; sym_idx < dbg_obj->symbol_count; sym_idx++) {
+                linker_symbol_t* sym = &dbg_obj->symbols[sym_idx];
+                if (!sym->name) {
+                    continue;
+                }
+                if (strstr(sym->name, "runtime_ctx") == NULL) {
+                    continue;
+                }
+                fprintf(stderr, "[CUSTOM LINKER] Symbol scan (post-archive): obj=%d name=%s defined=%d binding=%s section=%d\n",
+                        obj_idx, sym->name, sym->is_defined,
+                        symbol_binding_name(sym->binding), sym->section_index);
+            }
+
+            for (int reloc_idx = 0; reloc_idx < dbg_obj->relocation_count; reloc_idx++) {
+                linker_relocation_t* reloc = &dbg_obj->relocations[reloc_idx];
+                if (reloc->symbol_index < 0 || reloc->symbol_index >= dbg_obj->symbol_count) {
+                    continue;
+                }
+                linker_symbol_t* rsym = &dbg_obj->symbols[reloc->symbol_index];
+                if (!rsym->name) {
+                    continue;
+                }
+                if (strstr(rsym->name, "runtime_ctx") == NULL &&
+                    strstr(rsym->name, "tlv_bootstrap") == NULL) {
+                    continue;
+                }
+                fprintf(stderr, "[CUSTOM LINKER] Reloc scan (post-archive): obj=%d sym=%s type=%d section=%d offset=%llu\n",
+                        obj_idx, rsym->name, reloc->type, reloc->section_index,
+                        (unsigned long long)reloc->offset);
+            }
+        }
+    }
+
     // Phase 2: Symbol resolution
     if (options->verbose_linking || options->verbose) {
         fprintf(stderr, "[CUSTOM LINKER] Phase 2: Resolving symbols...\n");
@@ -568,6 +668,7 @@ int linker_link_custom(const linker_options_t* options) {
         linker_context_free(context);
         return 1;
     }
+    resolver->verbose = options->verbose_linking || options->verbose;
 
     // Add all objects to the symbol resolver
     for (int i = 0; i < context->object_count; i++) {
@@ -586,6 +687,29 @@ int linker_link_custom(const linker_options_t* options) {
         symbol_resolver_free(resolver);
         linker_context_free(context);
         return 1;
+    }
+
+    if (options->verbose_linking || options->verbose) {
+        for (int obj_idx = 0; obj_idx < context->object_count; obj_idx++) {
+            linker_object_t* dbg_obj = context->objects[obj_idx];
+            if (!dbg_obj) {
+                continue;
+            }
+            for (int sym_idx = 0; sym_idx < dbg_obj->symbol_count; sym_idx++) {
+                linker_symbol_t* sym = &dbg_obj->symbols[sym_idx];
+                if (!sym->name) {
+                    continue;
+                }
+                if (strstr(sym->name, "runtime_ctx") == NULL &&
+                    strstr(sym->name, "tlv_bootstrap") == NULL) {
+                    continue;
+                }
+                fprintf(stderr, "[CUSTOM LINKER] Symbol scan (post-resolve): obj=%d name=%s defined=%d binding=%s section=%d defining_obj=%d\n",
+                        obj_idx, sym->name, sym->is_defined,
+                        symbol_binding_name(sym->binding), sym->section_index,
+                        sym->defining_object);
+            }
+        }
     }
 
     // Phase 3: Section layout
@@ -756,6 +880,7 @@ int linker_link_custom(const linker_options_t* options) {
         if (options->verbose_linking || options->verbose) {
             fprintf(stderr, "[CUSTOM LINKER] Successfully linked: %s\n", options->output_file);
         }
+        _maybe_codesign_macos_output(options);
         return 0;
     }
 
@@ -789,7 +914,7 @@ int linker_link(const linker_options_t* options) {
         return 1;
     }
 
-    if (options->verbose_linking || options->verbose) {
+    if (options->verbose_linking || options->verbose || getenv("SOX_MACHO_GOT_DEBUG")) {
         fprintf(stderr, "\n=== Sox Linker ===\n");
         fprintf(stderr, "Mode: ");
         switch (options->mode) {
@@ -810,7 +935,7 @@ int linker_link(const linker_options_t* options) {
     // Route to appropriate linker based on mode
     if (options->mode == LINKER_MODE_SYSTEM) {
         // Explicit request for system linker
-        if (options->verbose_linking || options->verbose) {
+        if (options->verbose_linking || options->verbose || getenv("SOX_MACHO_GOT_DEBUG")) {
             fprintf(stderr, "Using system linker (explicit)\n");
         }
         linker_info_t linker = linker_get_preferred(options->target_os, options->target_arch);
@@ -818,7 +943,7 @@ int linker_link(const linker_options_t* options) {
 
     } else if (options->mode == LINKER_MODE_CUSTOM) {
         // Explicit request for custom linker
-        if (options->verbose_linking || options->verbose) {
+        if (options->verbose_linking || options->verbose || getenv("SOX_MACHO_GOT_DEBUG")) {
             fprintf(stderr, "Using custom linker (explicit)\n");
         }
         return linker_link_custom(options);
@@ -826,12 +951,12 @@ int linker_link(const linker_options_t* options) {
     } else {
         // Auto mode: use custom for simple cases, system for complex
         if (linker_is_simple_link_job(options)) {
-            if (options->verbose_linking || options->verbose) {
+            if (options->verbose_linking || options->verbose || getenv("SOX_MACHO_GOT_DEBUG")) {
                 fprintf(stderr, "Using custom linker (auto-selected)\n");
             }
             return linker_link_custom(options);
         } else {
-            if (options->verbose_linking || options->verbose) {
+            if (options->verbose_linking || options->verbose || getenv("SOX_MACHO_GOT_DEBUG")) {
                 fprintf(stderr, "Using system linker (auto-selected)\n");
             }
             linker_info_t linker = linker_get_preferred(options->target_os, options->target_arch);

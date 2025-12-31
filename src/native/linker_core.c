@@ -412,6 +412,8 @@ const char* relocation_type_name(relocation_type_t type) {
         case RELOC_ARM64_JUMP26:               return "ARM64_JUMP26";
         case RELOC_ARM64_ADR_PREL_PG_HI21:     return "ARM64_ADR_PREL_PG_HI21";
         case RELOC_ARM64_ADD_ABS_LO12_NC:      return "ARM64_ADD_ABS_LO12_NC";
+        case RELOC_ARM64_GOT_LOAD_PAGE21:      return "ARM64_GOT_LOAD_PAGE21";
+        case RELOC_ARM64_GOT_LOAD_PAGEOFF12:   return "ARM64_GOT_LOAD_PAGEOFF12";
         case RELOC_ARM64_TLVP_LOAD_PAGE21:     return "ARM64_TLVP_LOAD_PAGE21";
         case RELOC_ARM64_TLVP_LOAD_PAGEOFF12:  return "ARM64_TLVP_LOAD_PAGEOFF12";
         case RELOC_RELATIVE:                   return "RELATIVE";

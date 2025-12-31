@@ -74,6 +74,8 @@ typedef enum {
     RELOC_ARM64_JUMP26,     /* 26-bit PC-relative jump (B) */
     RELOC_ARM64_ADR_PREL_PG_HI21,   /* Page-relative ADR */
     RELOC_ARM64_ADD_ABS_LO12_NC,    /* Low 12 bits */
+    RELOC_ARM64_GOT_LOAD_PAGE21,    /* GOT page distance */
+    RELOC_ARM64_GOT_LOAD_PAGEOFF12, /* GOT page offset */
     RELOC_ARM64_TLVP_LOAD_PAGE21,   /* Thread-local variable page distance */
     RELOC_ARM64_TLVP_LOAD_PAGEOFF12,/* Thread-local variable page offset */
 

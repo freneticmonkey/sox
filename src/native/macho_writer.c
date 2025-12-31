@@ -960,18 +960,18 @@ bool macho_create_object_file_with_arm64_relocs_and_strings(const char* filename
             if (!reloc || !reloc->symbol) continue;
 
             // Check if it's a local string symbol
-            bool is_local_string = false;
+            bool is_string_symbol = false;
             if (str_lits && string_literal_count > 0) {
                 for (int j = 0; j < string_literal_count; j++) {
                     if (strcmp(reloc->symbol, str_lits[j].symbol) == 0) {
-                        is_local_string = true;
+                        is_string_symbol = true;
                         break;
                     }
                 }
             }
 
             // Skip local string symbols (already added above)
-            if (is_local_string) continue;
+            if (is_string_symbol) continue;
 
             // Check if we've already added this symbol
             int symbol_index = -1;
@@ -999,16 +999,14 @@ bool macho_create_object_file_with_arm64_relocs_and_strings(const char* filename
             // Find the symbol index or section number
             uint32_t symbol_index = 0;
             bool found = false;
-            bool is_local_string = false;
 
             // Check if it's a local string symbol
             if (str_lits && string_literal_count > 0 && string_symbol_indices) {
                 for (int j = 0; j < string_literal_count; j++) {
                     if (strcmp(reloc->symbol, str_lits[j].symbol) == 0) {
-                        // Use section-relative relocation for local string symbols
-                        symbol_index = (uint32_t)(cstring_section + 1);
+                        // Use symbol-relative relocation for string literals
+                        symbol_index = string_symbol_indices[j];
                         found = true;
-                        is_local_string = true;
                         break;
                     }
                 }
@@ -1055,7 +1053,7 @@ bool macho_create_object_file_with_arm64_relocs_and_strings(const char* filename
 
             int32_t byte_offset = (int32_t)(reloc->offset * 4);
             macho_add_relocation(builder, byte_offset, symbol_index, is_pcrel, 2,
-                                 !is_local_string, macho_reloc_type);
+                                 true, macho_reloc_type);
         }
 
         free(symbol_names);
