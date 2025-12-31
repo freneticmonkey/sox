@@ -29,12 +29,16 @@ void print_help(const char* program_name) {
     struct arg_lit* native_debug = arg_lit0(NULL, "native-debug", "Enable debug output during native code generation");
     struct arg_int* native_opt = arg_int0(NULL, "native-opt", "LEVEL", "Optimization level 0-3 (default: 0)");
     struct arg_lit* custom_linker = arg_lit0(NULL, "custom-linker", "Use Sox custom linker instead of system linker (experimental)");
+    struct arg_lit* bench = arg_lit0(NULL, "bench", "Run benchmarks (functions named Benchmark*)");
+    struct arg_dbl* bench_time = arg_dbl0(NULL, "bench-time", "SECONDS", "Minimum benchmark time per test (default: 1.0)");
+    struct arg_str* bench_filter = arg_str0(NULL, "bench-filter", "SUBSTRING", "Only run benchmarks containing substring");
 
     struct arg_end* end = arg_end(20);
 
     void* argtable[] = { help, version, input, serialise, suppress, test, wasm, wat,
                          native, native_out, native_arch, native_os, native_obj,
-                         native_debug, native_opt, custom_linker, end };
+                         native_debug, native_opt, custom_linker,
+                         bench, bench_time, bench_filter, end };
 
     printf("Sox %s\n", VERSION);
     printf("A bytecode-based virtual machine interpreter for a toy programming language\n");
@@ -60,6 +64,7 @@ void print_help(const char* program_name) {
     printf("  %s script.sox --native --custom-linker\n", program_name);
     printf("                                  Use custom Sox linker (experimental)\n");
     printf("  %s script.sox --serialise       Cache compiled bytecode\n", program_name);
+    printf("  %s script.sox --bench           Run benchmarks defined in the script\n", program_name);
     printf("\nFor more information, visit: https://github.com/freneticmonkey/sox\n");
 
     // Cleanup
@@ -106,12 +111,16 @@ bool parse_arguments(int argc, const char* argv[], sox_args_t* args) {
     struct arg_lit* native_debug = arg_lit0(NULL, "native-debug", "Debug output");
     struct arg_int* native_opt = arg_int0(NULL, "native-opt", "LEVEL", "Optimization level 0-3");
     struct arg_lit* custom_linker = arg_lit0(NULL, "custom-linker", "Use custom linker");
+    struct arg_lit* bench = arg_lit0(NULL, "bench", "Run benchmarks (functions named Benchmark*)");
+    struct arg_dbl* bench_time = arg_dbl0(NULL, "bench-time", "SECONDS", "Minimum benchmark time per test");
+    struct arg_str* bench_filter = arg_str0(NULL, "bench-filter", "SUBSTRING", "Only run benchmarks containing substring");
 
     struct arg_end* end = arg_end(20);
 
     void* argtable[] = { help, version, input, serialise, suppress, test, wasm, wat,
                          native, native_out, native_arch, native_os, native_obj,
-                         native_debug, native_opt, custom_linker, end };
+                         native_debug, native_opt, custom_linker,
+                         bench, bench_time, bench_filter, end };
 
     // Parse arguments
     int nerrors = arg_parse(argc, (char**)argv, argtable);
@@ -157,6 +166,21 @@ bool parse_arguments(int argc, const char* argv[], sox_args_t* args) {
     args->run_tests = (test->count > 0);
     args->enable_wasm_output = (wasm->count > 0);
     args->enable_wat_output = (wat->count > 0);
+    args->enable_benchmarks = (bench->count > 0 || bench_time->count > 0 || bench_filter->count > 0);
+    args->benchmark_time_seconds = 1.0;
+    args->benchmark_filter = NULL;
+    if (bench_time->count > 0) {
+        args->benchmark_time_seconds = bench_time->dval[0];
+    }
+    if (bench_filter->count > 0) {
+        args->benchmark_filter = (char*)bench_filter->sval[0];
+    }
+
+    if (args->enable_benchmarks && args->benchmark_time_seconds <= 0.0) {
+        fprintf(stderr, "Error: Benchmark time must be > 0\n");
+        arg_freetable(argtable, sizeof(argtable)/sizeof(argtable[0]));
+        return false;
+    }
 
     if (args->run_tests && !args->input_file) {
         args->input_file = ".";

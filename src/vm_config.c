@@ -58,6 +58,9 @@ vm_config_t l_default_vmconfig() {
         .native_emit_object = true,
         .native_debug_output = false,
         .native_optimization_level = 0,
+        .enable_benchmarks = false,
+        .benchmark_time_seconds = 1.0,
+        .benchmark_filter = NULL,
         .args = l_default_args(),
     };
 }
@@ -75,6 +78,9 @@ void l_init_vmconfig(vm_config_t *config, int argc, const char *argv[]) {
     config->native_emit_object = true;
     config->native_debug_output = false;
     config->native_optimization_level = 0;
+    config->enable_benchmarks = false;
+    config->benchmark_time_seconds = 1.0;
+    config->benchmark_filter = NULL;
     config->args = l_parse_args(argc, argv);
 
     // check the args for flags
@@ -97,6 +103,19 @@ void l_init_vmconfig(vm_config_t *config, int argc, const char *argv[]) {
         }
         if (strcmp(config->args.argv[i], "--wat") == 0) {
             config->enable_wat_output = true;
+        }
+        if (strcmp(config->args.argv[i], "--bench") == 0) {
+            config->enable_benchmarks = true;
+        }
+        if (strcmp(config->args.argv[i], "--bench-time") == 0 && i + 1 < config->args.argc) {
+            config->benchmark_time_seconds = atof(config->args.argv[i + 1]);
+            config->enable_benchmarks = true;
+            i++;
+        }
+        if (strcmp(config->args.argv[i], "--bench-filter") == 0 && i + 1 < config->args.argc) {
+            config->benchmark_filter = config->args.argv[i + 1];
+            config->enable_benchmarks = true;
+            i++;
         }
     }
 }

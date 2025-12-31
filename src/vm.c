@@ -1155,6 +1155,10 @@ static bool _call_value(value_t callee, int argCount) {
     return false;
 }
 
+bool l_vm_call_value(value_t callee, int argCount) {
+    return _call_value(callee, argCount);
+}
+
 static bool _invoke_from_class(obj_class_t* klass, obj_string_t* name, int argCount) {
     value_t method;
     if (!l_table_get(&klass->methods, name, &method)) {

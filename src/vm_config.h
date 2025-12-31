@@ -32,6 +32,10 @@ typedef struct {
     int native_optimization_level;
     bool use_custom_linker;        // Use custom linker instead of system linker
 
+    bool enable_benchmarks;
+    double benchmark_time_seconds;
+    char* benchmark_filter;
+
     vm_args_t args;
 } vm_config_t;
 
