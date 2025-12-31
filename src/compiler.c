@@ -353,7 +353,7 @@ static obj_function_t* _end_compiler() {
 
     // Call any deferred functions before returning
     if ( _current->defer_count > 0 ) {
-        for (int i = 0; i < _current->defer_count ; i++ ) {
+        for (int i = _current->defer_count - 1; i >= 0; i-- ) {
             // obj_function_t defer_func = _current->deferred_functions[i];
             // if ( defer_func->type != TYPE_DEFER )
             //     _error("Can't read local variable in its own initializer.");
