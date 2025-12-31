@@ -103,6 +103,7 @@ typedef struct switch_t {
     int      start;
     int      default_jump;
     uint8_t  global_variable;
+    bool     is_global;
 } switch_t;
 
 typedef struct compiler_t compiler_t;
@@ -1098,12 +1099,13 @@ static void _loop_end() {
     _current->loop = _current->loop->enclosing;
 }
 
-static void _switch_start(switch_t *_switch, uint8_t global) {
+static void _switch_start(switch_t *_switch, uint8_t variable, bool is_global) {
 
     _switch->enclosing = _current->_switch;
     _switch->start = _current_chunk()->count;
     _switch->default_jump = -1;
-    _switch->global_variable = global;
+    _switch->global_variable = variable;
+    _switch->is_global = is_global;
 
     _current->_switch = _switch;
 }
@@ -1113,7 +1115,11 @@ static bool _switch_found_default() {
 }
 
 static void _switch_get_variable() {
-    _emit_bytes(OP_GET_GLOBAL, _current->_switch->global_variable);
+    if (_current->_switch->is_global) {
+        _emit_bytes(OP_GET_GLOBAL, _current->_switch->global_variable);
+    } else {
+        _emit_bytes(OP_GET_LOCAL, _current->_switch->global_variable);
+    }
 }
 
 static void _switch_set_default_location() {
@@ -1695,6 +1701,11 @@ static void _switch_statement() {
     
     // setup a global for the switched value
     uint8_t global = _generate_variable(TOKEN_SWITCH, "switch_var");
+    bool is_global = (_current->scope_depth == 0);
+    uint8_t variable = global;
+    if (!is_global) {
+        variable = (uint8_t)(_current->local_count - 1);
+    }
     _mark_initialized();
 
     // read the value to be switched on
@@ -1704,7 +1715,7 @@ static void _switch_statement() {
     _define_variable(global);
 
     switch_t _switch;
-    _switch_start(&_switch, global);
+    _switch_start(&_switch, variable, is_global);
     
     _consume(TOKEN_LEFT_BRACE, "Expect '{' before switch body.");
     _begin_scope();
