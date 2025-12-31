@@ -1,0 +1,2 @@
+// Minimal TLS/TLV access via runtime string allocation
+print("TLS");
