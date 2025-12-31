@@ -1,0 +1,21 @@
+print "Starting Recursion Test";
+
+fn recurse(n) {
+    if (n == 0) return 0;
+    return 1 + recurse(n - 1);
+}
+
+// Test a moderately deep recursion to ensure stack grows/handles it
+var depth = 50;
+var result = recurse(depth);
+
+print "Recursion depth: ";
+print depth;
+print "Result: ";
+print result;
+
+if (result == depth) {
+    print "Recursion Test Success";
+} else {
+    print "Recursion Test Failed";
+}

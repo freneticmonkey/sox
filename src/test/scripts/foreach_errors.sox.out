@@ -1,0 +1,21 @@
+=== Test 1: Valid baseline ===
+Valid - Index: 0, Value: 1
+Valid - Index: 1, Value: 2
+Valid - Index: 2, Value: 3
+=== Test 2: Iterating over non-container ===
+Skipped non-container test to avoid runtime error
+=== Test 3: Iterating over string ===
+Skipped string iteration test
+=== Test 4: Variable name handling ===
+Before foreach: existing
+Inside foreach - existing_var: 0, val: 10
+Inside foreach - existing_var: 1, val: 20
+After foreach: existing
+=== Test 5: Modifying iteration variables ===
+Original - i: 0, val: 1
+Modified - i: 10, val: 2
+Original - i: 1, val: 2
+Modified - i: 11, val: 4
+Original - i: 2, val: 3
+Modified - i: 12, val: 6
+Error case tests completed

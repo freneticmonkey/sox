@@ -1,0 +1,61 @@
+=== Test 1: Runtime error recovery ===
+Processing element 0 = 1
+  Safe computation: 10 / 1 = 10
+Processing element 1 = 0
+  Warning: Zero value detected at index 1
+  Continuing with error recovery...
+Processing element 2 = 2
+  Safe computation: 10 / 2 = 5
+Processing element 3 = 3
+  Safe computation: 10 / 3 = 3.33333
+Runtime error recovery test completed
+=== Test 2: Type safety error handling ===
+Type test - Index: 0, Value: 42
+  Processing non-boolean: 42
+Type test - Index: 1, Value: text
+  Processing non-boolean: text
+Type test - Index: 2, Value: 3.14
+  Processing non-boolean: 3.14
+Type test - Index: 3, Value: true
+  Found boolean value: true
+=== Test 3: Nested error recovery ===
+Outer iteration 0 with value 1
+  Inner iteration 0 with value 10
+    Normal processing of 10
+  Inner iteration 1 with value 0
+    Error condition in inner loop - continuing...
+  Inner iteration 2 with value 30
+    Normal processing of 30
+  Outer iteration 0 completed successfully
+Outer iteration 1 with value 2
+  Inner iteration 0 with value 10
+    Normal processing of 10
+  Inner iteration 1 with value 0
+    Error condition in inner loop - continuing...
+  Inner iteration 2 with value 30
+    Normal processing of 30
+  Outer iteration 1 completed successfully
+=== Test 4: Variable access error recovery ===
+Access test - Processing item 0: valid1
+  Safe copy created: valid1
+Access test - Processing item 1: valid2
+  Safe copy created: valid2
+  Special handling for middle element
+Access test - Processing item 2: valid3
+  Safe copy created: valid3
+=== Test 5: Loop boundary error handling ===
+Minimal array test - Index: 0, Value: 999
+Boundary test 0 = 1
+  First element processing
+  Last element processing
+Boundary test 1 = 2
+  Last element processing
+=== Test 6: Resource cleanup error handling ===
+Resource test - Allocated resource 1 for value 1
+  Normal resource processing for 1
+Resource test - Allocated resource 2 for value 2
+  Normal resource processing for 2
+Resource test - Allocated resource 3 for value 3
+  Simulating early termination at value 3
+Resources allocated: 3
+Error recovery tests completed
